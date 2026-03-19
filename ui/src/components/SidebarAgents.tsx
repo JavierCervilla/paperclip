@@ -125,10 +125,18 @@ export function SidebarAgents() {
               >
                 <AgentIcon icon={agent.icon} className="shrink-0 h-3.5 w-3.5 text-muted-foreground" />
                 <span className="flex-1 truncate">{agent.name}</span>
-                {(agent.pauseReason === "budget" || runCount > 0) && (
+                {(agent.pauseReason === "budget" || agent.pauseReason === "quota_reset" || runCount > 0) && (
                   <span className="ml-auto flex items-center gap-1.5 shrink-0">
                     {agent.pauseReason === "budget" ? (
                       <BudgetSidebarMarker title="Agent paused by budget" />
+                    ) : agent.pauseReason === "quota_reset" ? (
+                      <span
+                        title="Waiting for quota reset"
+                        aria-label="Waiting for quota reset"
+                        className="ml-auto inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-500/90 text-white shadow-[0_0_0_1px_rgba(255,255,255,0.08)] text-[10px] font-bold"
+                      >
+                        Q
+                      </span>
                     ) : null}
                     {runCount > 0 ? (
                       <span className="relative flex h-2 w-2">

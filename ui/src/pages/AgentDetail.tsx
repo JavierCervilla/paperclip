@@ -885,6 +885,15 @@ export function AgentDetail() {
           This agent is pending board approval and cannot be invoked yet.
         </p>
       )}
+      {agent.pauseReason === "quota_reset" && (
+        <div className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-sm text-amber-200">
+          <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
+          Waiting for quota reset
+          {(agent.metadata as Record<string, unknown> | undefined)?.quotaResetAt
+            ? ` — resumes at ${new Date(String((agent.metadata as Record<string, unknown>).quotaResetAt)).toLocaleString(undefined, { hour: "numeric", minute: "2-digit", timeZoneName: "short" })}`
+            : ""}
+        </div>
+      )}
 
       {/* Floating Save/Cancel (desktop) */}
       {!isMobile && showConfigActionBar && (
