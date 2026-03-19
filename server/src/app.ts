@@ -27,6 +27,7 @@ import { llmRoutes } from "./routes/llms.js";
 import { assetRoutes } from "./routes/assets.js";
 import { accessRoutes } from "./routes/access.js";
 import { infrastructureRoutes } from "./routes/infrastructure.js";
+import { githubFileRoutes } from "./routes/github-files.js";
 import { pluginRoutes } from "./routes/plugins.js";
 import { pluginUiStaticRoutes } from "./routes/plugin-ui-static.js";
 import { applyUiBranding } from "./ui-branding.js";
@@ -151,6 +152,7 @@ export async function createApp(
   api.use(sidebarBadgeRoutes(db));
   api.use(instanceSettingsRoutes(db));
   api.use(infrastructureRoutes(db));
+  api.use(githubFileRoutes(db));
   const hostServicesDisposers = new Map<string, () => void>();
   const workerManager = createPluginWorkerManager();
   const pluginRegistry = pluginRegistryService(db);

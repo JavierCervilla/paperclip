@@ -45,6 +45,12 @@ export const queryKeys = {
     list: (companyId: string) => ["projects", companyId] as const,
     detail: (id: string) => ["projects", "detail", id] as const,
   },
+  githubFiles: {
+    file: (projectId: string, filePath: string) =>
+      ["github-files", "file", projectId, filePath] as const,
+    tree: (projectId: string, dirPath: string) =>
+      ["github-files", "tree", projectId, dirPath] as const,
+  },
   goals: {
     list: (companyId: string) => ["goals", companyId] as const,
     detail: (id: string) => ["goals", "detail", id] as const,
