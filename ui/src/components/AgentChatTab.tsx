@@ -10,9 +10,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { cn } from "../lib/utils";
-import { Send, X, Loader2, MessageSquare, ChevronDown, ChevronRight } from "lucide-react";
-import type { Agent } from "@paperclipai/shared";
+import { Send, X, Loader2, MessageSquare, ChevronDown, ChevronRight, Paperclip, FileText, Download } from "lucide-react";
+import type { Agent, AssetImage } from "@paperclipai/shared";
 import { agentsApi } from "../api/agents";
+import { assetsApi } from "../api/assets";
 import { type LiveRunForIssue } from "../api/heartbeats";
 import { MarkdownBody } from "./MarkdownBody";
 import { RunTranscriptView } from "./transcript/RunTranscriptView";
@@ -20,12 +21,20 @@ import { useLiveRunTranscripts } from "./transcript/useLiveRunTranscripts";
 
 // ── Types ──────────────────────────────────────────────────────────
 
+interface ChatAttachment {
+  assetId: string;
+  contentPath: string;
+  contentType: string;
+  originalFilename: string | null;
+}
+
 interface ChatMessage {
   id: string;
   sessionId: string;
   agentId: string;
   sender: "user" | "agent";
   content: string;
+  attachments?: ChatAttachment[];
   createdAt: string;
 }
 
@@ -39,6 +48,98 @@ interface ChatSession {
   messages: ChatMessage[];
 }
 
+/** Pending attachment (uploaded but not yet sent with a message) */
+interface PendingAttachment {
+  assetId: string;
+  contentPath: string;
+  contentType: string;
+  originalFilename: string | null;
+  previewUrl?: string;
+}
+
+// ── Helpers ────────────────────────────────────────────────────────
+
+function isImageType(contentType: string): boolean {
+  return contentType.startsWith("image/");
+}
+
+// ── Attachment chips (preview before sending) ─────────────────────
+
+function PendingAttachmentChip({
+  att,
+  onRemove,
+}: {
+  att: PendingAttachment;
+  onRemove: () => void;
+}) {
+  return (
+    <div className="relative group inline-flex items-center gap-1.5 rounded-md border border-border bg-muted/50 px-2 py-1 text-xs">
+      {isImageType(att.contentType) && att.previewUrl ? (
+        <img
+          src={att.previewUrl}
+          alt={att.originalFilename ?? "attachment"}
+          className="h-8 w-8 rounded object-cover"
+        />
+      ) : (
+        <FileText className="h-4 w-4 text-muted-foreground" />
+      )}
+      <span className="max-w-[120px] truncate text-muted-foreground">
+        {att.originalFilename ?? "file"}
+      </span>
+      <button
+        type="button"
+        onClick={onRemove}
+        className="ml-0.5 rounded-full p-0.5 hover:bg-destructive/20 text-muted-foreground hover:text-destructive transition-colors"
+      >
+        <X className="h-3 w-3" />
+      </button>
+    </div>
+  );
+}
+
+// ── Inline attachment rendering (in message bubbles) ──────────────
+
+function MessageAttachments({ attachments, isUser }: { attachments: ChatAttachment[]; isUser: boolean }) {
+  if (!attachments.length) return null;
+
+  return (
+    <div className="flex flex-wrap gap-1.5 mt-1.5">
+      {attachments.map((att) =>
+        isImageType(att.contentType) ? (
+          <a
+            key={att.assetId}
+            href={att.contentPath}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block"
+          >
+            <img
+              src={att.contentPath}
+              alt={att.originalFilename ?? "image"}
+              className="max-h-48 max-w-full rounded border border-border/50 object-contain"
+            />
+          </a>
+        ) : (
+          <a
+            key={att.assetId}
+            href={att.contentPath}
+            download={att.originalFilename ?? undefined}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs transition-colors",
+              isUser
+                ? "border-primary-foreground/30 text-primary-foreground/80 hover:bg-primary-foreground/10"
+                : "border-border text-muted-foreground hover:bg-muted",
+            )}
+          >
+            <Download className="h-3 w-3" />
+            <span className="max-w-[140px] truncate">{att.originalFilename ?? "file"}</span>
+          </a>
+        ),
+      )}
+    </div>
+  );
+}
+
 // ── Component ──────────────────────────────────────────────────────
 
 export function AgentChatTab({ agent, companyId }: { agent: Agent; companyId: string }) {
@@ -48,8 +149,11 @@ export function AgentChatTab({ agent, companyId }: { agent: Agent; companyId: st
   const [isTyping, setIsTyping] = useState(false);
   const [thinkingOpen, setThinkingOpen] = useState(true);
   const [activeRun, setActiveRun] = useState<LiveRunForIssue | null>(null);
+  const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
+  const [uploadingCount, setUploadingCount] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const lastMessageIdRef = useRef<string | null>(null);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -218,23 +322,117 @@ export function AgentChatTab({ agent, companyId }: { agent: Agent; companyId: st
     };
   }, [sessionId, agent.id, companyId, addMessageIfNew]);
 
+  // ── File upload helper ────────────────────────────────────────────
+
+  const uploadFiles = useCallback(
+    async (files: File[]) => {
+      for (const file of files) {
+        setUploadingCount((c) => c + 1);
+        try {
+          const asset: AssetImage = await assetsApi.uploadImage(companyId, file, "chat");
+          const pending: PendingAttachment = {
+            assetId: asset.assetId,
+            contentPath: asset.contentPath,
+            contentType: asset.contentType,
+            originalFilename: asset.originalFilename,
+          };
+          // Create a local preview URL for images
+          if (isImageType(file.type)) {
+            pending.previewUrl = URL.createObjectURL(file);
+          }
+          setPendingAttachments((prev) => [...prev, pending]);
+        } catch {
+          // Silently skip failed uploads
+        } finally {
+          setUploadingCount((c) => c - 1);
+        }
+      }
+      inputRef.current?.focus();
+    },
+    [companyId],
+  );
+
+  // ── Clipboard paste handler ───────────────────────────────────────
+
+  const handlePaste = useCallback(
+    (e: React.ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+
+      const files: File[] = [];
+      for (const item of Array.from(items)) {
+        if (item.kind === "file") {
+          const file = item.getAsFile();
+          if (file) files.push(file);
+        }
+      }
+
+      if (files.length > 0) {
+        e.preventDefault();
+        void uploadFiles(files);
+      }
+    },
+    [uploadFiles],
+  );
+
+  // ── File input change handler ─────────────────────────────────────
+
+  const handleFileSelect = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = e.target.files;
+      if (files && files.length > 0) {
+        void uploadFiles(Array.from(files));
+      }
+      // Reset so re-selecting the same file triggers onChange again
+      e.target.value = "";
+    },
+    [uploadFiles],
+  );
+
+  // Cleanup preview URLs on unmount
+  useEffect(() => {
+    return () => {
+      for (const att of pendingAttachments) {
+        if (att.previewUrl) URL.revokeObjectURL(att.previewUrl);
+      }
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Send message mutation
   const sendMutation = useMutation({
-    mutationFn: async (content: string) => {
-      const msg = await agentsApi.sendChatMessage(agent.id, content, companyId);
-      return msg as ChatMessage;
+    mutationFn: async ({ content, attachments }: { content: string; attachments: PendingAttachment[] }) => {
+      const attachmentIds = attachments.length > 0 ? attachments.map((a) => a.assetId) : undefined;
+      const msg = await agentsApi.sendChatMessage(agent.id, content, companyId, attachmentIds);
+      return { msg: msg as ChatMessage, attachments };
     },
-    onSuccess: (msg) => {
+    onSuccess: ({ msg, attachments }) => {
+      // Attach the pending attachments to the local message for immediate rendering
+      const enrichedMsg: ChatMessage = {
+        ...msg,
+        attachments: attachments.length > 0
+          ? attachments.map((a) => ({
+              assetId: a.assetId,
+              contentPath: a.contentPath,
+              contentType: a.contentType,
+              originalFilename: a.originalFilename,
+            }))
+          : undefined,
+      };
       setMessages((prev) => {
-        if (prev.some((m) => m.id === msg.id)) return prev;
-        return [...prev, msg];
+        if (prev.some((m) => m.id === enrichedMsg.id)) return prev;
+        return [...prev, enrichedMsg];
       });
-      lastMessageIdRef.current = msg.id;
+      lastMessageIdRef.current = enrichedMsg.id;
       if (!sessionId) {
-        setSessionId(msg.sessionId);
+        setSessionId(enrichedMsg.sessionId);
       }
       setIsTyping(true);
       setInput("");
+      // Revoke preview URLs
+      for (const att of attachments) {
+        if (att.previewUrl) URL.revokeObjectURL(att.previewUrl);
+      }
+      setPendingAttachments([]);
       inputRef.current?.focus();
     },
   });
@@ -247,15 +445,16 @@ export function AgentChatTab({ agent, companyId }: { agent: Agent; companyId: st
       setMessages([]);
       setIsTyping(false);
       lastMessageIdRef.current = null;
+      setPendingAttachments([]);
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
     },
   });
 
   const handleSend = useCallback(() => {
     const trimmed = input.trim();
-    if (!trimmed || sendMutation.isPending) return;
-    sendMutation.mutate(trimmed);
-  }, [input, sendMutation]);
+    if ((!trimmed && pendingAttachments.length === 0) || sendMutation.isPending) return;
+    sendMutation.mutate({ content: trimmed || "(attachment)", attachments: [...pendingAttachments] });
+  }, [input, pendingAttachments, sendMutation]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -266,6 +465,14 @@ export function AgentChatTab({ agent, companyId }: { agent: Agent; companyId: st
     },
     [handleSend],
   );
+
+  const removePendingAttachment = useCallback((idx: number) => {
+    setPendingAttachments((prev) => {
+      const removed = prev[idx];
+      if (removed?.previewUrl) URL.revokeObjectURL(removed.previewUrl);
+      return prev.filter((_, i) => i !== idx);
+    });
+  }, []);
 
   return (
     <div className="flex flex-col h-[calc(100vh-12rem)] max-w-3xl">
@@ -324,6 +531,9 @@ export function AgentChatTab({ agent, companyId }: { agent: Agent; companyId: st
               ) : (
                 <p className="whitespace-pre-wrap break-words">{msg.content}</p>
               )}
+              {msg.attachments && msg.attachments.length > 0 && (
+                <MessageAttachments attachments={msg.attachments} isUser={msg.sender === "user"} />
+              )}
               <span className="block text-[10px] opacity-50 mt-1">
                 {new Date(msg.createdAt).toLocaleTimeString()}
               </span>
@@ -368,12 +578,51 @@ export function AgentChatTab({ agent, companyId }: { agent: Agent; companyId: st
 
       {/* Input */}
       <div className="border-t border-border pt-3">
+        {/* Pending attachment previews */}
+        {(pendingAttachments.length > 0 || uploadingCount > 0) && (
+          <div className="flex flex-wrap gap-1.5 mb-2">
+            {pendingAttachments.map((att, idx) => (
+              <PendingAttachmentChip
+                key={att.assetId}
+                att={att}
+                onRemove={() => removePendingAttachment(idx)}
+              />
+            ))}
+            {uploadingCount > 0 && (
+              <div className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted/50 px-2 py-1 text-xs text-muted-foreground">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Uploading...
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="flex items-end gap-2">
+          {/* Hidden file input */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={handleFileSelect}
+          />
+          {/* Attach button */}
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-[38px] px-2 text-muted-foreground hover:text-foreground"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploadingCount > 0}
+          >
+            <Paperclip className="h-4 w-4" />
+          </Button>
           <textarea
             ref={inputRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
             placeholder={`Message ${agent.name}...`}
             rows={1}
             className={cn(
@@ -391,7 +640,7 @@ export function AgentChatTab({ agent, companyId }: { agent: Agent; companyId: st
           <Button
             size="sm"
             onClick={handleSend}
-            disabled={!input.trim() || sendMutation.isPending}
+            disabled={(!input.trim() && pendingAttachments.length === 0) || sendMutation.isPending}
             className="h-[38px] px-3"
           >
             {sendMutation.isPending ? (

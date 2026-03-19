@@ -11,12 +11,20 @@ import { publishLiveEvent } from "./live-events.js";
 
 // ── Types ──────────────────────────────────────────────────────────
 
+export interface ChatAttachment {
+  assetId: string;
+  contentPath: string;
+  contentType: string;
+  originalFilename: string | null;
+}
+
 export interface ChatMessage {
   id: string;
   sessionId: string;
   agentId: string;
   sender: "user" | "agent";
   content: string;
+  attachments?: ChatAttachment[];
   createdAt: string;
 }
 
@@ -136,6 +144,7 @@ export function chatService() {
     companyId: string;
     userId: string;
     content: string;
+    attachments?: ChatAttachment[];
   }): ChatMessage {
     let session = sessions.get(opts.agentId);
     if (!session) {
@@ -152,6 +161,7 @@ export function chatService() {
       agentId: opts.agentId,
       sender: "user",
       content: opts.content,
+      ...(opts.attachments?.length ? { attachments: opts.attachments } : {}),
       createdAt: now(),
     };
 
@@ -168,6 +178,7 @@ export function chatService() {
         messageId: msg.id,
         agentId: opts.agentId,
         sender: "user",
+        ...(msg.attachments?.length ? { attachments: msg.attachments } : {}),
       },
     });
 

@@ -23,6 +23,7 @@ import {
   agentService,
   accessService,
   approvalService,
+  assetService,
   budgetService,
   chatService,
   chatProcessService,
@@ -62,6 +63,7 @@ export function agentRoutes(db: Db) {
   const access = accessService(db);
   const approvalsSvc = approvalService(db);
   const budgets = budgetService(db);
+  const assetsSvc = assetService(db);
   const chat = chatService();
   const chatProc = chatProcessService();
   const heartbeat = heartbeatService(db);
@@ -1698,10 +1700,30 @@ export function agentRoutes(db: Db) {
     assertCompanyAccess(req, agent.companyId);
     assertBoard(req);
 
-    const { content } = req.body;
+    const { content, attachmentIds } = req.body;
     if (!content || typeof content !== "string" || content.trim().length === 0) {
       res.status(400).json({ error: "content is required" });
       return;
+    }
+
+    // Resolve attachment IDs to attachment objects
+    let attachments: { assetId: string; contentPath: string; contentType: string; originalFilename: string | null }[] | undefined;
+    if (Array.isArray(attachmentIds) && attachmentIds.length > 0) {
+      attachments = [];
+      for (const assetId of attachmentIds) {
+        if (typeof assetId !== "string") continue;
+        const asset = await assetsSvc.getById(assetId);
+        if (!asset) {
+          res.status(400).json({ error: `Asset not found: ${assetId}` });
+          return;
+        }
+        attachments.push({
+          assetId: asset.id,
+          contentPath: `/api/assets/${asset.id}/content`,
+          contentType: asset.contentType,
+          originalFilename: asset.originalFilename,
+        });
+      }
     }
 
     const userId = req.actor.userId ?? "unknown";
@@ -1712,6 +1734,7 @@ export function agentRoutes(db: Db) {
       companyId: agent.companyId,
       userId,
       content: content.trim(),
+      attachments,
     });
 
     // If this started a new session, spawn an independent chat process

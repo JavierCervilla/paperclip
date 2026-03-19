@@ -148,8 +148,11 @@ export const agentsApi = {
     api.get<{ skills: AvailableSkill[] }>("/skills/available"),
 
   // ── Agent Direct Chat ──────────────────────────────────────────
-  sendChatMessage: (id: string, content: string, companyId?: string) =>
-    api.post<unknown>(agentPath(id, companyId, "/chat-messages"), { content }),
+  sendChatMessage: (id: string, content: string, companyId?: string, attachmentIds?: string[]) =>
+    api.post<unknown>(agentPath(id, companyId, "/chat-messages"), {
+      content,
+      ...(attachmentIds?.length ? { attachmentIds } : {}),
+    }),
   chatMessages: (id: string, after?: string, companyId?: string) =>
     api.get<unknown>(agentPath(id, companyId, `/chat-messages${after ? `?after=${encodeURIComponent(after)}` : ""}`)),
   chatSession: (id: string, companyId?: string) =>
