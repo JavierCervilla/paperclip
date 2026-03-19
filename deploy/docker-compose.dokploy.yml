@@ -52,6 +52,7 @@ services:
       PAPERCLIP_PUBLIC_URL: "https://${PAPERCLIP_DOMAIN}"
       PAPERCLIP_ALLOWED_HOSTNAMES: "${PAPERCLIP_DOMAIN}"
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
+      GH_TOKEN: ${GH_TOKEN}
     networks:
       - dokploy-network
     volumes:
