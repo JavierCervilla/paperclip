@@ -107,7 +107,96 @@ export function AgentChatTab({ agent, companyId }: { agent: Agent; companyId: st
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Poll for new messages when session is active
+  // Helper: add a message if not already present
+  const addMessageIfNew = useCallback((msg: ChatMessage) => {
+    setMessages((prev) => {
+      if (prev.some((m) => m.id === msg.id)) return prev;
+      return [...prev, msg];
+    });
+    lastMessageIdRef.current = msg.id;
+    if (msg.sender === "agent") {
+      setIsTyping(false);
+    }
+  }, []);
+
+  // Primary: WebSocket for real-time chat messages
+  useEffect(() => {
+    if (!sessionId || !companyId) return;
+
+    let closed = false;
+    let socket: WebSocket | null = null;
+    let reconnectTimer: number | null = null;
+
+    const connect = () => {
+      if (closed) return;
+      const protocol = window.location.protocol === "https:" ? "wss" : "ws";
+      const url = `${protocol}://${window.location.host}/api/companies/${encodeURIComponent(companyId)}/events/ws`;
+      socket = new WebSocket(url);
+
+      socket.onmessage = (event) => {
+        const raw = typeof event.data === "string" ? event.data : "";
+        if (!raw) return;
+        try {
+          const parsed = JSON.parse(raw) as { type: string; companyId: string; payload?: Record<string, unknown> };
+          if (parsed.companyId !== companyId) return;
+
+          const payload = parsed.payload ?? {};
+          const eventAgentId = payload.agentId as string | undefined;
+          if (eventAgentId !== agent.id) return;
+
+          if (parsed.type === "chat.message.sent" || parsed.type === "chat.message.received") {
+            const msgId = payload.messageId as string;
+            const sender = payload.sender as "user" | "agent";
+            const content = payload.content as string | undefined;
+
+            // For received messages (agent responses), content is in the payload
+            // For sent messages (user), we already have it locally
+            if (msgId && sender === "agent" && content) {
+              addMessageIfNew({
+                id: msgId,
+                sessionId: payload.sessionId as string ?? sessionId,
+                agentId: agent.id,
+                sender,
+                content,
+                createdAt: new Date().toISOString(),
+              });
+            }
+          }
+
+          if (parsed.type === "chat.session.ended") {
+            setSessionId(null);
+            setMessages([]);
+            setIsTyping(false);
+            lastMessageIdRef.current = null;
+          }
+        } catch {
+          // Ignore parse errors
+        }
+      };
+
+      socket.onerror = () => socket?.close();
+      socket.onclose = () => {
+        if (!closed) {
+          reconnectTimer = window.setTimeout(connect, 1500);
+        }
+      };
+    };
+
+    connect();
+
+    return () => {
+      closed = true;
+      if (reconnectTimer !== null) window.clearTimeout(reconnectTimer);
+      if (socket) {
+        socket.onmessage = null;
+        socket.onerror = null;
+        socket.onclose = null;
+        socket.close(1000, "chat_tab_unmount");
+      }
+    };
+  }, [sessionId, companyId, agent.id, addMessageIfNew]);
+
+  // Fallback: slow REST polling to catch any missed messages
   useEffect(() => {
     if (!sessionId) return;
 
@@ -115,32 +204,19 @@ export function AgentChatTab({ agent, companyId }: { agent: Agent; companyId: st
       try {
         const result = await agentsApi.chatMessages(agent.id, lastMessageIdRef.current ?? undefined, companyId);
         const newMessages = (result as { messages: ChatMessage[] }).messages;
-        if (newMessages.length > 0) {
-          // Only add messages we don't already have
-          setMessages((prev) => {
-            const existingIds = new Set(prev.map((m) => m.id));
-            const fresh = newMessages.filter((m: ChatMessage) => !existingIds.has(m.id));
-            if (fresh.length === 0) return prev;
-            return [...prev, ...fresh];
-          });
-          lastMessageIdRef.current = newMessages[newMessages.length - 1]!.id;
-
-          // Update typing indicator based on last message sender
-          const lastMsg = newMessages[newMessages.length - 1]!;
-          if (lastMsg.sender === "agent") {
-            setIsTyping(false);
-          }
+        for (const msg of newMessages) {
+          addMessageIfNew(msg);
         }
       } catch {
         // Silently ignore poll errors
       }
     };
 
-    pollIntervalRef.current = setInterval(poll, 500);
+    pollIntervalRef.current = setInterval(poll, 5000);
     return () => {
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
     };
-  }, [sessionId, agent.id, companyId]);
+  }, [sessionId, agent.id, companyId, addMessageIfNew]);
 
   // Send message mutation
   const sendMutation = useMutation({
