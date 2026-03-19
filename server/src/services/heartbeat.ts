@@ -10,6 +10,7 @@ import {
   agentRuntimeState,
   agentTaskSessions,
   agentWakeupRequests,
+  companies,
   heartbeatRunEvents,
   heartbeatRuns,
   issues,
@@ -2661,6 +2662,16 @@ export function heartbeatService(db: Db) {
       throw conflict("Agent is not invokable in its current state", { status: agent.status });
     }
 
+    // Check if the agent's company is paused
+    const [companyRow] = await db
+      .select({ status: companies.status })
+      .from(companies)
+      .where(eq(companies.id, agent.companyId));
+    if (companyRow?.status === "paused") {
+      await writeSkippedRequest("company.paused");
+      throw conflict("Company is paused", { companyId: agent.companyId });
+    }
+
     const policy = parseHeartbeatPolicy(agent);
 
     if (source === "timer" && !policy.enabled) {
@@ -3409,12 +3420,19 @@ export function heartbeatService(db: Db) {
 
     tickTimers: async (now = new Date()) => {
       const allAgents = await db.select().from(agents);
+      // Load paused company IDs once per tick cycle
+      const pausedCompanyRows = await db
+        .select({ id: companies.id })
+        .from(companies)
+        .where(eq(companies.status, "paused"));
+      const pausedCompanyIds = new Set(pausedCompanyRows.map((r) => r.id));
       let checked = 0;
       let enqueued = 0;
       let skipped = 0;
 
       for (const agent of allAgents) {
         if (agent.status === "paused" || agent.status === "terminated" || agent.status === "pending_approval") continue;
+        if (pausedCompanyIds.has(agent.companyId)) continue;
         const policy = parseHeartbeatPolicy(agent);
         if (!policy.enabled || policy.intervalSec <= 0) continue;
 

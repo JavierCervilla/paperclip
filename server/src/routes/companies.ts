@@ -9,11 +9,14 @@ import {
 } from "@paperclipai/shared";
 import { forbidden } from "../errors.js";
 import { validate } from "../middleware/validate.js";
+import { agents } from "@paperclipai/db";
+import { eq } from "drizzle-orm";
 import {
   accessService,
   budgetService,
   companyPortabilityService,
   companyService,
+  heartbeatService,
   logActivity,
 } from "../services/index.js";
 import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
@@ -24,6 +27,7 @@ export function companyRoutes(db: Db) {
   const portability = companyPortabilityService(db);
   const access = accessService(db);
   const budgets = budgetService(db);
+  const heartbeat = heartbeatService(db);
 
   router.get("/", async (req, res) => {
     assertBoard(req);
@@ -161,6 +165,53 @@ export function companyRoutes(db: Db) {
       entityType: "company",
       entityId: companyId,
       details: req.body,
+    });
+    res.json(company);
+  });
+
+  router.post("/:companyId/pause", async (req, res) => {
+    assertBoard(req);
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const reason = typeof req.body?.reason === "string" ? req.body.reason : "manual";
+    const company = await svc.pause(companyId, reason);
+    if (!company) {
+      res.status(404).json({ error: "Company not found" });
+      return;
+    }
+    // Cancel all active heartbeat runs for agents in this company
+    const companyAgents = await db.select({ id: agents.id }).from(agents).where(eq(agents.companyId, companyId));
+    for (const agent of companyAgents) {
+      await heartbeat.cancelActiveForAgent(agent.id);
+    }
+    await logActivity(db, {
+      companyId,
+      actorType: "user",
+      actorId: req.actor.userId ?? "board",
+      action: "company.paused",
+      entityType: "company",
+      entityId: companyId,
+      details: { reason },
+    });
+    res.json(company);
+  });
+
+  router.post("/:companyId/resume", async (req, res) => {
+    assertBoard(req);
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const company = await svc.resume(companyId);
+    if (!company) {
+      res.status(404).json({ error: "Company not found" });
+      return;
+    }
+    await logActivity(db, {
+      companyId,
+      actorType: "user",
+      actorId: req.actor.userId ?? "board",
+      action: "company.resumed",
+      entityType: "company",
+      entityId: companyId,
     });
     res.json(company);
   });

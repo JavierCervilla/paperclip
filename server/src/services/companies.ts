@@ -36,6 +36,8 @@ export function companyService(db: Db) {
     name: companies.name,
     description: companies.description,
     status: companies.status,
+    pauseReason: companies.pauseReason,
+    pausedAt: companies.pausedAt,
     issuePrefix: companies.issuePrefix,
     issueCounter: companies.issueCounter,
     budgetMonthlyCents: companies.budgetMonthlyCents,
@@ -239,6 +241,55 @@ export function companyService(db: Db) {
         const updated = await tx
           .update(companies)
           .set({ status: "archived", updatedAt: new Date() })
+          .where(eq(companies.id, id))
+          .returning()
+          .then((rows) => rows[0] ?? null);
+        if (!updated) return null;
+        const row = await getCompanyQuery(tx)
+          .where(eq(companies.id, id))
+          .then((rows) => rows[0] ?? null);
+        if (!row) return null;
+        const [hydrated] = await hydrateCompanySpend([row], tx);
+        return enrichCompany(hydrated);
+      }),
+
+    pause: (id: string, reason: string = "manual") =>
+      db.transaction(async (tx) => {
+        const existing = await tx
+          .select({ status: companies.status })
+          .from(companies)
+          .where(eq(companies.id, id))
+          .then((rows) => rows[0] ?? null);
+        if (!existing) return null;
+        if (existing.status === "archived") throw unprocessable("Cannot pause an archived company");
+        if (existing.status === "paused") throw unprocessable("Company is already paused");
+        const updated = await tx
+          .update(companies)
+          .set({ status: "paused", pauseReason: reason, pausedAt: new Date(), updatedAt: new Date() })
+          .where(eq(companies.id, id))
+          .returning()
+          .then((rows) => rows[0] ?? null);
+        if (!updated) return null;
+        const row = await getCompanyQuery(tx)
+          .where(eq(companies.id, id))
+          .then((rows) => rows[0] ?? null);
+        if (!row) return null;
+        const [hydrated] = await hydrateCompanySpend([row], tx);
+        return enrichCompany(hydrated);
+      }),
+
+    resume: (id: string) =>
+      db.transaction(async (tx) => {
+        const existing = await tx
+          .select({ status: companies.status })
+          .from(companies)
+          .where(eq(companies.id, id))
+          .then((rows) => rows[0] ?? null);
+        if (!existing) return null;
+        if (existing.status !== "paused") throw unprocessable("Company is not paused");
+        const updated = await tx
+          .update(companies)
+          .set({ status: "active", pauseReason: null, pausedAt: null, updatedAt: new Date() })
           .where(eq(companies.id, id))
           .returning()
           .then((rows) => rows[0] ?? null);
