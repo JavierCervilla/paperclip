@@ -13,6 +13,7 @@ import { cn } from "../lib/utils";
 import { Send, X, Loader2, MessageSquare } from "lucide-react";
 import type { Agent } from "@paperclipai/shared";
 import { agentsApi } from "../api/agents";
+import { MarkdownBody } from "./MarkdownBody";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -188,7 +189,11 @@ export function AgentChatTab({ agent, companyId }: { agent: Agent; companyId: st
                   : "bg-muted text-foreground",
               )}
             >
-              <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+              {msg.sender === "agent" ? (
+                <MarkdownBody className="text-sm">{msg.content}</MarkdownBody>
+              ) : (
+                <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+              )}
               <span className="block text-[10px] opacity-50 mt-1">
                 {new Date(msg.createdAt).toLocaleTimeString()}
               </span>
