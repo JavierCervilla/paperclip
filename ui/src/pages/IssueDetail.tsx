@@ -20,6 +20,7 @@ import { CommentThread } from "../components/CommentThread";
 import { IssueDocumentsSection } from "../components/IssueDocumentsSection";
 import { IssueProperties } from "../components/IssueProperties";
 import { LiveRunWidget } from "../components/LiveRunWidget";
+import { GitHubFileEditor } from "../components/GitHubFileEditor";
 import type { MentionOption } from "../components/MarkdownEditor";
 import { ScrollToBottom } from "../components/ScrollToBottom";
 import { StatusIcon } from "../components/StatusIcon";
@@ -40,6 +41,7 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  Code,
   Copy,
   EyeOff,
   Hexagon,
@@ -984,6 +986,12 @@ export function IssueDetail() {
             <ActivityIcon className="h-3.5 w-3.5" />
             Activity
           </TabsTrigger>
+          {issue.projectId && (
+            <TabsTrigger value="code" className="gap-1.5">
+              <Code className="h-3.5 w-3.5" />
+              Code
+            </TabsTrigger>
+          )}
           {issuePluginTabItems.map((item) => (
             <TabsTrigger key={item.value} value={item.value}>
               {item.label}
@@ -1069,6 +1077,12 @@ export function IssueDetail() {
             </div>
           )}
         </TabsContent>
+
+        {issue.projectId && (
+          <TabsContent value="code">
+            <GitHubFileEditor projectId={issue.projectId} />
+          </TabsContent>
+        )}
 
         {activePluginTab && (
           <TabsContent value={activePluginTab.value}>
