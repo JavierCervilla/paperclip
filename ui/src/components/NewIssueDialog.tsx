@@ -50,6 +50,8 @@ import { cn } from "../lib/utils";
 import { extractProviderIdWithFallback } from "../lib/model-utils";
 import { issueStatusText, issueStatusTextDefault, priorityColor, priorityColorDefault } from "../lib/status-colors";
 import { MarkdownEditor, type MarkdownEditorRef, type MentionOption } from "./MarkdownEditor";
+import { LazyMarkdownSourceEditor } from "./LazyMarkdownSourceEditor";
+import type { MarkdownSourceEditorRef } from "./MarkdownSourceEditor";
 import { AgentIcon } from "./AgentIconPicker";
 import { InlineEntitySelector, type InlineEntityOption } from "./InlineEntitySelector";
 
@@ -308,10 +310,20 @@ export function NewIssueDialog() {
   const [priorityOpen, setPriorityOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [companyOpen, setCompanyOpen] = useState(false);
+  const [descriptionMode, setDescriptionMode] = useState<"visual" | "source">("visual");
   const descriptionEditorRef = useRef<MarkdownEditorRef>(null);
+  const sourceEditorRef = useRef<MarkdownSourceEditorRef>(null);
   const stageFileInputRef = useRef<HTMLInputElement | null>(null);
   const assigneeSelectorRef = useRef<HTMLButtonElement | null>(null);
   const projectSelectorRef = useRef<HTMLButtonElement | null>(null);
+
+  const focusDescription = useCallback(() => {
+    if (descriptionMode === "source") {
+      sourceEditorRef.current?.focus();
+    } else {
+      descriptionEditorRef.current?.focus();
+    }
+  }, [descriptionMode]);
 
   const { data: agents } = useQuery({
     queryKey: queryKeys.agents.list(effectiveCompanyId!),
@@ -998,14 +1010,14 @@ export function NewIssueDialog() {
                 !e.nativeEvent.isComposing
               ) {
                 e.preventDefault();
-                descriptionEditorRef.current?.focus();
+                focusDescription();
               }
               if (e.key === "Tab" && !e.shiftKey) {
                 e.preventDefault();
                 if (assigneeValue) {
                   // Assignee already set — skip to project or description
                   if (projectId) {
-                    descriptionEditorRef.current?.focus();
+                    focusDescription();
                   } else {
                     projectSelectorRef.current?.focus();
                   }
@@ -1236,25 +1248,63 @@ export function NewIssueDialog() {
           onDragLeave={handleFileDragLeave}
           onDrop={handleFileDrop}
         >
+          {/* Visual / Source toggle */}
+          <div className="flex items-center gap-1.5 mb-2 text-xs">
+            <button
+              type="button"
+              className={cn(
+                "rounded px-2 py-0.5 transition-colors",
+                descriptionMode === "visual"
+                  ? "bg-accent font-medium text-foreground"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+              onClick={() => setDescriptionMode("visual")}
+            >
+              Visual
+            </button>
+            <button
+              type="button"
+              className={cn(
+                "rounded px-2 py-0.5 transition-colors",
+                descriptionMode === "source"
+                  ? "bg-accent font-medium text-foreground"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+              onClick={() => setDescriptionMode("source")}
+            >
+              Source
+            </button>
+          </div>
+
           <div
             className={cn(
               "rounded-md transition-colors",
               isFileDragOver && "bg-accent/20",
             )}
           >
-            <MarkdownEditor
-              ref={descriptionEditorRef}
-              value={description}
-              onChange={setDescription}
-              placeholder="Add description..."
-              bordered={false}
-              mentions={mentionOptions}
-              contentClassName={cn("text-sm text-muted-foreground pb-12", expanded ? "min-h-[220px]" : "min-h-[120px]")}
-              imageUploadHandler={async (file) => {
-                const asset = await uploadDescriptionImage.mutateAsync(file);
-                return asset.contentPath;
-              }}
-            />
+            {descriptionMode === "visual" ? (
+              <MarkdownEditor
+                ref={descriptionEditorRef}
+                value={description}
+                onChange={setDescription}
+                placeholder="Add description..."
+                bordered={false}
+                mentions={mentionOptions}
+                contentClassName={cn("text-sm text-muted-foreground pb-12", expanded ? "min-h-[220px]" : "min-h-[120px]")}
+                imageUploadHandler={async (file) => {
+                  const asset = await uploadDescriptionImage.mutateAsync(file);
+                  return asset.contentPath;
+                }}
+              />
+            ) : (
+              <LazyMarkdownSourceEditor
+                ref={sourceEditorRef}
+                value={description}
+                onChange={setDescription}
+                placeholder="Write markdown..."
+                minHeight={expanded ? "220px" : "120px"}
+              />
+            )}
           </div>
           {stagedFiles.length > 0 ? (
             <div className="mt-4 space-y-3 rounded-lg border border-border/70 p-3">
