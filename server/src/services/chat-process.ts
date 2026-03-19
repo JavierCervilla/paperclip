@@ -21,7 +21,6 @@ import {
   asNumber,
   asStringArray,
   parseObject,
-  renderTemplate,
   joinPromptSections,
 } from "@paperclipai/adapter-utils/server-utils";
 import { publishLiveEvent } from "./live-events.js";
@@ -156,21 +155,34 @@ export function chatProcessService() {
       }
     }
 
-    // Build CLI args
-    const promptTemplate = asString(
-      config.promptTemplate,
-      "You are agent {{agent.id}} ({{agent.name}}). Continue your Paperclip work.",
-    );
-    const templateData = {
-      agentId: opts.agent.id,
-      companyId: opts.agent.companyId,
-      runId: chatId,
-      company: { id: opts.agent.companyId },
-      agent: opts.agent,
-      run: { id: chatId, source: "on_demand" },
-      context: { wakeReason: "chat", chatSessionId: opts.sessionId },
-    };
-    const prompt = joinPromptSections([renderTemplate(promptTemplate, templateData)]);
+    // Build CLI args — use chat-specific prompt instead of heartbeat template
+    const chatPrompt = [
+      `You are agent ${opts.agent.id} (${opts.agent.name}).`,
+      ``,
+      `You are in CHAT MODE — a board user has opened a direct conversation with you.`,
+      `Do NOT run any heartbeat procedure. Do NOT check assignments or work on issues.`,
+      ``,
+      `## Chat session: ${opts.sessionId}`,
+      ``,
+      `The user's message:`,
+      `> ${(opts.initialMessage ?? "").replace(/\n/g, "\n> ")}`,
+      ``,
+      `## How to respond`,
+      ``,
+      `1. Process the user's message. Use your tools freely (search code, read files, create issues, etc).`,
+      `2. Send your response via the Paperclip API (use the paperclip skill if available, or curl):`,
+      `   POST $PAPERCLIP_API_URL/api/agents/${opts.agent.id}/chat-response`,
+      `   Headers: Authorization: Bearer $PAPERCLIP_API_KEY, X-Paperclip-Run-Id: ${chatId}`,
+      `   Body: { "content": "Your response in markdown" }`,
+      `3. After responding, poll for follow-up messages:`,
+      `   GET $PAPERCLIP_API_URL/api/agents/${opts.agent.id}/chat-messages?after={lastMessageId}`,
+      `   Poll every ~2 seconds. If no new messages for 60 seconds, check if the session still exists`,
+      `   via GET $PAPERCLIP_API_URL/api/agents/${opts.agent.id}/chat-session — if gone, exit cleanly.`,
+      `4. Repeat for each new user message.`,
+      ``,
+      `Stay conversational and concise. One response per user message.`,
+    ].join("\n");
+    const prompt = joinPromptSections([chatPrompt]);
 
     const args = ["--print", "-", "--output-format", "stream-json", "--verbose"];
     if (dangerouslySkipPermissions) args.push("--dangerously-skip-permissions");
