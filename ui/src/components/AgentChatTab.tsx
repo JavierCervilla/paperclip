@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { cn } from "../lib/utils";
 import { Send, X, Loader2, MessageSquare, ChevronDown, ChevronRight, Paperclip, FileText, Download, History, ArrowLeft } from "lucide-react";
 import type { Agent, AssetImage } from "@paperclipai/shared";
@@ -320,6 +321,7 @@ export function AgentChatTab({ agent, companyId }: { agent: Agent; companyId: st
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const [uploadingCount, setUploadingCount] = useState(0);
   const [viewingHistoryId, setViewingHistoryId] = useState<string | null>(null);
+  const [mobileHistoryOpen, setMobileHistoryOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -650,6 +652,7 @@ export function AgentChatTab({ agent, companyId }: { agent: Agent; companyId: st
     } else {
       setViewingHistoryId(id);
     }
+    setMobileHistoryOpen(false);
   }, []);
 
   // If viewing a past session, render the read-only history viewer
@@ -676,18 +679,30 @@ export function AgentChatTab({ agent, companyId }: { agent: Agent; companyId: st
                   {sessionId ? "Chat session active" : "Start a conversation"}
                 </span>
               </div>
-              {sessionId && (
+              <div className="flex items-center gap-1">
+                {/* Mobile history toggle — visible only below lg breakpoint */}
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => endMutation.mutate()}
-                  disabled={endMutation.isPending}
-                  className="text-xs text-muted-foreground"
+                  onClick={() => setMobileHistoryOpen(true)}
+                  className="lg:hidden text-xs text-muted-foreground"
                 >
-                  <X className="h-3 w-3 mr-1" />
-                  End session
+                  <History className="h-3.5 w-3.5 mr-1" />
+                  History
                 </Button>
-              )}
+                {sessionId && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => endMutation.mutate()}
+                    disabled={endMutation.isPending}
+                    className="text-xs text-muted-foreground"
+                  >
+                    <X className="h-3 w-3 mr-1" />
+                    End session
+                  </Button>
+                )}
+              </div>
             </div>
 
             {/* Messages */}
@@ -852,7 +867,7 @@ export function AgentChatTab({ agent, companyId }: { agent: Agent; companyId: st
         )}
       </div>
 
-      {/* History sidebar — hidden on narrow screens */}
+      {/* History sidebar — desktop only */}
       <div className="hidden lg:flex w-64 min-w-0 flex-shrink-0 border-l border-border ml-4 overflow-hidden">
         <ChatHistorySidebar
           agent={agent}
@@ -862,6 +877,20 @@ export function AgentChatTab({ agent, companyId }: { agent: Agent; companyId: st
           viewingHistoryId={viewingHistoryId}
         />
       </div>
+
+      {/* Mobile history sheet */}
+      <Sheet open={mobileHistoryOpen} onOpenChange={setMobileHistoryOpen}>
+        <SheetContent side="right" className="w-72 p-0 lg:hidden">
+          <SheetTitle className="sr-only">Chat History</SheetTitle>
+          <ChatHistorySidebar
+            agent={agent}
+            companyId={companyId}
+            activeSessionId={sessionId}
+            onSelectSession={handleSelectHistorySession}
+            viewingHistoryId={viewingHistoryId}
+          />
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
