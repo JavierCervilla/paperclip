@@ -2,6 +2,25 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Branch Strategy (Fork)
+
+This repo is a fork of [paperclipai/paperclip](https://github.com/paperclipai/paperclip). Three branches, strict promotion order:
+
+```
+upstream/master ──sync──> origin/master ──merge──> preview ──merge──> deploy/dokploy
+                          (upstream mirror)        (staging/QA)        (production)
+```
+
+- **`master`** — Read-only mirror of upstream. Synced weekly via `sync-upstream.yml`. Never commit directly.
+- **`preview`** — Staging environment (Dokploy). All new work and upstream merges land here first. QA happens here.
+- **`deploy/dokploy`** — Production environment (Dokploy). Only receives validated merges from `preview`. Never push directly.
+
+**Rules:**
+- All feature work targets `preview` via PR.
+- Only merge `preview` → `deploy/dokploy` after QA validation.
+- Never skip `preview` — no direct pushes to `deploy/dokploy`.
+- Never force-push to `master`, `preview`, or `deploy/dokploy` without explicit CEO approval.
+
 ## What is Paperclip?
 
 Paperclip is an open-source orchestration platform for AI agents — a Node.js server + React UI that lets users create AI-powered "companies" with org charts, budgets, governance, and agent coordination. It supports multiple agent runtimes (Claude Code, Codex, Cursor, Gemini, OpenClaw, etc.).

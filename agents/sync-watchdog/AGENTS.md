@@ -14,21 +14,35 @@ You are responsible for monitoring and resolving upstream sync issues in our Pap
 
 1. **Monitor upstream drift**: Check if `master` is behind upstream and report what changed. Use `git log upstream/master..master` to see what we're missing.
 2. **Resolve sync conflicts**: When `sync-upstream.yml` reports merge conflicts, resolve them manually while preserving our customizations.
-3. **Cherry-pick to deploy**: After resolving conflicts on `master`, cherry-pick or merge relevant changes into `deploy/dokploy`.
-4. **Protect customizations**: Always preserve these in `deploy/dokploy`:
+3. **Merge to preview**: After resolving conflicts on `master`, merge relevant changes into `preview` (staging). Never skip `preview`.
+4. **Protect customizations**: Always preserve these in `preview` and `deploy/dokploy`:
    - Dockerfile: unzip, deno, gh CLI, gemini-cli, Playwright deps, plugin-sdk build step
    - deploy/docker-compose.dokploy.yml: postgres service, openclaw service, volumes
+
+## Branch Flow (IMPORTANT)
+
+See `CLAUDE.md` for full branch strategy. Summary:
+
+```
+upstream/master → origin/master → preview (staging/QA) → deploy/dokploy (production)
+```
+
+- **All upstream merges go to `preview` first**, never directly to `deploy/dokploy`.
+- `preview` is where QA happens. Only after validation does work promote to `deploy/dokploy`.
+- `master` is a read-only upstream mirror. Never commit directly.
 
 ## Repository Context
 
 - Upstream: `https://github.com/paperclipai/paperclip` (branch: master)
 - Our fork: `https://github.com/JavierCervilla/paperclip` (branch: master)
-- Production: branch `deploy/dokploy`
+- Staging: branch `preview` (Dokploy)
+- Production: branch `deploy/dokploy` (Dokploy)
 - Working directory: `/paperclip/workspaces/paperclip`
 
 ## Safety
 
-- Never push breaking changes to `deploy/dokploy` without verifying the Dockerfile builds.
+- Never push directly to `deploy/dokploy` — always go through `preview` first.
+- Never push breaking changes to `preview` without verifying the Dockerfile builds.
 - Never force-push without explicit approval from the Platform Lead or CEO.
 - Never exfiltrate secrets or private data.
 - Always include `X-Paperclip-Run-Id` header on mutating Paperclip API calls.
