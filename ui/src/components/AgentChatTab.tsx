@@ -13,7 +13,7 @@ import { cn } from "../lib/utils";
 import { Send, X, Loader2, MessageSquare, ChevronDown, ChevronRight } from "lucide-react";
 import type { Agent } from "@paperclipai/shared";
 import { agentsApi } from "../api/agents";
-import { heartbeatsApi, type LiveRunForIssue } from "../api/heartbeats";
+import { type LiveRunForIssue } from "../api/heartbeats";
 import { MarkdownBody } from "./MarkdownBody";
 import { RunTranscriptView } from "./transcript/RunTranscriptView";
 import { useLiveRunTranscripts } from "./transcript/useLiveRunTranscripts";
@@ -53,7 +53,7 @@ export function AgentChatTab({ agent, companyId }: { agent: Agent; companyId: st
   const lastMessageIdRef = useRef<string | null>(null);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Track the agent's active run while typing
+  // Track the agent's active chat process while typing
   useEffect(() => {
     if (!isTyping) {
       setActiveRun(null);
@@ -62,20 +62,19 @@ export function AgentChatTab({ agent, companyId }: { agent: Agent; companyId: st
 
     let cancelled = false;
 
-    const pollRun = async () => {
+    const pollChatProcess = async () => {
       try {
-        const runs = await heartbeatsApi.list(companyId, agent.id, 1);
+        const proc = await agentsApi.chatProcess(agent.id, companyId);
         if (cancelled) return;
-        const latest = runs[0];
-        if (latest && (latest.status === "queued" || latest.status === "running")) {
+        if (proc && proc.status === "running") {
           setActiveRun({
-            id: latest.id,
-            status: latest.status,
-            invocationSource: latest.invocationSource ?? "on_demand",
-            triggerDetail: latest.triggerDetail ?? null,
-            startedAt: latest.startedAt ?? null,
-            finishedAt: latest.finishedAt ?? null,
-            createdAt: latest.createdAt,
+            id: proc.id,
+            status: "running",
+            invocationSource: "on_demand",
+            triggerDetail: null,
+            startedAt: proc.startedAt,
+            finishedAt: null,
+            createdAt: proc.startedAt,
             agentId: agent.id,
             agentName: agent.name,
             adapterType: agent.adapterType,
@@ -86,8 +85,8 @@ export function AgentChatTab({ agent, companyId }: { agent: Agent; companyId: st
       }
     };
 
-    void pollRun();
-    const interval = setInterval(pollRun, 3000);
+    void pollChatProcess();
+    const interval = setInterval(pollChatProcess, 3000);
     return () => {
       cancelled = true;
       clearInterval(interval);
