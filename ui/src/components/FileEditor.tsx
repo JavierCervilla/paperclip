@@ -1,14 +1,21 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import CodeMirror from "@uiw/react-codemirror";
 import { javascript } from "@codemirror/lang-javascript";
 import { json } from "@codemirror/lang-json";
 import { markdown } from "@codemirror/lang-markdown";
+import { Table } from "@lezer/markdown";
+import { EditorView } from "@codemirror/view";
 import { useTheme } from "../context/ThemeContext";
 import { cn } from "../lib/utils";
+import { MarkdownBody } from "./MarkdownBody";
+
+/** Return the lowercase file extension for a filename. */
+function getFileExt(filename: string): string | undefined {
+  return filename.split(".").pop()?.toLowerCase();
+}
 
 /** Map file extensions to CodeMirror language extensions. */
-function getLanguageExtension(filename: string) {
-  const ext = filename.split(".").pop()?.toLowerCase();
+function getLanguageExtension(ext: string | undefined) {
   switch (ext) {
     case "js":
     case "jsx":
@@ -20,10 +27,20 @@ function getLanguageExtension(filename: string) {
       return json();
     case "md":
     case "mdx":
-      return markdown();
+      return markdown({ extensions: [Table] });
     default:
       return null;
   }
+}
+
+/** Whether the file is a CSV (or TSV) that benefits from visual line mode. */
+function isCsvLike(ext: string | undefined): boolean {
+  return ext === "csv" || ext === "tsv";
+}
+
+/** Whether the file is a markdown file that supports preview. */
+function isMarkdown(ext: string | undefined): boolean {
+  return ext === "md" || ext === "mdx";
 }
 
 interface FileEditorProps {
@@ -47,26 +64,74 @@ export function FileEditor({
   className,
 }: FileEditorProps) {
   const { theme } = useTheme();
+  const ext = getFileExt(filename);
+  const [showPreview, setShowPreview] = useState(false);
 
   const extensions = useMemo(() => {
-    const lang = getLanguageExtension(filename);
-    return lang ? [lang] : [];
-  }, [filename]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const exts: any[] = [];
+    const lang = getLanguageExtension(ext);
+    if (lang) exts.push(lang);
+    // CSV/TSV: enable line wrapping so columns stay visible without scrolling
+    if (isCsvLike(ext)) {
+      exts.push(EditorView.lineWrapping);
+    }
+    return exts;
+  }, [ext]);
+
+  const canPreview = isMarkdown(ext);
 
   return (
     <div className={cn("overflow-hidden rounded-md border", className)}>
-      <CodeMirror
-        value={value}
-        onChange={onChange}
-        readOnly={readOnly}
-        theme={theme === "dark" ? "dark" : "light"}
-        extensions={extensions}
-        basicSetup={{
-          lineNumbers: true,
-          foldGutter: true,
-          highlightActiveLine: !readOnly,
-        }}
-      />
+      {/* Toolbar — only shown for markdown files */}
+      {canPreview && (
+        <div className="flex items-center gap-2 border-b bg-muted/40 px-3 py-1.5 text-xs">
+          <button
+            type="button"
+            className={cn(
+              "rounded px-2 py-0.5 transition-colors",
+              !showPreview
+                ? "bg-background font-medium text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+            onClick={() => setShowPreview(false)}
+          >
+            Editor
+          </button>
+          <button
+            type="button"
+            className={cn(
+              "rounded px-2 py-0.5 transition-colors",
+              showPreview
+                ? "bg-background font-medium text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+            onClick={() => setShowPreview(true)}
+          >
+            Preview
+          </button>
+        </div>
+      )}
+
+      {/* Markdown preview pane */}
+      {canPreview && showPreview ? (
+        <div className="max-h-[600px] overflow-auto p-4">
+          <MarkdownBody>{value}</MarkdownBody>
+        </div>
+      ) : (
+        <CodeMirror
+          value={value}
+          onChange={onChange}
+          readOnly={readOnly}
+          theme={theme === "dark" ? "dark" : "light"}
+          extensions={extensions}
+          basicSetup={{
+            lineNumbers: true,
+            foldGutter: true,
+            highlightActiveLine: !readOnly,
+          }}
+        />
+      )}
     </div>
   );
 }
