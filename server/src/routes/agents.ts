@@ -25,6 +25,7 @@ import {
   approvalService,
   budgetService,
   chatService,
+  chatProcessService,
   heartbeatService,
   issueApprovalService,
   issueService,
@@ -62,6 +63,7 @@ export function agentRoutes(db: Db) {
   const approvalsSvc = approvalService(db);
   const budgets = budgetService(db);
   const chat = chatService();
+  const chatProc = chatProcessService();
   const heartbeat = heartbeatService(db);
   const issueApprovalsSvc = issueApprovalService(db);
   const secretsSvc = secretService(db);
@@ -1712,27 +1714,23 @@ export function agentRoutes(db: Db) {
       content: content.trim(),
     });
 
-    // If this started a new session, wake the agent in chat mode
+    // If this started a new session, spawn an independent chat process
+    // (does NOT occupy the heartbeat run slot — agent can still process tasks)
     if (isNewSession) {
       const session = chat.getSession(id);
-      await heartbeat.wakeup(id, {
-        source: "on_demand",
-        triggerDetail: "manual",
-        reason: "chat",
-        payload: {
-          sessionId: session?.id,
+      if (session) {
+        await chatProc.spawnChatProcess({
+          agent: {
+            id: agent.id,
+            companyId: agent.companyId,
+            name: agent.name,
+            adapterType: agent.adapterType,
+            adapterConfig: agent.adapterConfig as Record<string, unknown>,
+          },
+          sessionId: session.id,
           initialMessage: content.trim(),
-        },
-        idempotencyKey: `chat-${session?.id}`,
-        requestedByActorType: "user",
-        requestedByActorId: userId,
-        contextSnapshot: {
-          triggeredBy: "user",
-          actorId: userId,
-          wakeReason: "chat",
-          chatSessionId: session?.id,
-        },
-      });
+        });
+      }
     }
 
     res.status(201).json(msg);
@@ -1827,6 +1825,9 @@ export function agentRoutes(db: Db) {
     assertCompanyAccess(req, agent.companyId);
     assertBoard(req);
 
+    // Kill the chat process when ending the session
+    chatProc.killProcess(id);
+
     const ended = chat.endSession(id);
     if (!ended) {
       res.status(404).json({ error: "No active chat session for this agent" });
@@ -1834,6 +1835,24 @@ export function agentRoutes(db: Db) {
     }
 
     res.json({ ok: true });
+  });
+
+  /**
+   * GET /agents/:id/chat-process
+   * Get the active chat process metadata for an agent.
+   * Used by the UI to show thinking/transcript for chat sessions.
+   */
+  router.get("/agents/:id/chat-process", async (req, res) => {
+    const id = req.params.id as string;
+    const agent = await svc.getById(id);
+    if (!agent) {
+      res.status(404).json({ error: "Agent not found" });
+      return;
+    }
+    assertCompanyAccess(req, agent.companyId);
+
+    const proc = chatProc.getProcess(id);
+    res.json(proc);
   });
 
   return router;
