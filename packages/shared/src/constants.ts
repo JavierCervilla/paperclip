@@ -286,6 +286,10 @@ export const LIVE_EVENT_TYPES = [
   "plugin.ui.updated",
   "plugin.worker.crashed",
   "plugin.worker.restarted",
+  "chat.session.started",
+  "chat.session.ended",
+  "chat.message.sent",
+  "chat.message.received",
 ] as const;
 export type LiveEventType = (typeof LIVE_EVENT_TYPES)[number];
 

@@ -14,6 +14,7 @@ import { useCompany } from "../context/CompanyContext";
 import { useDialog } from "../context/DialogContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
+import { AgentChatTab } from "../components/AgentChatTab";
 import { AgentConfigForm } from "../components/AgentConfigForm";
 import { PageTabBar } from "../components/PageTabBar";
 import { adapterLabels, roleLabels } from "../components/agent-config-primitives";
@@ -187,13 +188,14 @@ function scrollToContainerBottom(container: ScrollContainer, behavior: ScrollBeh
   container.scrollTo({ top: container.scrollHeight, behavior });
 }
 
-type AgentDetailView = "dashboard" | "configuration" | "skills" | "runs" | "budget";
+type AgentDetailView = "dashboard" | "configuration" | "skills" | "runs" | "budget" | "chat";
 
 function parseAgentDetailView(value: string | null): AgentDetailView {
   if (value === "configure" || value === "configuration") return "configuration";
   if (value === "skills") return value;
   if (value === "budget") return value;
   if (value === "runs") return value;
+  if (value === "chat") return value;
   return "dashboard";
 }
 
@@ -707,6 +709,8 @@ export function AgentDetail() {
         crumbs.push({ label: "Runs" });
       } else if (activeView === "budget") {
         crumbs.push({ label: "Budget" });
+      } else if (activeView === "chat") {
+        crumbs.push({ label: "Chat" });
       } else {
         crumbs.push({ label: "Dashboard" });
       }
@@ -865,6 +869,7 @@ export function AgentDetail() {
               // { value: "skills", label: "Skills" }, // TODO: bring back later
               { value: "runs", label: "Runs" },
               { value: "budget", label: "Budget" },
+              { value: "chat", label: "Chat" },
             ]}
             value={activeView}
             onValueChange={(value) => navigate(`/agents/${canonicalAgentRef}/${value}`)}
@@ -982,6 +987,10 @@ export function AgentDetail() {
           />
         </div>
       ) : null}
+
+      {activeView === "chat" && resolvedCompanyId && (
+        <AgentChatTab agent={agent} companyId={resolvedCompanyId} />
+      )}
     </div>
   );
 }

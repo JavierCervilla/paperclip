@@ -146,6 +146,16 @@ export const agentsApi = {
     api.post<ClaudeLoginResult>(agentPath(id, companyId, "/claude-login"), {}),
   availableSkills: () =>
     api.get<{ skills: AvailableSkill[] }>("/skills/available"),
+
+  // ── Agent Direct Chat ──────────────────────────────────────────
+  sendChatMessage: (id: string, content: string, companyId?: string) =>
+    api.post<unknown>(agentPath(id, companyId, "/chat-messages"), { content }),
+  chatMessages: (id: string, after?: string, companyId?: string) =>
+    api.get<unknown>(agentPath(id, companyId, `/chat-messages${after ? `?after=${encodeURIComponent(after)}` : ""}`)),
+  chatSession: (id: string, companyId?: string) =>
+    api.get<unknown>(agentPath(id, companyId, "/chat-session")),
+  endChatSession: (id: string, companyId?: string) =>
+    api.delete<{ ok: true }>(agentPath(id, companyId, "/chat-session")),
 };
 
 export interface AvailableSkill {
