@@ -16,11 +16,32 @@ services:
       timeout: 5s
       retries: 5
 
+  openclaw:
+    image: ghcr.io/openclaw/openclaw:latest
+    restart: unless-stopped
+    environment:
+      OPENCLAW_GATEWAY_BIND: "0.0.0.0"
+      OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN}
+    volumes:
+      - openclaw-config:/home/node/.openclaw
+    networks:
+      - dokploy-network
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:18789/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
   paperclip:
-    image: reeoss/paperclipai-paperclip:latest
+    build:
+      context: ..
+      dockerfile: Dockerfile
     restart: unless-stopped
     depends_on:
       db:
+        condition: service_healthy
+      openclaw:
         condition: service_healthy
     environment:
       PORT: "3100"
@@ -31,16 +52,17 @@ services:
       PAPERCLIP_PUBLIC_URL: "https://${PAPERCLIP_DOMAIN}"
       PAPERCLIP_ALLOWED_HOSTNAMES: "${PAPERCLIP_DOMAIN}"
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
     networks:
       - dokploy-network
     volumes:
       - paperclip-data:/paperclip
+      - claude-auth:/paperclip/.claude
 
 volumes:
   paperclip-db:
   paperclip-data:
+  openclaw-config:
+  claude-auth:
 
 networks:
   dokploy-network:
