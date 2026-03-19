@@ -37,6 +37,8 @@ FROM base AS production
 WORKDIR /app
 COPY --chown=node:node --from=build /app /app
 RUN npm install --global --omit=dev @anthropic-ai/claude-code@latest @openai/codex@latest opencode-ai \
+  && curl -fsSL https://deno.land/install.sh | sh -s -- --no-modify-path \
+  && mv /root/.deno/bin/deno /usr/local/bin/deno \
   && mkdir -p /paperclip \
   && chown node:node /paperclip
 
