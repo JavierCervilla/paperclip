@@ -64,7 +64,7 @@ export function agentRoutes(db: Db) {
   const approvalsSvc = approvalService(db);
   const budgets = budgetService(db);
   const assetsSvc = assetService(db);
-  const chat = chatService();
+  const chat = chatService(db);
   const chatProc = chatProcessService();
   const heartbeat = heartbeatService(db);
   const issueApprovalsSvc = issueApprovalService(db);
@@ -1681,6 +1681,56 @@ export function agentRoutes(db: Db) {
       agentName: agent.name,
       adapterType: agent.adapterType,
     });
+  });
+
+  // ── Agent Chat History ────────────────────────────────────────────
+
+  /**
+   * GET /agents/:id/chat-history
+   * Paginated list of past chat sessions for an agent.
+   */
+  router.get("/agents/:id/chat-history", async (req, res) => {
+    const id = req.params.id as string;
+    const agent = await svc.getById(id);
+    if (!agent) {
+      res.status(404).json({ error: "Agent not found" });
+      return;
+    }
+    assertCompanyAccess(req, agent.companyId);
+    assertBoard(req);
+
+    const limit = Math.min(parseInt(req.query.limit as string) || 20, 50);
+    const before = (req.query.before as string) || undefined;
+
+    const sessions = await chat.getHistory(id, { limit, before });
+    res.json({ sessions });
+  });
+
+  /**
+   * GET /agents/:id/chat-history/:sessionId
+   * Full message thread for a past chat session.
+   */
+  router.get("/agents/:id/chat-history/:sessionId", async (req, res) => {
+    const id = req.params.id as string;
+    const sessionId = req.params.sessionId as string;
+
+    const agent = await svc.getById(id);
+    if (!agent) {
+      res.status(404).json({ error: "Agent not found" });
+      return;
+    }
+    assertCompanyAccess(req, agent.companyId);
+    assertBoard(req);
+
+    // Verify the session belongs to this agent
+    const session = await chat.getSessionById(sessionId);
+    if (!session || session.agentId !== id) {
+      res.status(404).json({ error: "Chat session not found" });
+      return;
+    }
+
+    const messages = await chat.getSessionMessages(sessionId);
+    res.json({ messages });
   });
 
   // ── Agent Direct Chat ──────────────────────────────────────────────

@@ -161,6 +161,17 @@ export const agentsApi = {
     api.delete<{ ok: true }>(agentPath(id, companyId, "/chat-session")),
   chatProcess: (id: string, companyId?: string) =>
     api.get<ChatProcessInfo | null>(agentPath(id, companyId, "/chat-process")),
+
+  // ── Chat History ──────────────────────────────────────────────
+  chatHistory: (id: string, companyId?: string, opts?: { limit?: number; before?: string }) => {
+    const params = new URLSearchParams();
+    if (opts?.limit) params.set("limit", String(opts.limit));
+    if (opts?.before) params.set("before", opts.before);
+    const qs = params.toString();
+    return api.get<{ sessions: ChatHistorySession[] }>(agentPath(id, companyId, `/chat-history${qs ? `?${qs}` : ""}`));
+  },
+  chatHistoryMessages: (id: string, sessionId: string, companyId?: string) =>
+    api.get<{ messages: ChatHistoryMessage[] }>(agentPath(id, companyId, `/chat-history/${encodeURIComponent(sessionId)}`)),
 };
 
 export interface ChatProcessInfo {
@@ -172,6 +183,27 @@ export interface ChatProcessInfo {
   startedAt: string;
   status: "running" | "exited";
   exitCode: number | null;
+}
+
+export interface ChatHistorySession {
+  id: string;
+  agentId: string;
+  companyId: string;
+  startedByUserId: string;
+  messageCount: number;
+  startedAt: string;
+  endedAt: string | null;
+  firstMessagePreview: string | null;
+}
+
+export interface ChatHistoryMessage {
+  id: string;
+  sessionId: string;
+  agentId: string;
+  sender: "user" | "agent";
+  content: string;
+  attachments?: { assetId: string; contentPath: string; contentType: string; originalFilename: string | null }[];
+  createdAt: string;
 }
 
 export interface AvailableSkill {

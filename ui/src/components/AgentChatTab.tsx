@@ -1,18 +1,15 @@
 /**
- * AgentChatTab — Interactive chat UI for direct agent conversations.
- *
- * Ephemeral, session-level chat. No persistence across page refreshes.
- * Uses REST polling for message delivery and WebSocket live events
- * for real-time response streaming.
+ * AgentChatTab — Interactive chat UI for direct agent conversations
+ * with a history sidebar for browsing past sessions.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { cn } from "../lib/utils";
-import { Send, X, Loader2, MessageSquare, ChevronDown, ChevronRight, Paperclip, FileText, Download } from "lucide-react";
+import { Send, X, Loader2, MessageSquare, ChevronDown, ChevronRight, Paperclip, FileText, Download, History, ArrowLeft } from "lucide-react";
 import type { Agent, AssetImage } from "@paperclipai/shared";
-import { agentsApi } from "../api/agents";
+import { agentsApi, type ChatHistorySession, type ChatHistoryMessage } from "../api/agents";
 import { assetsApi } from "../api/assets";
 import { type LiveRunForIssue } from "../api/heartbeats";
 import { MarkdownBody } from "./MarkdownBody";
@@ -61,6 +58,18 @@ interface PendingAttachment {
 
 function isImageType(contentType: string): boolean {
   return contentType.startsWith("image/");
+}
+
+function formatSessionDate(dateStr: string): string {
+  const d = new Date(dateStr);
+  const now = new Date();
+  const diffMs = now.getTime() - d.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+  if (diffDays === 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 // ── Attachment chips (preview before sending) ─────────────────────
@@ -140,7 +149,166 @@ function MessageAttachments({ attachments, isUser }: { attachments: ChatAttachme
   );
 }
 
-// ── Component ──────────────────────────────────────────────────────
+// ── History Sidebar ───────────────────────────────────────────────
+
+function ChatHistorySidebar({
+  agent,
+  companyId,
+  activeSessionId,
+  onSelectSession,
+  viewingHistoryId,
+}: {
+  agent: Agent;
+  companyId: string;
+  activeSessionId: string | null;
+  onSelectSession: (sessionId: string) => void;
+  viewingHistoryId: string | null;
+}) {
+  const { data, isLoading } = useQuery({
+    queryKey: ["chat-history", agent.id, companyId],
+    queryFn: () => agentsApi.chatHistory(agent.id, companyId, { limit: 30 }),
+    refetchInterval: 30000,
+  });
+
+  const sessions = data?.sessions ?? [];
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-border text-xs font-medium text-muted-foreground">
+        <History className="h-3.5 w-3.5" />
+        <span>Chat History</span>
+      </div>
+
+      <div className="flex-1 overflow-y-auto">
+        {isLoading && (
+          <div className="flex items-center justify-center py-8 text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+          </div>
+        )}
+
+        {!isLoading && sessions.length === 0 && (
+          <div className="px-3 py-6 text-xs text-muted-foreground text-center">
+            No past sessions
+          </div>
+        )}
+
+        {/* Active session indicator */}
+        {activeSessionId && (
+          <button
+            type="button"
+            className={cn(
+              "w-full text-left px-3 py-2 border-b border-border hover:bg-muted/50 transition-colors",
+              !viewingHistoryId && "bg-muted/70",
+            )}
+            onClick={() => onSelectSession("")}
+          >
+            <div className="flex items-center gap-1.5 text-xs">
+              <span className="h-1.5 w-1.5 rounded-full bg-green-500 flex-shrink-0" />
+              <span className="font-medium text-foreground truncate">Active session</span>
+            </div>
+          </button>
+        )}
+
+        {sessions.map((session) => (
+          <button
+            key={session.id}
+            type="button"
+            className={cn(
+              "w-full text-left px-3 py-2 border-b border-border/50 hover:bg-muted/50 transition-colors",
+              viewingHistoryId === session.id && "bg-muted/70",
+            )}
+            onClick={() => onSelectSession(session.id)}
+          >
+            <div className="text-[11px] text-muted-foreground mb-0.5">
+              {formatSessionDate(session.startedAt)}
+              <span className="mx-1">&middot;</span>
+              {session.messageCount} msg{session.messageCount !== 1 ? "s" : ""}
+            </div>
+            {session.firstMessagePreview && (
+              <p className="text-xs text-foreground/80 truncate">
+                {session.firstMessagePreview}
+              </p>
+            )}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── History Viewer (read-only past session) ───────────────────────
+
+function ChatHistoryViewer({
+  agent,
+  companyId,
+  sessionId,
+  onBack,
+}: {
+  agent: Agent;
+  companyId: string;
+  sessionId: string;
+  onBack: () => void;
+}) {
+  const { data, isLoading } = useQuery({
+    queryKey: ["chat-history-messages", agent.id, sessionId],
+    queryFn: () => agentsApi.chatHistoryMessages(agent.id, sessionId, companyId),
+  });
+
+  const messages = data?.messages ?? [];
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Header */}
+      <div className="flex items-center gap-2 pb-3 border-b border-border">
+        <Button variant="ghost" size="sm" onClick={onBack} className="h-7 px-2">
+          <ArrowLeft className="h-3.5 w-3.5" />
+        </Button>
+        <span className="text-sm text-muted-foreground">
+          Past session &middot; {messages.length} message{messages.length !== 1 ? "s" : ""}
+        </span>
+      </div>
+
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto py-4 space-y-3">
+        {isLoading && (
+          <div className="flex items-center justify-center py-8 text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+          </div>
+        )}
+
+        {messages.map((msg) => (
+          <div
+            key={msg.id}
+            className={cn("flex", msg.sender === "user" ? "justify-end" : "justify-start")}
+          >
+            <div
+              className={cn(
+                "max-w-[80%] rounded-lg px-3 py-2 text-sm",
+                msg.sender === "user"
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-muted text-foreground",
+              )}
+            >
+              {msg.sender === "agent" ? (
+                <MarkdownBody className="text-sm">{msg.content}</MarkdownBody>
+              ) : (
+                <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+              )}
+              {msg.attachments && msg.attachments.length > 0 && (
+                <MessageAttachments attachments={msg.attachments} isUser={msg.sender === "user"} />
+              )}
+              <span className="block text-[10px] opacity-50 mt-1">
+                {new Date(msg.createdAt).toLocaleTimeString()}
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Main Component ────────────────────────────────────────────────
 
 export function AgentChatTab({ agent, companyId }: { agent: Agent; companyId: string }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -151,6 +319,7 @@ export function AgentChatTab({ agent, companyId }: { agent: Agent; companyId: st
   const [activeRun, setActiveRun] = useState<LiveRunForIssue | null>(null);
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const [uploadingCount, setUploadingCount] = useState(0);
+  const [viewingHistoryId, setViewingHistoryId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -474,187 +643,224 @@ export function AgentChatTab({ agent, companyId }: { agent: Agent; companyId: st
     });
   }, []);
 
+  const handleSelectHistorySession = useCallback((id: string) => {
+    if (id === "") {
+      // Back to active session
+      setViewingHistoryId(null);
+    } else {
+      setViewingHistoryId(id);
+    }
+  }, []);
+
+  // If viewing a past session, render the read-only history viewer
+  const showHistoryViewer = viewingHistoryId !== null;
+
   return (
-    <div className="flex flex-col h-[calc(100vh-12rem)] max-w-3xl">
-      {/* Header */}
-      <div className="flex items-center justify-between pb-3 border-b border-border">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <MessageSquare className="h-4 w-4" />
-          <span>
-            {sessionId ? "Chat session active" : "Start a conversation"}
-          </span>
-        </div>
-        {sessionId && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => endMutation.mutate()}
-            disabled={endMutation.isPending}
-            className="text-xs text-muted-foreground"
-          >
-            <X className="h-3 w-3 mr-1" />
-            End session
-          </Button>
-        )}
-      </div>
-
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto py-4 space-y-3">
-        {messages.length === 0 && !sessionId && (
-          <div className="flex flex-col items-center justify-center h-full text-muted-foreground text-sm">
-            <MessageSquare className="h-8 w-8 mb-3 opacity-40" />
-            <p>Send a message to start chatting with {agent.name}.</p>
-            <p className="text-xs mt-1 opacity-70">
-              The session is ephemeral — messages are not persisted.
-            </p>
-          </div>
-        )}
-
-        {messages.map((msg) => (
-          <div
-            key={msg.id}
-            className={cn(
-              "flex",
-              msg.sender === "user" ? "justify-end" : "justify-start",
-            )}
-          >
-            <div
-              className={cn(
-                "max-w-[80%] rounded-lg px-3 py-2 text-sm",
-                msg.sender === "user"
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-muted text-foreground",
+    <div className="flex h-[calc(100vh-12rem)] gap-0">
+      {/* Main chat area */}
+      <div className="flex-1 flex flex-col min-w-0 max-w-3xl">
+        {showHistoryViewer ? (
+          <ChatHistoryViewer
+            agent={agent}
+            companyId={companyId}
+            sessionId={viewingHistoryId}
+            onBack={() => setViewingHistoryId(null)}
+          />
+        ) : (
+          <>
+            {/* Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-border">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <MessageSquare className="h-4 w-4" />
+                <span>
+                  {sessionId ? "Chat session active" : "Start a conversation"}
+                </span>
+              </div>
+              {sessionId && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => endMutation.mutate()}
+                  disabled={endMutation.isPending}
+                  className="text-xs text-muted-foreground"
+                >
+                  <X className="h-3 w-3 mr-1" />
+                  End session
+                </Button>
               )}
-            >
-              {msg.sender === "agent" ? (
-                <MarkdownBody className="text-sm">{msg.content}</MarkdownBody>
-              ) : (
-                <p className="whitespace-pre-wrap break-words">{msg.content}</p>
-              )}
-              {msg.attachments && msg.attachments.length > 0 && (
-                <MessageAttachments attachments={msg.attachments} isUser={msg.sender === "user"} />
-              )}
-              <span className="block text-[10px] opacity-50 mt-1">
-                {new Date(msg.createdAt).toLocaleTimeString()}
-              </span>
             </div>
-          </div>
-        ))}
 
-        {isTyping && (
-          <div className="flex justify-start">
-            <div className="max-w-[80%] bg-muted rounded-lg text-sm text-muted-foreground">
-              <button
-                type="button"
-                onClick={() => setThinkingOpen((o) => !o)}
-                className="flex items-center gap-1.5 px-3 py-2 w-full text-left hover:bg-muted/80 rounded-lg transition-colors"
-              >
-                <Loader2 className="h-3 w-3 animate-spin flex-shrink-0" />
-                <span className="flex-1">{agent.name} is thinking...</span>
-                {transcript.length > 0 && (
-                  thinkingOpen
-                    ? <ChevronDown className="h-3 w-3 flex-shrink-0" />
-                    : <ChevronRight className="h-3 w-3 flex-shrink-0" />
-                )}
-              </button>
-              {thinkingOpen && transcript.length > 0 && (
-                <div className="px-3 pb-2 max-h-[300px] overflow-y-auto border-t border-border/50">
-                  <RunTranscriptView
-                    entries={transcript}
-                    density="compact"
-                    streaming
-                    collapseStdout
-                    thinkingClassName="!text-[10px] !leading-4"
-                    emptyMessage=""
-                  />
+            {/* Messages */}
+            <div className="flex-1 overflow-y-auto py-4 space-y-3">
+              {messages.length === 0 && !sessionId && (
+                <div className="flex flex-col items-center justify-center h-full text-muted-foreground text-sm">
+                  <MessageSquare className="h-8 w-8 mb-3 opacity-40" />
+                  <p>Send a message to start chatting with {agent.name}.</p>
+                  <p className="text-xs mt-1 opacity-70">
+                    Chat sessions are saved to history automatically.
+                  </p>
                 </div>
               )}
-            </div>
-          </div>
-        )}
 
-        <div ref={messagesEndRef} />
+              {messages.map((msg) => (
+                <div
+                  key={msg.id}
+                  className={cn(
+                    "flex",
+                    msg.sender === "user" ? "justify-end" : "justify-start",
+                  )}
+                >
+                  <div
+                    className={cn(
+                      "max-w-[80%] rounded-lg px-3 py-2 text-sm",
+                      msg.sender === "user"
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-muted text-foreground",
+                    )}
+                  >
+                    {msg.sender === "agent" ? (
+                      <MarkdownBody className="text-sm">{msg.content}</MarkdownBody>
+                    ) : (
+                      <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+                    )}
+                    {msg.attachments && msg.attachments.length > 0 && (
+                      <MessageAttachments attachments={msg.attachments} isUser={msg.sender === "user"} />
+                    )}
+                    <span className="block text-[10px] opacity-50 mt-1">
+                      {new Date(msg.createdAt).toLocaleTimeString()}
+                    </span>
+                  </div>
+                </div>
+              ))}
+
+              {isTyping && (
+                <div className="flex justify-start">
+                  <div className="max-w-[80%] bg-muted rounded-lg text-sm text-muted-foreground">
+                    <button
+                      type="button"
+                      onClick={() => setThinkingOpen((o) => !o)}
+                      className="flex items-center gap-1.5 px-3 py-2 w-full text-left hover:bg-muted/80 rounded-lg transition-colors"
+                    >
+                      <Loader2 className="h-3 w-3 animate-spin flex-shrink-0" />
+                      <span className="flex-1">{agent.name} is thinking...</span>
+                      {transcript.length > 0 && (
+                        thinkingOpen
+                          ? <ChevronDown className="h-3 w-3 flex-shrink-0" />
+                          : <ChevronRight className="h-3 w-3 flex-shrink-0" />
+                      )}
+                    </button>
+                    {thinkingOpen && transcript.length > 0 && (
+                      <div className="px-3 pb-2 max-h-[300px] overflow-y-auto border-t border-border/50">
+                        <RunTranscriptView
+                          entries={transcript}
+                          density="compact"
+                          streaming
+                          collapseStdout
+                          thinkingClassName="!text-[10px] !leading-4"
+                          emptyMessage=""
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <div ref={messagesEndRef} />
+            </div>
+
+            {/* Input */}
+            <div className="border-t border-border pt-3">
+              {/* Pending attachment previews */}
+              {(pendingAttachments.length > 0 || uploadingCount > 0) && (
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {pendingAttachments.map((att, idx) => (
+                    <PendingAttachmentChip
+                      key={att.assetId}
+                      att={att}
+                      onRemove={() => removePendingAttachment(idx)}
+                    />
+                  ))}
+                  {uploadingCount > 0 && (
+                    <div className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted/50 px-2 py-1 text-xs text-muted-foreground">
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      Uploading...
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="flex items-end gap-2">
+                {/* Hidden file input */}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  className="hidden"
+                  onChange={handleFileSelect}
+                />
+                {/* Attach button */}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-[38px] px-2 text-muted-foreground hover:text-foreground"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploadingCount > 0}
+                >
+                  <Paperclip className="h-4 w-4" />
+                </Button>
+                <textarea
+                  ref={inputRef}
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  onPaste={handlePaste}
+                  placeholder={`Message ${agent.name}...`}
+                  rows={1}
+                  className={cn(
+                    "flex-1 resize-none rounded-lg border border-input bg-background px-3 py-2 text-sm",
+                    "placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+                    "min-h-[38px] max-h-[120px]",
+                  )}
+                  style={{ height: "auto" }}
+                  onInput={(e) => {
+                    const target = e.target as HTMLTextAreaElement;
+                    target.style.height = "auto";
+                    target.style.height = `${Math.min(target.scrollHeight, 120)}px`;
+                  }}
+                />
+                <Button
+                  size="sm"
+                  onClick={handleSend}
+                  disabled={(!input.trim() && pendingAttachments.length === 0) || sendMutation.isPending}
+                  className="h-[38px] px-3"
+                >
+                  {sendMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Send className="h-4 w-4" />
+                  )}
+                </Button>
+              </div>
+              {sendMutation.isError && (
+                <p className="text-xs text-destructive mt-1">
+                  Failed to send message. Try again.
+                </p>
+              )}
+            </div>
+          </>
+        )}
       </div>
 
-      {/* Input */}
-      <div className="border-t border-border pt-3">
-        {/* Pending attachment previews */}
-        {(pendingAttachments.length > 0 || uploadingCount > 0) && (
-          <div className="flex flex-wrap gap-1.5 mb-2">
-            {pendingAttachments.map((att, idx) => (
-              <PendingAttachmentChip
-                key={att.assetId}
-                att={att}
-                onRemove={() => removePendingAttachment(idx)}
-              />
-            ))}
-            {uploadingCount > 0 && (
-              <div className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted/50 px-2 py-1 text-xs text-muted-foreground">
-                <Loader2 className="h-3 w-3 animate-spin" />
-                Uploading...
-              </div>
-            )}
-          </div>
-        )}
-
-        <div className="flex items-end gap-2">
-          {/* Hidden file input */}
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            className="hidden"
-            onChange={handleFileSelect}
-          />
-          {/* Attach button */}
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-[38px] px-2 text-muted-foreground hover:text-foreground"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploadingCount > 0}
-          >
-            <Paperclip className="h-4 w-4" />
-          </Button>
-          <textarea
-            ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            onPaste={handlePaste}
-            placeholder={`Message ${agent.name}...`}
-            rows={1}
-            className={cn(
-              "flex-1 resize-none rounded-lg border border-input bg-background px-3 py-2 text-sm",
-              "placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-              "min-h-[38px] max-h-[120px]",
-            )}
-            style={{ height: "auto" }}
-            onInput={(e) => {
-              const target = e.target as HTMLTextAreaElement;
-              target.style.height = "auto";
-              target.style.height = `${Math.min(target.scrollHeight, 120)}px`;
-            }}
-          />
-          <Button
-            size="sm"
-            onClick={handleSend}
-            disabled={(!input.trim() && pendingAttachments.length === 0) || sendMutation.isPending}
-            className="h-[38px] px-3"
-          >
-            {sendMutation.isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Send className="h-4 w-4" />
-            )}
-          </Button>
-        </div>
-        {sendMutation.isError && (
-          <p className="text-xs text-destructive mt-1">
-            Failed to send message. Try again.
-          </p>
-        )}
+      {/* History sidebar — hidden on narrow screens */}
+      <div className="hidden lg:flex w-64 flex-shrink-0 border-l border-border ml-4">
+        <ChatHistorySidebar
+          agent={agent}
+          companyId={companyId}
+          activeSessionId={sessionId}
+          onSelectSession={handleSelectHistorySession}
+          viewingHistoryId={viewingHistoryId}
+        />
       </div>
     </div>
   );

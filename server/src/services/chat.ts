@@ -1,12 +1,16 @@
 /**
- * In-memory agent direct chat service.
+ * Agent direct chat service with database persistence.
  *
- * Manages ephemeral chat sessions between board users and agents.
- * No database persistence — sessions live only in memory and are
- * cleaned up on idle timeout or server restart.
+ * Manages chat sessions between board users and agents.
+ * Active sessions are cached in memory for performance;
+ * all sessions and messages are persisted to the database
+ * for history browsing.
  */
 
 import { randomUUID } from "node:crypto";
+import type { Db } from "@paperclipai/db";
+import { chatSessions, chatMessages } from "@paperclipai/db";
+import { eq, desc, asc, gt, sql } from "drizzle-orm";
 import { publishLiveEvent } from "./live-events.js";
 
 // ── Types ──────────────────────────────────────────────────────────
@@ -41,6 +45,17 @@ export interface ChatSession {
   idleTimer: ReturnType<typeof setTimeout> | null;
 }
 
+export interface ChatSessionSummary {
+  id: string;
+  agentId: string;
+  companyId: string;
+  startedByUserId: string;
+  messageCount: number;
+  startedAt: string;
+  endedAt: string | null;
+  firstMessagePreview: string | null;
+}
+
 // ── Constants ──────────────────────────────────────────────────────
 
 const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
@@ -63,7 +78,7 @@ function now() {
 
 // ── Service ────────────────────────────────────────────────────────
 
-export function chatService() {
+export function chatService(db?: Db) {
   /**
    * Start a new chat session for an agent.
    * Enforces one active session per agent.
@@ -77,13 +92,16 @@ export function chatService() {
     const existing = sessions.get(opts.agentId);
     if (existing) return existing;
 
+    const sessionId = randomUUID();
+    const startedAt = now();
+
     const session: ChatSession = {
-      id: randomUUID(),
+      id: sessionId,
       agentId: opts.agentId,
       companyId: opts.companyId,
       startedByUserId: opts.userId,
-      startedAt: now(),
-      lastActivityAt: now(),
+      startedAt,
+      lastActivityAt: startedAt,
       messages: [],
       idleTimer: null,
     };
@@ -91,6 +109,20 @@ export function chatService() {
     sessions.set(opts.agentId, session);
 
     resetIdleTimer(session, () => endSession(opts.agentId));
+
+    // Persist session to DB (async, non-blocking)
+    if (db) {
+      db.insert(chatSessions)
+        .values({
+          id: sessionId,
+          agentId: opts.agentId,
+          companyId: opts.companyId,
+          startedByUserId: opts.userId,
+          startedAt: new Date(startedAt),
+        })
+        .execute()
+        .catch((err) => console.error("[chat] Failed to persist session:", err));
+    }
 
     publishLiveEvent({
       companyId: opts.companyId,
@@ -114,6 +146,18 @@ export function chatService() {
 
     if (session.idleTimer) clearTimeout(session.idleTimer);
     sessions.delete(agentId);
+
+    // Persist session end to DB (async, non-blocking)
+    if (db) {
+      db.update(chatSessions)
+        .set({
+          endedAt: new Date(),
+          messageCount: session.messages.length,
+        })
+        .where(eq(chatSessions.id, session.id))
+        .execute()
+        .catch((err) => console.error("[chat] Failed to persist session end:", err));
+    }
 
     publishLiveEvent({
       companyId: session.companyId,
@@ -170,6 +214,29 @@ export function chatService() {
 
     resetIdleTimer(session, () => endSession(opts.agentId));
 
+    // Persist message to DB (async, non-blocking)
+    if (db) {
+      db.insert(chatMessages)
+        .values({
+          id: msg.id,
+          sessionId: session.id,
+          agentId: opts.agentId,
+          sender: "user",
+          content: opts.content,
+          attachments: opts.attachments?.length ? opts.attachments : null,
+          createdAt: new Date(msg.createdAt),
+        })
+        .execute()
+        .then(() => {
+          // Update message count
+          return db.update(chatSessions)
+            .set({ messageCount: session!.messages.length })
+            .where(eq(chatSessions.id, session!.id))
+            .execute();
+        })
+        .catch((err) => console.error("[chat] Failed to persist message:", err));
+    }
+
     publishLiveEvent({
       companyId: opts.companyId,
       type: "chat.message.sent" as any,
@@ -210,6 +277,28 @@ export function chatService() {
 
     resetIdleTimer(session, () => endSession(opts.agentId));
 
+    // Persist message to DB (async, non-blocking)
+    if (db) {
+      db.insert(chatMessages)
+        .values({
+          id: msg.id,
+          sessionId: session.id,
+          agentId: opts.agentId,
+          sender: "agent",
+          content: opts.content,
+          attachments: null,
+          createdAt: new Date(msg.createdAt),
+        })
+        .execute()
+        .then(() => {
+          return db.update(chatSessions)
+            .set({ messageCount: session!.messages.length })
+            .where(eq(chatSessions.id, session!.id))
+            .execute();
+        })
+        .catch((err) => console.error("[chat] Failed to persist response:", err));
+    }
+
     publishLiveEvent({
       companyId: session.companyId,
       type: "chat.message.received" as any,
@@ -241,6 +330,96 @@ export function chatService() {
     return session.messages.slice(idx + 1);
   }
 
+  /**
+   * Get paginated list of past chat sessions for an agent.
+   */
+  async function getHistory(agentId: string, opts?: { limit?: number; before?: string }): Promise<ChatSessionSummary[]> {
+    if (!db) return [];
+
+    const limit = opts?.limit ?? 20;
+
+    const rows = await db
+      .select({
+        id: chatSessions.id,
+        agentId: chatSessions.agentId,
+        companyId: chatSessions.companyId,
+        startedByUserId: chatSessions.startedByUserId,
+        messageCount: chatSessions.messageCount,
+        startedAt: chatSessions.startedAt,
+        endedAt: chatSessions.endedAt,
+      })
+      .from(chatSessions)
+      .where(
+        opts?.before
+          ? sql`${chatSessions.agentId} = ${agentId} AND ${chatSessions.startedAt} < ${opts.before}`
+          : eq(chatSessions.agentId, agentId),
+      )
+      .orderBy(desc(chatSessions.startedAt))
+      .limit(limit);
+
+    // Fetch first message preview for each session
+    const summaries: ChatSessionSummary[] = [];
+    for (const row of rows) {
+      const firstMsg = await db
+        .select({ content: chatMessages.content, sender: chatMessages.sender })
+        .from(chatMessages)
+        .where(eq(chatMessages.sessionId, row.id))
+        .orderBy(asc(chatMessages.createdAt))
+        .limit(1);
+
+      summaries.push({
+        id: row.id,
+        agentId: row.agentId,
+        companyId: row.companyId,
+        startedByUserId: row.startedByUserId,
+        messageCount: row.messageCount,
+        startedAt: row.startedAt.toISOString(),
+        endedAt: row.endedAt?.toISOString() ?? null,
+        firstMessagePreview: firstMsg[0]?.content.slice(0, 120) ?? null,
+      });
+    }
+
+    return summaries;
+  }
+
+  /**
+   * Get full message thread for a past chat session.
+   */
+  async function getSessionMessages(sessionId: string): Promise<ChatMessage[]> {
+    if (!db) return [];
+
+    const rows = await db
+      .select()
+      .from(chatMessages)
+      .where(eq(chatMessages.sessionId, sessionId))
+      .orderBy(asc(chatMessages.createdAt));
+
+    return rows.map((r) => ({
+      id: r.id,
+      sessionId: r.sessionId,
+      agentId: r.agentId,
+      sender: r.sender as "user" | "agent",
+      content: r.content,
+      ...(r.attachments ? { attachments: r.attachments as ChatAttachment[] } : {}),
+      createdAt: r.createdAt.toISOString(),
+    }));
+  }
+
+  /**
+   * Get a specific past session by ID.
+   */
+  async function getSessionById(sessionId: string): Promise<{ id: string; agentId: string; companyId: string } | null> {
+    if (!db) return null;
+
+    const rows = await db
+      .select({ id: chatSessions.id, agentId: chatSessions.agentId, companyId: chatSessions.companyId })
+      .from(chatSessions)
+      .where(eq(chatSessions.id, sessionId))
+      .limit(1);
+
+    return rows[0] ?? null;
+  }
+
   return {
     startSession,
     endSession,
@@ -248,5 +427,8 @@ export function chatService() {
     sendMessage,
     sendResponse,
     getMessagesSince,
+    getHistory,
+    getSessionMessages,
+    getSessionById,
   };
 }
