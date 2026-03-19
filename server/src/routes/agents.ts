@@ -24,6 +24,7 @@ import {
   accessService,
   approvalService,
   budgetService,
+  chatService,
   heartbeatService,
   issueApprovalService,
   issueService,
@@ -60,6 +61,7 @@ export function agentRoutes(db: Db) {
   const access = accessService(db);
   const approvalsSvc = approvalService(db);
   const budgets = budgetService(db);
+  const chat = chatService();
   const heartbeat = heartbeatService(db);
   const issueApprovalsSvc = issueApprovalService(db);
   const secretsSvc = secretService(db);
@@ -1675,6 +1677,163 @@ export function agentRoutes(db: Db) {
       agentName: agent.name,
       adapterType: agent.adapterType,
     });
+  });
+
+  // ── Agent Direct Chat ──────────────────────────────────────────────
+
+  /**
+   * POST /agents/:id/chat-messages
+   * Board user sends a message to an agent's chat session.
+   * Starts a session (and triggers wakeup with reason: chat) if none exists.
+   */
+  router.post("/agents/:id/chat-messages", async (req, res) => {
+    const id = req.params.id as string;
+    const agent = await svc.getById(id);
+    if (!agent) {
+      res.status(404).json({ error: "Agent not found" });
+      return;
+    }
+    assertCompanyAccess(req, agent.companyId);
+    assertBoard(req);
+
+    const { content } = req.body;
+    if (!content || typeof content !== "string" || content.trim().length === 0) {
+      res.status(400).json({ error: "content is required" });
+      return;
+    }
+
+    const userId = req.actor.userId ?? "unknown";
+    const isNewSession = !chat.getSession(id);
+
+    const msg = chat.sendMessage({
+      agentId: id,
+      companyId: agent.companyId,
+      userId,
+      content: content.trim(),
+    });
+
+    // If this started a new session, wake the agent in chat mode
+    if (isNewSession) {
+      const session = chat.getSession(id);
+      await heartbeat.wakeup(id, {
+        source: "on_demand",
+        triggerDetail: "manual",
+        reason: "chat",
+        payload: {
+          sessionId: session?.id,
+          initialMessage: content.trim(),
+        },
+        idempotencyKey: `chat-${session?.id}`,
+        requestedByActorType: "user",
+        requestedByActorId: userId,
+        contextSnapshot: {
+          triggeredBy: "user",
+          actorId: userId,
+          wakeReason: "chat",
+          chatSessionId: session?.id,
+        },
+      });
+    }
+
+    res.status(201).json(msg);
+  });
+
+  /**
+   * GET /agents/:id/chat-messages
+   * Agent polls for new messages. Supports `?after=<messageId>` for incremental polling.
+   */
+  router.get("/agents/:id/chat-messages", async (req, res) => {
+    const id = req.params.id as string;
+    const agent = await svc.getById(id);
+    if (!agent) {
+      res.status(404).json({ error: "Agent not found" });
+      return;
+    }
+    assertCompanyAccess(req, agent.companyId);
+
+    const after = (req.query.after as string) || undefined;
+    const messages = chat.getMessagesSince(id, after);
+
+    res.json({ messages });
+  });
+
+  /**
+   * POST /agents/:id/chat-response
+   * Agent sends a response back to the user during a chat session.
+   */
+  router.post("/agents/:id/chat-response", async (req, res) => {
+    const id = req.params.id as string;
+    const agent = await svc.getById(id);
+    if (!agent) {
+      res.status(404).json({ error: "Agent not found" });
+      return;
+    }
+    assertCompanyAccess(req, agent.companyId);
+
+    const { content } = req.body;
+    if (!content || typeof content !== "string" || content.trim().length === 0) {
+      res.status(400).json({ error: "content is required" });
+      return;
+    }
+
+    const msg = chat.sendResponse({
+      agentId: id,
+      content: content.trim(),
+    });
+
+    if (!msg) {
+      res.status(404).json({ error: "No active chat session for this agent" });
+      return;
+    }
+
+    res.status(201).json(msg);
+  });
+
+  /**
+   * GET /agents/:id/chat-session
+   * Get the current active chat session for an agent.
+   */
+  router.get("/agents/:id/chat-session", async (req, res) => {
+    const id = req.params.id as string;
+    const agent = await svc.getById(id);
+    if (!agent) {
+      res.status(404).json({ error: "Agent not found" });
+      return;
+    }
+    assertCompanyAccess(req, agent.companyId);
+
+    const session = chat.getSession(id);
+    if (!session) {
+      res.json(null);
+      return;
+    }
+
+    // Return session without the idleTimer handle
+    const { idleTimer, ...sessionData } = session;
+    res.json(sessionData);
+  });
+
+  /**
+   * DELETE /agents/:id/chat-session
+   * End the active chat session for an agent.
+   */
+  router.delete("/agents/:id/chat-session", async (req, res) => {
+    const id = req.params.id as string;
+    const agent = await svc.getById(id);
+    if (!agent) {
+      res.status(404).json({ error: "Agent not found" });
+      return;
+    }
+    assertCompanyAccess(req, agent.companyId);
+    assertBoard(req);
+
+    const ended = chat.endSession(id);
+    if (!ended) {
+      res.status(404).json({ error: "No active chat session for this agent" });
+      return;
+    }
+
+    res.json({ ok: true });
   });
 
   return router;
