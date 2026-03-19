@@ -9,6 +9,7 @@ import { Identity } from "./Identity";
 import { StatusBadge } from "./StatusBadge";
 import { RunTranscriptView } from "./transcript/RunTranscriptView";
 import { useLiveRunTranscripts } from "./transcript/useLiveRunTranscripts";
+import { BoardInterventionPanel, InterventionButton } from "./BoardInterventionPanel";
 
 interface LiveRunWidgetProps {
   issueId: string;
@@ -27,6 +28,7 @@ function isRunActive(status: string): boolean {
 export function LiveRunWidget({ issueId, companyId }: LiveRunWidgetProps) {
   const queryClient = useQueryClient();
   const [cancellingRunIds, setCancellingRunIds] = useState(new Set<string>());
+  const [interventionOpen, setInterventionOpen] = useState(false);
 
   const { data: liveRuns } = useQuery({
     queryKey: queryKeys.issues.liveRuns(issueId),
@@ -121,6 +123,7 @@ export function LiveRunWidget({ issueId, companyId }: LiveRunWidgetProps) {
                 </div>
 
                 <div className="flex items-center gap-2">
+                  <InterventionButton onClick={() => setInterventionOpen(true)} />
                   {isActive && (
                     <button
                       onClick={() => handleCancelRun(run.id)}
@@ -155,6 +158,12 @@ export function LiveRunWidget({ issueId, companyId }: LiveRunWidgetProps) {
           );
         })}
       </div>
+
+      <BoardInterventionPanel
+        issueId={issueId}
+        open={interventionOpen}
+        onOpenChange={setInterventionOpen}
+      />
     </div>
   );
 }
