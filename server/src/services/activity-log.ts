@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Db } from "@paperclipai/db";
-import { activityLog } from "@paperclipai/db";
+import { activityLog, heartbeatRuns } from "@paperclipai/db";
+import { eq } from "drizzle-orm";
 import { PLUGIN_EVENT_TYPES, type PluginEventType } from "@paperclipai/shared";
 import type { PluginEvent } from "@paperclipai/plugin-sdk";
 import { publishLiveEvent } from "./live-events.js";
@@ -36,6 +37,21 @@ export interface LogActivityInput {
 export async function logActivity(db: Db, input: LogActivityInput) {
   const sanitizedDetails = input.details ? sanitizeRecord(input.details) : null;
   const redactedDetails = sanitizedDetails ? redactCurrentUserValue(sanitizedDetails) : null;
+
+  // Validate runId exists in heartbeat_runs to avoid FK constraint violations
+  // (e.g. chat processes use a chatId that is not a heartbeat run)
+  let resolvedRunId: string | null = input.runId ?? null;
+  if (resolvedRunId) {
+    const runExists = await db
+      .select({ id: heartbeatRuns.id })
+      .from(heartbeatRuns)
+      .where(eq(heartbeatRuns.id, resolvedRunId))
+      .then((rows) => rows.length > 0);
+    if (!runExists) {
+      resolvedRunId = null;
+    }
+  }
+
   await db.insert(activityLog).values({
     companyId: input.companyId,
     actorType: input.actorType,
@@ -44,7 +60,7 @@ export async function logActivity(db: Db, input: LogActivityInput) {
     entityType: input.entityType,
     entityId: input.entityId,
     agentId: input.agentId ?? null,
-    runId: input.runId ?? null,
+    runId: resolvedRunId,
     details: redactedDetails,
   });
 
@@ -58,7 +74,7 @@ export async function logActivity(db: Db, input: LogActivityInput) {
       entityType: input.entityType,
       entityId: input.entityId,
       agentId: input.agentId ?? null,
-      runId: input.runId ?? null,
+      runId: resolvedRunId,
       details: redactedDetails,
     },
   });
@@ -76,7 +92,7 @@ export async function logActivity(db: Db, input: LogActivityInput) {
       payload: {
         ...redactedDetails,
         agentId: input.agentId ?? null,
-        runId: input.runId ?? null,
+        runId: resolvedRunId,
       },
     };
     void _pluginEventBus.emit(event).then(({ errors }) => {
