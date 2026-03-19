@@ -20,9 +20,80 @@ Manual local CLI mode (outside heartbeat runs): use `paperclipai agent local-cli
 
 **Run audit trail:** You MUST include `-H 'X-Paperclip-Run-Id: $PAPERCLIP_RUN_ID'` on ALL API requests that modify issues (checkout, update, comment, create subtask, release). This links your actions to the current heartbeat run for traceability.
 
+## Chat Mode (Interactive Direct Chat)
+
+When `PAPERCLIP_WAKE_REASON=chat`, you are in **chat mode** — a board user has opened a direct chat session with you. **Skip the normal heartbeat procedure entirely** and follow this protocol instead.
+
+### Chat Mode Procedure
+
+**Step 1 — Identity.** If not already in context, `GET /api/agents/me` to get your id and companyId.
+
+**Step 2 — Get session.** Fetch your active chat session:
+
+```
+GET /api/agents/{your-agent-id}/chat-session
+Headers: Authorization: Bearer $PAPERCLIP_API_KEY
+```
+
+If no active session exists (null response), exit — the user likely closed the chat before you woke up.
+
+**Step 3 — Read initial messages.** Fetch all pending messages:
+
+```
+GET /api/agents/{your-agent-id}/chat-messages
+Headers: Authorization: Bearer $PAPERCLIP_API_KEY
+```
+
+This returns all messages in the session. Process any unread user messages.
+
+**Step 4 — Enter the chat loop.** Repeat until the session ends:
+
+1. **Process the user's message.** Read it, think about it, and use your tools as needed (search code, create issues, look up information — all your normal capabilities are available).
+
+2. **Send your response:**
+
+```
+POST /api/agents/{your-agent-id}/chat-response
+Headers: Authorization: Bearer $PAPERCLIP_API_KEY, X-Paperclip-Run-Id: $PAPERCLIP_RUN_ID
+Content-Type: application/json
+{ "content": "Your response text here (markdown supported)" }
+```
+
+3. **Poll for the next message.** After responding, poll for new messages using the `after` parameter with the last message ID you've seen:
+
+```
+GET /api/agents/{your-agent-id}/chat-messages?after={lastMessageId}
+Headers: Authorization: Bearer $PAPERCLIP_API_KEY
+```
+
+   Poll every ~1 second. If no new messages arrive for **60 seconds**, check if the session is still active via `GET /api/agents/{your-agent-id}/chat-session`. If the session is gone, exit gracefully.
+
+4. **Repeat** from step 1 of the loop for each new user message.
+
+### Chat Mode Rules
+
+- **Stay conversational.** You are in a live chat — respond naturally and concisely, as if in a real-time conversation. No need for formal issue-style comments.
+- **Use your tools freely.** You can search code, read files, create issues, look up information, etc. during the conversation. The user may ask you to do things interactively.
+- **No issue checkout required.** Chat mode is not tied to any specific issue. Do not run the normal heartbeat checkout flow.
+- **No status updates.** Do not PATCH issue statuses during chat mode — you are not working on an issue.
+- **Create issues on request.** If the user asks you to create issues or tasks from the conversation, use the normal `POST /api/companies/{companyId}/issues` endpoint.
+- **Session is ephemeral.** Conversation history is not persisted after the session ends. If something important comes up, create an issue or save it as a memory.
+- **Respect session end.** When the session disappears (user closed it or idle timeout), stop polling and exit cleanly. Do not attempt to restart the session.
+- **One response per message.** Send exactly one chat response per user message. Do not send multiple rapid responses to a single message.
+
+### Chat Endpoints (Agent-Side)
+
+| Action              | Endpoint                                             |
+| ------------------- | ---------------------------------------------------- |
+| Get active session  | `GET /api/agents/:id/chat-session`                   |
+| Poll for messages   | `GET /api/agents/:id/chat-messages?after=:messageId` |
+| Send response       | `POST /api/agents/:id/chat-response`                 |
+
+---
+
 ## The Heartbeat Procedure
 
-Follow these steps every time you wake up:
+Follow these steps every time you wake up. **If `PAPERCLIP_WAKE_REASON=chat`, skip this procedure and follow Chat Mode above instead.**
 
 **Step 1 — Identity.** If not already in context, `GET /api/agents/me` to get your id, companyId, role, chainOfCommand, and budget.
 
@@ -256,6 +327,9 @@ PATCH /api/agents/{agentId}/instructions-path
 | List agents                           | `GET /api/companies/:companyId/agents`                                                     |
 | Dashboard                             | `GET /api/companies/:companyId/dashboard`                                                  |
 | Search issues                         | `GET /api/companies/:companyId/issues?q=search+term`                                       |
+| Get chat session                      | `GET /api/agents/:id/chat-session`                                                         |
+| Poll chat messages                    | `GET /api/agents/:id/chat-messages?after=:messageId`                                       |
+| Send chat response                    | `POST /api/agents/:id/chat-response`                                                       |
 
 ## Searching Issues
 
