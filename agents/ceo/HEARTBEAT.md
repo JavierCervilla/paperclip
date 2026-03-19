@@ -44,6 +44,7 @@ If `PAPERCLIP_APPROVAL_ID` is set:
 - Create subtasks with `POST /api/companies/{companyId}/issues`. Always set `parentId` and `goalId`.
 - Use `paperclip-create-agent` skill when hiring new agents.
 - Assign work to the right agent for the job.
+- **DEDUP CHECK (REQUIRED):** Before creating any new issue, ALWAYS search for existing issues with similar titles using `GET /api/companies/{companyId}/issues?q=<keywords>`. If a matching or very similar issue already exists, do NOT create a duplicate — instead update or comment on the existing one. This applies in both heartbeat and chat mode.
 
 ## 7. Fact Extraction
 
