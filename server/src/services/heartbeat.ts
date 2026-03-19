@@ -74,6 +74,76 @@ const SESSIONED_LOCAL_ADAPTERS = new Set([
   "pi_local",
 ]);
 
+// ---------------------------------------------------------------------------
+// Smart Retry: Quota-reset detection and time parsing
+// ---------------------------------------------------------------------------
+
+/**
+ * Detects whether an error message indicates a provider usage-limit hit and
+ * extracts the UTC reset time.  Supports patterns like:
+ *   "You've hit your limit · resets 8pm (UTC)"
+ *   "You've hit your limit · resets 12am (UTC)"
+ *   "rate limit exceeded ... resets 3:30pm (UTC)"
+ */
+const QUOTA_LIMIT_PATTERN = /you(?:'ve|'ve| have) hit your limit/i;
+const RESET_TIME_PATTERN = /resets?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*\(?\s*UTC\s*\)?/i;
+
+function detectQuotaResetTime(errorText: string | null | undefined): Date | null {
+  if (!errorText) return null;
+  if (!QUOTA_LIMIT_PATTERN.test(errorText)) return null;
+
+  const match = errorText.match(RESET_TIME_PATTERN);
+  if (!match) return null;
+
+  let hours = parseInt(match[1], 10);
+  const minutes = match[2] ? parseInt(match[2], 10) : 0;
+  const meridiem = match[3].toLowerCase();
+
+  // Convert 12-hour to 24-hour
+  if (meridiem === "am" && hours === 12) hours = 0;
+  else if (meridiem === "pm" && hours !== 12) hours += 12;
+
+  const now = new Date();
+  const resetDate = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), hours, minutes, 0, 0),
+  );
+
+  // If the reset time has already passed today, schedule for tomorrow
+  if (resetDate.getTime() <= now.getTime()) {
+    resetDate.setUTCDate(resetDate.getUTCDate() + 1);
+  }
+
+  return resetDate;
+}
+
+/**
+ * Scans multiple error surfaces (errorMessage, stderr, resultJson) for a
+ * quota-limit signal and returns the parsed reset time if found.
+ */
+function detectQuotaResetFromRunResult(
+  adapterResult: { errorMessage?: string | null; resultJson?: unknown },
+  stderrExcerpt?: string | null,
+): Date | null {
+  // Check adapter errorMessage first
+  let resetAt = detectQuotaResetTime(adapterResult.errorMessage);
+  if (resetAt) return resetAt;
+
+  // Check stderr
+  resetAt = detectQuotaResetTime(stderrExcerpt);
+  if (resetAt) return resetAt;
+
+  // Check resultJson – the payload format from the issue description
+  if (adapterResult.resultJson && typeof adapterResult.resultJson === "object") {
+    const rj = adapterResult.resultJson as Record<string, unknown>;
+    if (rj.is_error && typeof rj.result === "string") {
+      resetAt = detectQuotaResetTime(rj.result);
+      if (resetAt) return resetAt;
+    }
+  }
+
+  return null;
+}
+
 function deriveRepoNameFromRepoUrl(repoUrl: string | null): string | null {
   const trimmed = repoUrl?.trim() ?? "";
   if (!trimmed) return null;
@@ -2344,6 +2414,40 @@ export function heartbeatService(db: Db) {
         }
       }
       await finalizeAgentStatus(agent.id, outcome);
+
+      // Smart Retry: detect quota-limit errors and pause until reset
+      if (outcome === "failed") {
+        const quotaResetAt = detectQuotaResetFromRunResult(adapterResult, stderrExcerpt);
+        if (quotaResetAt) {
+          logger.info(
+            { agentId: agent.id, quotaResetAt: quotaResetAt.toISOString(), runId },
+            "quota limit detected — pausing agent until reset",
+          );
+          await db
+            .update(agents)
+            .set({
+              status: "paused",
+              pauseReason: "quota_reset",
+              pausedAt: new Date(),
+              metadata: {
+                ...(agent.metadata as Record<string, unknown> | null ?? {}),
+                quotaResetAt: quotaResetAt.toISOString(),
+              },
+              updatedAt: new Date(),
+            })
+            .where(eq(agents.id, agent.id));
+          publishLiveEvent({
+            companyId: agent.companyId,
+            type: "agent.status",
+            payload: {
+              agentId: agent.id,
+              status: "paused",
+              pauseReason: "quota_reset",
+              quotaResetAt: quotaResetAt.toISOString(),
+            },
+          });
+        }
+      }
     } catch (err) {
       const message = redactCurrentUserText(err instanceof Error ? err.message : "Unknown adapter failure");
       logger.error({ err, runId }, "heartbeat execution failed");
@@ -2405,6 +2509,38 @@ export function heartbeatService(db: Db) {
       }
 
       await finalizeAgentStatus(agent.id, "failed");
+
+      // Smart Retry: detect quota-limit in catch-path errors too
+      const quotaResetAtCatch = detectQuotaResetTime(message) ?? detectQuotaResetTime(stderrExcerpt);
+      if (quotaResetAtCatch) {
+        logger.info(
+          { agentId: agent.id, quotaResetAt: quotaResetAtCatch.toISOString(), runId },
+          "quota limit detected (catch path) — pausing agent until reset",
+        );
+        await db
+          .update(agents)
+          .set({
+            status: "paused",
+            pauseReason: "quota_reset",
+            pausedAt: new Date(),
+            metadata: {
+              ...(agent.metadata as Record<string, unknown> | null ?? {}),
+              quotaResetAt: quotaResetAtCatch.toISOString(),
+            },
+            updatedAt: new Date(),
+          })
+          .where(eq(agents.id, agent.id));
+        publishLiveEvent({
+          companyId: agent.companyId,
+          type: "agent.status",
+          payload: {
+            agentId: agent.id,
+            status: "paused",
+            pauseReason: "quota_reset",
+            quotaResetAt: quotaResetAtCatch.toISOString(),
+          },
+        });
+      }
     }
     } catch (outerErr) {
           // Setup code before adapter.execute threw (e.g. ensureRuntimeState, resolveWorkspaceForRun).
@@ -3429,6 +3565,68 @@ export function heartbeatService(db: Db) {
       let checked = 0;
       let enqueued = 0;
       let skipped = 0;
+      let quotaResumed = 0;
+
+      // Smart Retry: auto-resume agents paused for quota reset once the window has passed
+      for (const agent of allAgents) {
+        if (agent.status !== "paused" || agent.pauseReason !== "quota_reset") continue;
+        if (pausedCompanyIds.has(agent.companyId)) continue;
+
+        const meta = agent.metadata as Record<string, unknown> | null;
+        const resetIso = meta?.quotaResetAt;
+        if (typeof resetIso !== "string") continue;
+
+        const resetAt = new Date(resetIso);
+        if (isNaN(resetAt.getTime()) || now.getTime() < resetAt.getTime()) continue;
+
+        // Reset time has passed — resume agent and trigger a heartbeat
+        logger.info(
+          { agentId: agent.id, quotaResetAt: resetIso },
+          "quota reset time reached — resuming agent",
+        );
+        const cleanMeta = { ...meta };
+        delete cleanMeta.quotaResetAt;
+        await db
+          .update(agents)
+          .set({
+            status: "idle",
+            pauseReason: null,
+            pausedAt: null,
+            metadata: Object.keys(cleanMeta).length > 0 ? cleanMeta : null,
+            updatedAt: new Date(),
+          })
+          .where(eq(agents.id, agent.id));
+        publishLiveEvent({
+          companyId: agent.companyId,
+          type: "agent.status",
+          payload: {
+            agentId: agent.id,
+            status: "idle",
+            pauseReason: null,
+            resumedFrom: "quota_reset",
+          },
+        });
+        quotaResumed += 1;
+
+        // Enqueue a fresh heartbeat so the agent resumes work immediately
+        try {
+          await enqueueWakeup(agent.id, {
+            source: "timer",
+            triggerDetail: "system",
+            reason: "quota_reset_resume",
+            requestedByActorType: "system",
+            requestedByActorId: "heartbeat_scheduler",
+            contextSnapshot: {
+              source: "scheduler",
+              reason: "quota_reset_resume",
+              quotaResetAt: resetIso,
+              now: now.toISOString(),
+            },
+          });
+        } catch (wakeErr) {
+          logger.warn({ err: wakeErr, agentId: agent.id }, "failed to enqueue post-quota-resume wakeup");
+        }
+      }
 
       for (const agent of allAgents) {
         if (agent.status === "paused" || agent.status === "terminated" || agent.status === "pending_approval") continue;
@@ -3457,7 +3655,7 @@ export function heartbeatService(db: Db) {
         else skipped += 1;
       }
 
-      return { checked, enqueued, skipped };
+      return { checked, enqueued, skipped, quotaResumed };
     },
 
     cancelRun: (runId: string) => cancelRunInternal(runId),
