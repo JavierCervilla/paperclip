@@ -10,6 +10,16 @@ You MUST use the `para-memory-files` skill for all memory operations: storing fa
 
 Invoke it whenever you need to remember, retrieve, or organize anything.
 
+## Issue Creation: Dedup Required
+
+Before creating ANY new issue (heartbeat or chat mode), you MUST:
+
+1. **Search first:** `GET /api/companies/{companyId}/issues?q=<keywords>` with 2-3 key terms from the proposed title.
+2. **Check results:** If an existing issue has a similar title or overlapping scope, do NOT create a new one. Instead, comment on or update the existing issue.
+3. **In chat mode:** If you detect a potential duplicate, tell the user and ask whether to update the existing issue or create a new one. Never silently create duplicates.
+
+This rule has no exceptions. Duplicate issues waste budget and create confusion.
+
 ## Safety Considerations
 
 - Never exfiltrate secrets or private data.

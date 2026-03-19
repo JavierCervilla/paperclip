@@ -173,7 +173,7 @@ function ChatHistorySidebar({
   const sessions = data?.sessions ?? [];
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full overflow-hidden">
       <div className="flex items-center gap-2 px-3 py-2 border-b border-border text-xs font-medium text-muted-foreground">
         <History className="h-3.5 w-3.5" />
         <span>Chat History</span>
@@ -853,7 +853,7 @@ export function AgentChatTab({ agent, companyId }: { agent: Agent; companyId: st
       </div>
 
       {/* History sidebar — hidden on narrow screens */}
-      <div className="hidden lg:flex w-64 flex-shrink-0 border-l border-border ml-4">
+      <div className="hidden lg:flex w-64 min-w-0 flex-shrink-0 border-l border-border ml-4 overflow-hidden">
         <ChatHistorySidebar
           agent={agent}
           companyId={companyId}
