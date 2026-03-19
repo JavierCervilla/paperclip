@@ -6,14 +6,17 @@
  * for real-time response streaming.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { cn } from "../lib/utils";
-import { Send, X, Loader2, MessageSquare } from "lucide-react";
+import { Send, X, Loader2, MessageSquare, ChevronDown, ChevronRight } from "lucide-react";
 import type { Agent } from "@paperclipai/shared";
 import { agentsApi } from "../api/agents";
+import { heartbeatsApi, type LiveRunForIssue } from "../api/heartbeats";
 import { MarkdownBody } from "./MarkdownBody";
+import { RunTranscriptView } from "./transcript/RunTranscriptView";
+import { useLiveRunTranscripts } from "./transcript/useLiveRunTranscripts";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -43,10 +46,62 @@ export function AgentChatTab({ agent, companyId }: { agent: Agent; companyId: st
   const [input, setInput] = useState("");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [isTyping, setIsTyping] = useState(false);
+  const [thinkingOpen, setThinkingOpen] = useState(true);
+  const [activeRun, setActiveRun] = useState<LiveRunForIssue | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const lastMessageIdRef = useRef<string | null>(null);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Track the agent's active run while typing
+  useEffect(() => {
+    if (!isTyping) {
+      setActiveRun(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const pollRun = async () => {
+      try {
+        const runs = await heartbeatsApi.list(companyId, agent.id, 1);
+        if (cancelled) return;
+        const latest = runs[0];
+        if (latest && (latest.status === "queued" || latest.status === "running")) {
+          setActiveRun({
+            id: latest.id,
+            status: latest.status,
+            invocationSource: latest.invocationSource ?? "on_demand",
+            triggerDetail: latest.triggerDetail ?? null,
+            startedAt: latest.startedAt ?? null,
+            finishedAt: latest.finishedAt ?? null,
+            createdAt: latest.createdAt,
+            agentId: agent.id,
+            agentName: agent.name,
+            adapterType: agent.adapterType,
+          });
+        }
+      } catch {
+        // Ignore errors
+      }
+    };
+
+    void pollRun();
+    const interval = setInterval(pollRun, 3000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [isTyping, companyId, agent.id, agent.name]);
+
+  // Reset thinking accordion to open when a new typing session starts
+  useEffect(() => {
+    if (isTyping) setThinkingOpen(true);
+  }, [isTyping]);
+
+  const runs = useMemo(() => (activeRun ? [activeRun] : []), [activeRun]);
+  const { transcriptByRun } = useLiveRunTranscripts({ runs, companyId, maxChunksPerRun: 120 });
+  const transcript = activeRun ? (transcriptByRun.get(activeRun.id) ?? []) : [];
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
@@ -203,11 +258,32 @@ export function AgentChatTab({ agent, companyId }: { agent: Agent; companyId: st
 
         {isTyping && (
           <div className="flex justify-start">
-            <div className="bg-muted rounded-lg px-3 py-2 text-sm text-muted-foreground">
-              <span className="flex items-center gap-1.5">
-                <Loader2 className="h-3 w-3 animate-spin" />
-                {agent.name} is thinking...
-              </span>
+            <div className="max-w-[80%] bg-muted rounded-lg text-sm text-muted-foreground">
+              <button
+                type="button"
+                onClick={() => setThinkingOpen((o) => !o)}
+                className="flex items-center gap-1.5 px-3 py-2 w-full text-left hover:bg-muted/80 rounded-lg transition-colors"
+              >
+                <Loader2 className="h-3 w-3 animate-spin flex-shrink-0" />
+                <span className="flex-1">{agent.name} is thinking...</span>
+                {transcript.length > 0 && (
+                  thinkingOpen
+                    ? <ChevronDown className="h-3 w-3 flex-shrink-0" />
+                    : <ChevronRight className="h-3 w-3 flex-shrink-0" />
+                )}
+              </button>
+              {thinkingOpen && transcript.length > 0 && (
+                <div className="px-3 pb-2 max-h-[300px] overflow-y-auto border-t border-border/50">
+                  <RunTranscriptView
+                    entries={transcript}
+                    density="compact"
+                    streaming
+                    collapseStdout
+                    thinkingClassName="!text-[10px] !leading-4"
+                    emptyMessage=""
+                  />
+                </div>
+              )}
             </div>
           </div>
         )}
