@@ -4,6 +4,7 @@ import { and, count, eq, gt, isNull, sql } from "drizzle-orm";
 import { instanceUserRoles, invites } from "@paperclipai/db";
 import type { DeploymentExposure, DeploymentMode } from "@paperclipai/shared";
 import { serverVersion } from "../version.js";
+import { Sentry, sentryEnabled } from "../sentry.js";
 
 const startedAt = Date.now();
 
@@ -96,6 +97,19 @@ export function healthRoutes(
         companyDeletionEnabled: opts.companyDeletionEnabled,
       },
     });
+  });
+
+  router.get("/sentry", (_req, res) => {
+    res.json({ sentryEnabled });
+  });
+
+  router.post("/debug-sentry", (_req, res) => {
+    if (!sentryEnabled) {
+      res.status(400).json({ error: "Sentry is not enabled (SENTRY_DSN not set)" });
+      return;
+    }
+    const eventId = Sentry.captureMessage("Paperclip test error — verifying Sentry integration");
+    res.json({ ok: true, eventId });
   });
 
   return router;
