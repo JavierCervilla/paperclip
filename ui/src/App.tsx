@@ -28,6 +28,7 @@ import { InstanceExperimentalSettings } from "./pages/InstanceExperimentalSettin
 import { PluginManager } from "./pages/PluginManager";
 import { PluginSettings } from "./pages/PluginSettings";
 import { PluginPage } from "./pages/PluginPage";
+import { HeartbeatMonitoring } from "./pages/HeartbeatMonitoring";
 import { RunTranscriptUxLab } from "./pages/RunTranscriptUxLab";
 import { OrgChart } from "./pages/OrgChart";
 import { NewAgent } from "./pages/NewAgent";
@@ -152,6 +153,7 @@ function boardRoutes() {
       <Route path="approvals/:approvalId" element={<ApprovalDetail />} />
       <Route path="costs" element={<Costs />} />
       <Route path="activity" element={<Activity />} />
+      <Route path="heartbeat-monitoring" element={<HeartbeatMonitoring />} />
       <Route path="inbox" element={<InboxRootRedirect />} />
       <Route path="inbox/recent" element={<Inbox />} />
       <Route path="inbox/unread" element={<Inbox />} />

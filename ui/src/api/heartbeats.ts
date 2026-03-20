@@ -26,6 +26,48 @@ export interface LiveRunForIssue {
   issueId?: string | null;
 }
 
+export interface AgentHeartbeatStats {
+  agentId: string;
+  agentName: string;
+  agentStatus: string;
+  adapterType: string;
+  totalRuns: number;
+  succeededRuns: number;
+  failedRuns: number;
+  timedOutRuns: number;
+  otherRuns: number;
+  successRate: number;
+  avgDurationMs: number | null;
+  maxDurationMs: number | null;
+  minDurationMs: number | null;
+  lastRunAt: string | null;
+  lastRunStatus: string | null;
+  consecutiveFailures: number;
+  isStuck: boolean;
+}
+
+export interface DailyStats {
+  date: string;
+  succeeded: number;
+  failed: number;
+  timedOut: number;
+  other: number;
+  avgDurationMs: number | null;
+}
+
+export interface HeartbeatStatsResponse {
+  companyId: string;
+  periodDays: number;
+  totalRuns: number;
+  succeededRuns: number;
+  failedRuns: number;
+  overallSuccessRate: number;
+  avgDurationMs: number | null;
+  stuckAgentCount: number;
+  agents: AgentHeartbeatStats[];
+  dailyStats: DailyStats[];
+}
+
 export const heartbeatsApi = {
   list: (companyId: string, agentId?: string, limit?: number) => {
     const searchParams = new URLSearchParams();
@@ -58,4 +100,8 @@ export const heartbeatsApi = {
     api.get<LiveRunForIssue[]>(`/companies/${companyId}/live-runs${minCount ? `?minCount=${minCount}` : ""}`),
   listInstanceSchedulerAgents: () =>
     api.get<InstanceSchedulerHeartbeatAgent[]>("/instance/scheduler-heartbeats"),
+  stats: (companyId: string, periodDays?: number) =>
+    api.get<HeartbeatStatsResponse>(
+      `/companies/${companyId}/heartbeat-stats${periodDays ? `?periodDays=${periodDays}` : ""}`,
+    ),
 };
