@@ -309,6 +309,27 @@
       "when": 1774031825634,
       "tag": "0040_spotty_the_renegades",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1773926116580,
+      "tag": "0038_fat_magneto",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1773927102783,
+      "tag": "0039_eager_shotgun",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1774008910991,
+      "tag": "0041_reflective_captain_universe",
+      "breakpoints": true
     }
   ]
 }
