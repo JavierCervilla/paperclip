@@ -5,6 +5,8 @@ import { instanceUserRoles, invites } from "@paperclipai/db";
 import type { DeploymentExposure, DeploymentMode } from "@paperclipai/shared";
 import { serverVersion } from "../version.js";
 
+const startedAt = Date.now();
+
 export function healthRoutes(
   db?: Db,
   opts: {
@@ -22,14 +24,33 @@ export function healthRoutes(
   const router = Router();
 
   router.get("/", async (_req, res) => {
+    const requestStart = Date.now();
+
     if (!db) {
-      res.json({ status: "ok", version: serverVersion });
+      res.json({
+        status: "ok",
+        version: serverVersion,
+        uptime: Math.floor((Date.now() - startedAt) / 1000),
+      });
       return;
     }
 
+    let dbStatus: "connected" | "disconnected" = "disconnected";
+    let dbLatencyMs: number | null = null;
+    try {
+      const dbStart = Date.now();
+      await db.execute(sql`SELECT 1`);
+      dbLatencyMs = Date.now() - dbStart;
+      dbStatus = "connected";
+    } catch {
+      dbStatus = "disconnected";
+    }
+
+    const healthy = dbStatus === "connected";
+
     let bootstrapStatus: "ready" | "bootstrap_pending" = "ready";
     let bootstrapInviteActive = false;
-    if (opts.deploymentMode === "authenticated") {
+    if (healthy && opts.deploymentMode === "authenticated") {
       const roleCount = await db
         .select({ count: count() })
         .from(instanceUserRoles)
@@ -55,9 +76,17 @@ export function healthRoutes(
       }
     }
 
-    res.json({
-      status: "ok",
+    const responseTimeMs = Date.now() - requestStart;
+
+    res.status(healthy ? 200 : 503).json({
+      status: healthy ? "ok" : "degraded",
       version: serverVersion,
+      uptime: Math.floor((Date.now() - startedAt) / 1000),
+      database: {
+        status: dbStatus,
+        latencyMs: dbLatencyMs,
+      },
+      responseTimeMs,
       deploymentMode: opts.deploymentMode,
       deploymentExposure: opts.deploymentExposure,
       authReady: opts.authReady,
