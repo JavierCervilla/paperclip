@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from "express";
 import { ZodError } from "zod";
 import { HttpError } from "../errors.js";
+import { Sentry, sentryEnabled } from "../sentry.js";
 
 export interface ErrorContext {
   error: { message: string; stack?: string; name?: string; details?: unknown; raw?: unknown };
@@ -30,6 +31,20 @@ function attachErrorContext(
   }
 }
 
+function captureToSentry(err: Error, req: Request): void {
+  if (!sentryEnabled) return;
+  Sentry.withScope((scope) => {
+    scope.setTag("url", req.originalUrl);
+    scope.setTag("method", req.method);
+    const actor = (req as any).actor;
+    if (actor) {
+      scope.setUser({ id: actor.agentId || actor.userId || undefined });
+      scope.setTag("actorType", actor.type);
+    }
+    Sentry.captureException(err);
+  });
+}
+
 export function errorHandler(
   err: unknown,
   req: Request,
@@ -44,6 +59,7 @@ export function errorHandler(
         { message: err.message, stack: err.stack, name: err.name, details: err.details },
         err,
       );
+      captureToSentry(err, req);
     }
     res.status(err.status).json({
       error: err.message,
@@ -66,6 +82,7 @@ export function errorHandler(
       : { message: String(err), raw: err, stack: rootError.stack, name: rootError.name },
     rootError,
   );
+  captureToSentry(rootError, req);
 
   res.status(500).json({ error: "Internal server error" });
 }

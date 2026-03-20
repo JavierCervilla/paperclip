@@ -6,6 +6,7 @@ import type { Db } from "@paperclipai/db";
 import type { DeploymentExposure, DeploymentMode } from "@paperclipai/shared";
 import type { StorageService } from "./storage/types.js";
 import { httpLogger, errorHandler } from "./middleware/index.js";
+import { Sentry, sentryEnabled } from "./sentry.js";
 import { actorMiddleware } from "./middleware/auth.js";
 import { boardMutationGuard } from "./middleware/board-mutation-guard.js";
 import { privateHostnameGuard, resolvePrivateHostnameAllowSet } from "./middleware/private-hostname-guard.js";
@@ -282,6 +283,9 @@ export async function createApp(
     });
   }
 
+  if (sentryEnabled) {
+    Sentry.setupExpressErrorHandler(app);
+  }
   app.use(errorHandler);
 
   jobCoordinator.start();
