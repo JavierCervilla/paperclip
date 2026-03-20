@@ -85,7 +85,6 @@ export function createBetterAuthInstance(db: Db, config: Config, trustedOrigins?
         account: authAccounts,
         verification: authVerifications,
       },
-      experimental: { joins: true },
     }),
     emailAndPassword: {
       enabled: true,
