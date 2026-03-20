@@ -1,8 +1,9 @@
 export { companies } from "./companies.js";
 export { companyLogos } from "./company_logos.js";
-export { authUsers, authSessions, authAccounts, authVerifications } from "./auth.js";
-// Aliases required by better-auth's drizzle adapter (db.query must match model names)
+export { authUsers, authSessions, authAccounts, authVerifications, authUsersRelations, authAccountsRelations, authSessionsRelations } from "./auth.js";
+// Aliases required by better-auth's drizzle adapter (db.query[model] must match better-auth model names)
 export { authUsers as user, authSessions as session, authAccounts as account, authVerifications as verification } from "./auth.js";
+export { authUsersRelations as userRelations, authAccountsRelations as accountRelations, authSessionsRelations as sessionRelations } from "./auth.js";
 export { instanceSettings } from "./instance_settings.js";
 export { instanceUserRoles } from "./instance_user_roles.js";
 export { agents } from "./agents.js";
