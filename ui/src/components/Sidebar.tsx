@@ -8,6 +8,7 @@ import {
   Search,
   SquarePen,
   Network,
+  Boxes,
   Settings,
   Activity,
 } from "lucide-react";
@@ -107,6 +108,7 @@ export function Sidebar() {
 
         <SidebarSection label="Company">
           <SidebarNavItem to="/org" label="Org" icon={Network} />
+          <SidebarNavItem to="/skills" label="Skills" icon={Boxes} />
           <SidebarNavItem to="/costs" label="Costs" icon={DollarSign} />
           <SidebarNavItem to="/activity" label="Activity" icon={History} />
           <SidebarNavItem to="/heartbeat-monitoring" label="Heartbeats" icon={Activity} />

@@ -26,6 +26,7 @@ import type { AdapterExecutionResult, AdapterInvocationMeta, AdapterSessionCodec
 import { createLocalAgentJwt } from "../agent-auth-jwt.js";
 import { parseObject, asBoolean, asNumber, appendWithCap, MAX_EXCERPT_BYTES } from "../adapters/utils.js";
 import { costService } from "./costs.js";
+import { companySkillService } from "./company-skills.js";
 import { budgetService, type BudgetEnforcementScope } from "./budgets.js";
 import { secretService } from "./secrets.js";
 import { resolveDefaultAgentWorkspaceDir, resolveManagedProjectWorkspaceDir } from "../home-paths.js";
@@ -813,6 +814,7 @@ export function heartbeatService(db: Db) {
 
   const runLogStore = getRunLogStore();
   const secretsSvc = secretService(db);
+  const companySkills = companySkillService(db);
   const issuesSvc = issueService(db);
   const executionWorkspacesSvc = executionWorkspaceService(db);
   const workspaceOperationsSvc = workspaceOperationService(db);
@@ -2042,6 +2044,11 @@ export function heartbeatService(db: Db) {
       agent.companyId,
       mergedConfig,
     );
+    const runtimeSkillEntries = await companySkills.listRuntimeSkillEntries(agent.companyId);
+    const runtimeConfig = {
+      ...resolvedConfig,
+      paperclipRuntimeSkills: runtimeSkillEntries,
+    };
     const issueRef = issueContext
       ? {
           id: issueContext.id,
@@ -2069,7 +2076,7 @@ export function heartbeatService(db: Db) {
         repoUrl: resolvedWorkspace.repoUrl,
         repoRef: resolvedWorkspace.repoRef,
       },
-      config: resolvedConfig,
+      config: runtimeConfig,
       issue: issueRef,
       agent: {
         id: agent.id,
@@ -2234,7 +2241,11 @@ export function heartbeatService(db: Db) {
       repoRef: executionWorkspace.repoRef,
       branchName: executionWorkspace.branchName,
       worktreePath: executionWorkspace.worktreePath,
-      agentHome: resolveDefaultAgentWorkspaceDir(agent.id),
+      agentHome: await (async () => {
+        const home = resolveDefaultAgentWorkspaceDir(agent.id);
+        await fs.mkdir(home, { recursive: true });
+        return home;
+      })(),
     };
     context.paperclipWorkspaces = resolvedWorkspace.workspaceHints;
     const runtimeServiceIntents = (() => {
@@ -2475,7 +2486,7 @@ export function heartbeatService(db: Db) {
         runId: run.id,
         agent,
         runtime: runtimeForAdapter,
-        config: resolvedConfig,
+        config: runtimeConfig,
         context,
         onLog,
         onMeta: onAdapterMeta,
