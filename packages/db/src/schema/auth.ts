@@ -1,4 +1,5 @@
 import { pgTable, text, timestamp, boolean } from "drizzle-orm/pg-core";
+import { relations } from "drizzle-orm";
 
 export const authUsers = pgTable("user", {
   id: text("id").primaryKey(),
@@ -36,6 +37,19 @@ export const authAccounts = pgTable("account", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
 });
+
+export const authUsersRelations = relations(authUsers, ({ many }) => ({
+  account: many(authAccounts),
+  session: many(authSessions),
+}));
+
+export const authAccountsRelations = relations(authAccounts, ({ one }) => ({
+  user: one(authUsers, { fields: [authAccounts.userId], references: [authUsers.id] }),
+}));
+
+export const authSessionsRelations = relations(authSessions, ({ one }) => ({
+  user: one(authUsers, { fields: [authSessions.userId], references: [authUsers.id] }),
+}));
 
 export const authVerifications = pgTable("verification", {
   id: text("id").primaryKey(),
