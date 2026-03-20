@@ -828,9 +828,13 @@ export function issueRoutes(db: Db, storage: StorageService) {
     if (!(await assertAgentRunCheckoutOwnership(req, res, existing))) return;
 
     const actor = getActorInfo(req);
-    const { comment: commentBody, hiddenAt: hiddenAtRaw, ...updateFields } = req.body;
+    const isClosed = existing.status === "done" || existing.status === "cancelled";
+    const { comment: commentBody, reopen: reopenRequested, hiddenAt: hiddenAtRaw, ...updateFields } = req.body;
     if (hiddenAtRaw !== undefined) {
       updateFields.hiddenAt = hiddenAtRaw ? new Date(hiddenAtRaw) : null;
+    }
+    if (commentBody && reopenRequested === true && isClosed && updateFields.status === undefined) {
+      updateFields.status = "todo";
     }
     let issue;
     try {
@@ -879,6 +883,13 @@ export function issueRoutes(db: Db, storage: StorageService) {
     }
 
     const hasFieldChanges = Object.keys(previous).length > 0;
+    const reopened =
+      commentBody &&
+      reopenRequested === true &&
+      isClosed &&
+      previous.status !== undefined &&
+      issue.status === "todo";
+    const reopenFromStatus = reopened ? existing.status : null;
     await logActivity(db, {
       companyId: issue.companyId,
       actorType: actor.actorType,
@@ -892,6 +903,7 @@ export function issueRoutes(db: Db, storage: StorageService) {
         ...updateFields,
         identifier: issue.identifier,
         ...(commentBody ? { source: "comment" } : {}),
+        ...(reopened ? { reopened: true, reopenedFrom: reopenFromStatus } : {}),
         _previous: hasFieldChanges ? previous : undefined,
       },
     });
@@ -917,6 +929,7 @@ export function issueRoutes(db: Db, storage: StorageService) {
           bodySnippet: comment.body.slice(0, 120),
           identifier: issue.identifier,
           issueTitle: issue.title,
+          ...(reopened ? { reopened: true, reopenedFrom: reopenFromStatus, source: "comment" } : {}),
           ...(hasFieldChanges ? { updated: true } : {}),
         },
       });
