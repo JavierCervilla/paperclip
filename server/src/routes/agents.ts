@@ -14,6 +14,7 @@ import {
   testAdapterEnvironmentSchema,
   type InstanceSchedulerHeartbeatAgent,
   updateAgentPermissionsSchema,
+  updateAgentWorkspaceConfigSchema,
   updateAgentInstructionsPathSchema,
   wakeAgentSchema,
   updateAgentSchema,
@@ -1183,6 +1184,50 @@ export function agentRoutes(db: Db) {
       adapterConfigKey,
       path: pathValue,
     });
+  });
+
+  router.patch("/agents/:id/workspace-config", validate(updateAgentWorkspaceConfigSchema), async (req, res) => {
+    const id = req.params.id as string;
+    const existing = await svc.getById(id);
+    if (!existing) {
+      res.status(404).json({ error: "Agent not found" });
+      return;
+    }
+    await assertCanUpdateAgent(req, existing);
+
+    const workspaceConfig = req.body as Record<string, unknown>;
+    const merged = { ...(asRecord(existing.workspaceConfig) ?? {}), ...workspaceConfig };
+    // Remove null values to allow unsetting fields
+    for (const [key, value] of Object.entries(merged)) {
+      if (value === null) delete merged[key];
+    }
+
+    const actor = getActorInfo(req);
+    const agent = await svc.update(id, { workspaceConfig: merged }, {
+      recordRevision: {
+        createdByAgentId: actor.agentId,
+        createdByUserId: actor.actorType === "user" ? actor.actorId : null,
+        source: "workspace-config",
+      },
+    });
+    if (!agent) {
+      res.status(404).json({ error: "Agent not found" });
+      return;
+    }
+
+    await logActivity(db, {
+      companyId: agent.companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      action: "agent.workspace_config_updated",
+      entityType: "agent",
+      entityId: agent.id,
+      details: { workspaceConfig: merged },
+    });
+
+    res.json(agent);
   });
 
   router.patch("/agents/:id", validate(updateAgentSchema), async (req, res) => {
