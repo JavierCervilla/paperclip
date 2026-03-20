@@ -1,113 +1,90 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Configuration and conventions for agents working in this Paperclip fork.
 
-## Branch Strategy (Fork)
-
-This repo is a fork of [paperclipai/paperclip](https://github.com/paperclipai/paperclip). Three branches, strict promotion order:
+## Branch Strategy
 
 ```
-upstream/master ──sync──> origin/master ──merge──> preview ──merge──> deploy/dokploy
-                          (upstream mirror)        (staging/QA)        (production)
+upstream/master → origin/master → preview (staging) → deploy/dokploy (production)
 ```
 
-- **`master`** — Read-only mirror of upstream. Synced weekly via `sync-upstream.yml`. Never commit directly.
-- **`preview`** — Staging environment (Dokploy). All new work and upstream merges land here first. QA happens here.
-- **`deploy/dokploy`** — Production environment (Dokploy). Only receives validated merges from `preview`. Never push directly.
+- **`master`** — Read-only upstream mirror. Synced via `sync-upstream.yml`. Never commit directly.
+- **`preview`** — Staging/QA environment deployed on Dokploy. All feature work and upstream merges target this branch first via PR.
+- **`deploy/dokploy`** — Production environment on Dokploy. Only receives validated merges from `preview`. Never push directly.
 
-**Rules:**
-- All feature work targets `preview` via PR.
-- Only merge `preview` → `deploy/dokploy` after QA validation.
-- Never skip `preview` — no direct pushes to `deploy/dokploy`.
-- Never force-push to `master`, `preview`, or `deploy/dokploy` without explicit CEO approval.
+### PR Flow
 
-## What is Paperclip?
+1. Create a feature branch from `preview`.
+2. Open a PR targeting `preview`.
+3. Once validated on staging, `preview` is merged into `deploy/dokploy` for production.
 
-Paperclip is an open-source orchestration platform for AI agents — a Node.js server + React UI that lets users create AI-powered "companies" with org charts, budgets, governance, and agent coordination. It supports multiple agent runtimes (Claude Code, Codex, Cursor, Gemini, OpenClaw, etc.).
+### Upstream Sync Flow
 
-## Monorepo Structure
+1. `upstream/master` is fetched and merged into `origin/master`.
+2. `origin/master` is merged into `preview` via PR, resolving conflicts.
+3. After staging validation, `preview` merges into `deploy/dokploy`.
 
-**Package manager:** pnpm 9.15.4 (workspaces)
+## Key Customizations (Preserve During Upstream Syncs)
 
-```
-server/          # Express 5 REST API + WebSocket server (port 3100)
-ui/              # React 19 SPA (Vite, TailwindCSS v4, Radix UI)
-cli/             # npx paperclipai CLI (esbuild bundled)
-packages/
-  db/            # PostgreSQL schema + Drizzle ORM migrations
-  shared/        # Shared TypeScript types (used by all packages)
-  adapter-utils/ # Common utilities shared across adapters
-  adapters/      # Per-runtime agent adapters (claude-local, codex-local, cursor-local, gemini-local, openclaw-gateway, opencode-local, pi-local)
-  plugins/       # Plugin SDK + examples
-```
+These changes exist in `preview`/`deploy/dokploy` but not upstream. Conflicts during syncs must be resolved in favor of keeping these:
 
-## Commands
+### Dockerfile
 
-```bash
-# Development
-pnpm dev              # Full stack (API + UI, watch mode)
-pnpm dev:server       # Server only
-pnpm dev:ui           # UI only
+- **Playwright deps**: Extra system packages (`libglib2.0-0`, `libnss3`, `libatk1.0-0`, etc.) for headless browser support.
+- **Deno runtime**: Installed via `deno.land/install.sh` for Deno-based adapters.
+- **GitHub CLI (`gh`)**: Installed from GitHub's apt repo for PR/issue automation.
+- **Gemini CLI**: `@google/gemini-cli` added to global npm installs.
+- **Plugin SDK build**: `COPY packages/plugins/sdk/package.json` and `pnpm --filter @paperclipai/plugin-sdk build` added before UI/server builds.
 
-# Build
+### Other Customizations
+
+- **Repo references**: Updated from `paperclipai/paperclip` to `JavierCervilla/paperclip` where applicable.
+- **Dokploy service naming**: DB service renamed to avoid DNS collisions on `dokploy-network`.
+- **GH_TOKEN env var**: Passed through for `gh` CLI authentication.
+
+## Build & Test Commands
+
+```sh
+pnpm install          # Install dependencies
+pnpm dev              # Start dev server (API + UI on :3100)
 pnpm build            # Build all packages
-
-# Tests
-pnpm test             # Vitest watch mode (all packages)
-pnpm test:run         # Vitest CI mode (run once)
-pnpm test:e2e         # Playwright e2e tests
-
-# Single test file
-pnpm vitest run server/src/__tests__/log-redaction.test.ts
-
-# Type checking
-pnpm typecheck
-
-# Database
-pnpm db:generate      # Generate Drizzle migrations (requires DATABASE_URL)
-pnpm db:migrate       # Apply pending migrations
+pnpm -r typecheck     # Type-check all packages
+pnpm test:run         # Run unit tests (vitest)
+pnpm test:e2e         # Run Playwright e2e tests
+pnpm db:generate      # Generate DB migrations after schema changes
+pnpm db:migrate       # Run DB migrations
 ```
 
-## Architecture
+### Verification Checklist (before claiming done)
 
-### Server (`server/`)
+```sh
+pnpm -r typecheck
+pnpm test:run
+pnpm build
+```
 
-Express 5 app with these key areas:
-- `src/routes/` — REST endpoints (agents, issues, approvals, costs, goals, projects, companies, plugins, etc.)
-- `src/services/` — Business logic (heartbeat, budgets, workspace operations, plugin lifecycle, live events, etc.)
-- `src/adapters/` — Per-runtime adapter wrappers loaded dynamically
-- `src/realtime/` — WebSocket live event broadcasting
-- `src/auth/` — better-auth authentication
-- `src/middleware/` — Request validation, authz, logging
+## Dev Environment
 
-The server auto-migrates the database on startup and embeds a PostgreSQL instance locally (no manual DB setup needed for development). Data persists at `~/.paperclip/instances/default/db`.
+- **Embedded DB**: Leave `DATABASE_URL` unset to use PGlite in dev. Reset with `rm -rf data/pglite && pnpm dev`.
+- **API**: `http://localhost:3100`
+- **UI**: `http://localhost:3100` (served by API in dev)
 
-### Database (`packages/db/`)
+## Repo Structure
 
-Drizzle ORM with PostgreSQL. Schema files live in `src/schema/`. Migrations are in `src/migrations/` and applied automatically at server startup. To regenerate after schema changes: build `db` package first, then `pnpm db:generate`.
+- `server/` — Express REST API and orchestration
+- `ui/` — React + Vite board UI
+- `packages/db/` — Drizzle schema and migrations
+- `packages/shared/` — Shared types, constants, validators
+- `packages/plugins/sdk/` — Plugin SDK
+- `packages/adapters/` — Agent adapters (claude-local, codex-local, gemini-local, etc.)
+- `cli/` — CLI tool (`pnpm paperclipai`)
+- `doc/` — Product and operational docs
+- `agents/` — Agent-specific config and instructions
 
-### UI (`ui/`)
+## Agent Working Directory
 
-React 19 SPA with TanStack Query for data fetching, React Router 7 for routing, and `shadcn` components. Receives real-time updates via WebSocket from the server.
+Agents run from `/paperclip/instances/default/projects/{companyId}/{projectId}/paperclip` inside the container. The home directory is `/paperclip`.
 
-### Adapters (`packages/adapters/`)
+## Git Commit Convention
 
-Each adapter (e.g., `claude-local`) exports three surfaces:
-- **server** — registers agent type, handles spawning/lifecycle
-- **ui** — agent-specific UI components
-- **cli** — adapter-specific CLI commands
-
-### Plugin System (`packages/plugins/`)
-
-Plugins run in sandboxed workers (`plugin-runtime-sandbox.ts`) managed by the server's plugin services. The Plugin SDK (`plugin-sdk`) provides the public API for plugin authors.
-
-## Key Conventions
-
-- All packages use TypeScript with strict project references (`tsconfig.json` root has `references` pointing to each workspace)
-- The `packages/shared` package is the source of truth for types shared across server, UI, CLI, and adapters
-- Vitest is configured via root `vitest.config.ts` with test projects for: `packages/db`, `packages/adapters/opencode-local`, `server`, `ui`, `cli`
-- Environment variables: only `DATABASE_URL`, `PORT`, and `SERVE_UI` are needed; the embedded DB means `DATABASE_URL` is optional locally
-
-## Environment
-
-Copy `.env.example` to `.env` in `server/` if you need to point at an external PostgreSQL instance. Without it, the embedded database is used automatically.
+Always include `Co-Authored-By: Paperclip <noreply@paperclip.ing>` at the end of commit messages.
