@@ -10,6 +10,7 @@ import {
 } from "../api/agents";
 import { budgetsApi } from "../api/budgets";
 import { heartbeatsApi } from "../api/heartbeats";
+import { instanceSettingsApi } from "../api/instanceSettings";
 import { ApiError } from "../api/client";
 import { ChartCard, RunActivityChart, PriorityChart, IssueStatusChart, SuccessRateChart } from "../components/ActivityCharts";
 import { activityApi } from "../api/activity";
@@ -96,13 +97,21 @@ const SECRET_ENV_KEY_RE =
   /(api[-_]?key|access[-_]?token|auth(?:_?token)?|authorization|bearer|secret|passwd|password|credential|jwt|private[-_]?key|cookie|connectionstring)/i;
 const JWT_VALUE_RE = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)?$/;
 
+function redactPathText(value: string, censorUsernameInLogs: boolean) {
+  return redactHomePathUserSegments(value, { enabled: censorUsernameInLogs });
+}
+
+function redactPathValue<T>(value: T, censorUsernameInLogs: boolean): T {
+  return redactHomePathUserSegmentsInValue(value, { enabled: censorUsernameInLogs });
+}
+
 function shouldRedactSecretValue(key: string, value: unknown): boolean {
   if (SECRET_ENV_KEY_RE.test(key)) return true;
   if (typeof value !== "string") return false;
   return JWT_VALUE_RE.test(value);
 }
 
-function redactEnvValue(key: string, value: unknown): string {
+function redactEnvValue(key: string, value: unknown, censorUsernameInLogs: boolean): string {
   if (
     typeof value === "object" &&
     value !== null &&
@@ -113,15 +122,15 @@ function redactEnvValue(key: string, value: unknown): string {
   }
   if (shouldRedactSecretValue(key, value)) return REDACTED_ENV_VALUE;
   if (value === null || value === undefined) return "";
-  if (typeof value === "string") return redactHomePathUserSegments(value);
+  if (typeof value === "string") return redactPathText(value, censorUsernameInLogs);
   try {
-    return JSON.stringify(redactHomePathUserSegmentsInValue(value));
+    return JSON.stringify(redactPathValue(value, censorUsernameInLogs));
   } catch {
-    return redactHomePathUserSegments(String(value));
+    return redactPathText(String(value), censorUsernameInLogs);
   }
 }
 
-function formatEnvForDisplay(envValue: unknown): string {
+function formatEnvForDisplay(envValue: unknown, censorUsernameInLogs: boolean): string {
   const env = asRecord(envValue);
   if (!env) return "<unable-to-parse>";
 
@@ -130,7 +139,7 @@ function formatEnvForDisplay(envValue: unknown): string {
 
   return keys
     .sort()
-    .map((key) => `${key}=${redactEnvValue(key, env[key])}`)
+    .map((key) => `${key}=${redactEnvValue(key, env[key], censorUsernameInLogs)}`)
     .join("\n");
 }
 
@@ -313,7 +322,13 @@ function WorkspaceOperationStatusBadge({ status }: { status: WorkspaceOperation[
   );
 }
 
-function WorkspaceOperationLogViewer({ operation }: { operation: WorkspaceOperation }) {
+function WorkspaceOperationLogViewer({
+  operation,
+  censorUsernameInLogs,
+}: {
+  operation: WorkspaceOperation;
+  censorUsernameInLogs: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const { data: logData, isLoading, error } = useQuery({
     queryKey: ["workspace-operation-log", operation.id],
@@ -366,7 +381,7 @@ function WorkspaceOperationLogViewer({ operation }: { operation: WorkspaceOperat
                   >
                     [{chunk.stream}]
                   </span>
-                  <span className="whitespace-pre-wrap break-all">{redactHomePathUserSegments(chunk.chunk)}</span>
+                  <span className="whitespace-pre-wrap break-all">{redactPathText(chunk.chunk, censorUsernameInLogs)}</span>
                 </div>
               ))}
             </div>
@@ -377,7 +392,13 @@ function WorkspaceOperationLogViewer({ operation }: { operation: WorkspaceOperat
   );
 }
 
-function WorkspaceOperationsSection({ operations }: { operations: WorkspaceOperation[] }) {
+function WorkspaceOperationsSection({
+  operations,
+  censorUsernameInLogs,
+}: {
+  operations: WorkspaceOperation[];
+  censorUsernameInLogs: boolean;
+}) {
   if (operations.length === 0) return null;
 
   return (
@@ -442,7 +463,7 @@ function WorkspaceOperationsSection({ operations }: { operations: WorkspaceOpera
                 <div>
                   <div className="mb-1 text-xs text-red-700 dark:text-red-300">stderr excerpt</div>
                   <pre className="rounded-md bg-red-50 p-2 text-xs whitespace-pre-wrap break-all text-red-800 dark:bg-neutral-950 dark:text-red-100">
-                    {redactHomePathUserSegments(operation.stderrExcerpt)}
+                    {redactPathText(operation.stderrExcerpt, censorUsernameInLogs)}
                   </pre>
                 </div>
               )}
@@ -450,11 +471,16 @@ function WorkspaceOperationsSection({ operations }: { operations: WorkspaceOpera
                 <div>
                   <div className="mb-1 text-xs text-muted-foreground">stdout excerpt</div>
                   <pre className="rounded-md bg-neutral-100 p-2 text-xs whitespace-pre-wrap break-all dark:bg-neutral-950">
-                    {redactHomePathUserSegments(operation.stdoutExcerpt)}
+                    {redactPathText(operation.stdoutExcerpt, censorUsernameInLogs)}
                   </pre>
                 </div>
               )}
-              {operation.logRef && <WorkspaceOperationLogViewer operation={operation} />}
+              {operation.logRef && (
+                <WorkspaceOperationLogViewer
+                  operation={operation}
+                  censorUsernameInLogs={censorUsernameInLogs}
+                />
+              )}
             </div>
           );
         })}
@@ -1454,10 +1480,14 @@ function ConfigurationTab({
                 Lets this agent create or hire agents and implicitly assign tasks.
               </p>
             </div>
-            <Button
-              variant={canCreateAgents ? "default" : "outline"}
-              size="sm"
-              className="h-7 px-2.5 text-xs"
+            <button
+              type="button"
+              role="switch"
+              aria-checked={canCreateAgents}
+              className={cn(
+                "relative inline-flex h-5 w-9 items-center rounded-full transition-colors shrink-0 disabled:cursor-not-allowed disabled:opacity-50",
+                canCreateAgents ? "bg-green-600" : "bg-muted",
+              )}
               onClick={() =>
                 updatePermissions.mutate({
                   canCreateAgents: !canCreateAgents,
@@ -1466,8 +1496,13 @@ function ConfigurationTab({
               }
               disabled={updatePermissions.isPending}
             >
-              {canCreateAgents ? "Enabled" : "Disabled"}
-            </Button>
+              <span
+                className={cn(
+                  "inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform",
+                  canCreateAgents ? "translate-x-4.5" : "translate-x-0.5",
+                )}
+              />
+            </button>
           </div>
           <div className="flex items-center justify-between gap-4 text-sm">
             <div className="space-y-1">
@@ -1481,10 +1516,8 @@ function ConfigurationTab({
               role="switch"
               aria-checked={canAssignTasks}
               className={cn(
-                "relative inline-flex h-6 w-11 shrink-0 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
-                canAssignTasks
-                  ? "bg-green-500 focus-visible:ring-green-500/70"
-                  : "bg-input/50 focus-visible:ring-ring",
+                "relative inline-flex h-5 w-9 items-center rounded-full transition-colors shrink-0 disabled:cursor-not-allowed disabled:opacity-50",
+                canAssignTasks ? "bg-green-600" : "bg-muted",
               )}
               onClick={() =>
                 updatePermissions.mutate({
@@ -1496,8 +1529,8 @@ function ConfigurationTab({
             >
               <span
                 className={cn(
-                  "inline-block h-4 w-4 transform rounded-full bg-background transition-transform",
-                  canAssignTasks ? "translate-x-6" : "translate-x-1",
+                  "inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform",
+                  canAssignTasks ? "translate-x-4.5" : "translate-x-0.5",
                 )}
               />
             </button>
@@ -2485,13 +2518,21 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
     };
   }, [isLive, run.companyId, run.id, run.agentId]);
 
+  const censorUsernameInLogs = useQuery({
+    queryKey: queryKeys.instance.generalSettings,
+    queryFn: () => instanceSettingsApi.getGeneral(),
+  }).data?.censorUsernameInLogs === true;
+
   const adapterInvokePayload = useMemo(() => {
     const evt = events.find((e) => e.eventType === "adapter.invoke");
-    return redactHomePathUserSegmentsInValue(asRecord(evt?.payload ?? null));
-  }, [events]);
+    return redactPathValue(asRecord(evt?.payload ?? null), censorUsernameInLogs);
+  }, [censorUsernameInLogs, events]);
 
   const adapter = useMemo(() => getUIAdapter(adapterType), [adapterType]);
-  const transcript = useMemo(() => buildTranscript(logLines, adapter.parseStdoutLine), [logLines, adapter]);
+  const transcript = useMemo(
+    () => buildTranscript(logLines, adapter.parseStdoutLine, { censorUsernameInLogs }),
+    [adapter, censorUsernameInLogs, logLines],
+  );
 
   useEffect(() => {
     setTranscriptMode("nice");
@@ -2519,7 +2560,10 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
 
   return (
     <div className="space-y-3">
-      <WorkspaceOperationsSection operations={workspaceOperations} />
+      <WorkspaceOperationsSection
+        operations={workspaceOperations}
+        censorUsernameInLogs={censorUsernameInLogs}
+      />
       {adapterInvokePayload && (
         <div className="rounded-lg border border-border bg-background/60 p-3 space-y-2">
           <div className="text-xs font-medium text-muted-foreground">Invocation</div>
@@ -2561,8 +2605,8 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
               <div className="text-xs text-muted-foreground mb-1">Prompt</div>
               <pre className="bg-neutral-100 dark:bg-neutral-950 rounded-md p-2 text-xs overflow-x-auto whitespace-pre-wrap">
                 {typeof adapterInvokePayload.prompt === "string"
-                  ? redactHomePathUserSegments(adapterInvokePayload.prompt)
-                  : JSON.stringify(redactHomePathUserSegmentsInValue(adapterInvokePayload.prompt), null, 2)}
+                  ? redactPathText(adapterInvokePayload.prompt, censorUsernameInLogs)
+                  : JSON.stringify(redactPathValue(adapterInvokePayload.prompt, censorUsernameInLogs), null, 2)}
               </pre>
             </div>
           )}
@@ -2570,7 +2614,7 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
             <div>
               <div className="text-xs text-muted-foreground mb-1">Context</div>
               <pre className="bg-neutral-100 dark:bg-neutral-950 rounded-md p-2 text-xs overflow-x-auto whitespace-pre-wrap">
-                {JSON.stringify(redactHomePathUserSegmentsInValue(adapterInvokePayload.context), null, 2)}
+                {JSON.stringify(redactPathValue(adapterInvokePayload.context, censorUsernameInLogs), null, 2)}
               </pre>
             </div>
           )}
@@ -2578,7 +2622,7 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
             <div>
               <div className="text-xs text-muted-foreground mb-1">Environment</div>
               <pre className="bg-neutral-100 dark:bg-neutral-950 rounded-md p-2 text-xs overflow-x-auto whitespace-pre-wrap font-mono">
-                {formatEnvForDisplay(adapterInvokePayload.env)}
+                {formatEnvForDisplay(adapterInvokePayload.env, censorUsernameInLogs)}
               </pre>
             </div>
           )}
@@ -2654,14 +2698,14 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
           {run.error && (
             <div className="text-xs text-red-600 dark:text-red-200">
               <span className="text-red-700 dark:text-red-300">Error: </span>
-              {redactHomePathUserSegments(run.error)}
+              {redactPathText(run.error, censorUsernameInLogs)}
             </div>
           )}
           {run.stderrExcerpt && run.stderrExcerpt.trim() && (
             <div>
               <div className="text-xs text-red-700 dark:text-red-300 mb-1">stderr excerpt</div>
               <pre className="bg-red-50 dark:bg-neutral-950 rounded-md p-2 text-xs overflow-x-auto whitespace-pre-wrap text-red-800 dark:text-red-100">
-                {redactHomePathUserSegments(run.stderrExcerpt)}
+                {redactPathText(run.stderrExcerpt, censorUsernameInLogs)}
               </pre>
             </div>
           )}
@@ -2669,7 +2713,7 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
             <div>
               <div className="text-xs text-red-700 dark:text-red-300 mb-1">adapter result JSON</div>
               <pre className="bg-red-50 dark:bg-neutral-950 rounded-md p-2 text-xs overflow-x-auto whitespace-pre-wrap text-red-800 dark:text-red-100">
-                {JSON.stringify(redactHomePathUserSegmentsInValue(run.resultJson), null, 2)}
+                {JSON.stringify(redactPathValue(run.resultJson, censorUsernameInLogs), null, 2)}
               </pre>
             </div>
           )}
@@ -2677,7 +2721,7 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
             <div>
               <div className="text-xs text-red-700 dark:text-red-300 mb-1">stdout excerpt</div>
               <pre className="bg-red-50 dark:bg-neutral-950 rounded-md p-2 text-xs overflow-x-auto whitespace-pre-wrap text-red-800 dark:text-red-100">
-                {redactHomePathUserSegments(run.stdoutExcerpt)}
+                {redactPathText(run.stdoutExcerpt, censorUsernameInLogs)}
               </pre>
             </div>
           )}
@@ -2704,9 +2748,9 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
                   </span>
                   <span className={cn("break-all", color)}>
                     {evt.message
-                      ? redactHomePathUserSegments(evt.message)
+                      ? redactPathText(evt.message, censorUsernameInLogs)
                       : evt.payload
-                        ? JSON.stringify(redactHomePathUserSegmentsInValue(evt.payload))
+                        ? JSON.stringify(redactPathValue(evt.payload, censorUsernameInLogs))
                         : ""}
                   </span>
                 </div>

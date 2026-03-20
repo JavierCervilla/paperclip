@@ -295,6 +295,13 @@
       "when": 1774025479675,
       "tag": "0041_abandoned_lethal_legion",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1774011294562,
+      "tag": "0039_curly_maria_hill",
+      "breakpoints": true
     }
   ]
 }
