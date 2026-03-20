@@ -12,6 +12,7 @@ import type { Db } from "@paperclipai/db";
 import { chatSessions, chatMessages } from "@paperclipai/db";
 import { eq, desc, asc, gt, sql } from "drizzle-orm";
 import { publishLiveEvent } from "./live-events.js";
+import { logger } from "../middleware/logger.js";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -121,7 +122,7 @@ export function chatService(db?: Db) {
           startedAt: new Date(startedAt),
         })
         .execute()
-        .catch((err) => console.error("[chat] Failed to persist session:", err));
+        .catch((err) => logger.error({ err }, "Failed to persist chat session"));
     }
 
     publishLiveEvent({
@@ -156,7 +157,7 @@ export function chatService(db?: Db) {
         })
         .where(eq(chatSessions.id, session.id))
         .execute()
-        .catch((err) => console.error("[chat] Failed to persist session end:", err));
+        .catch((err) => logger.error({ err }, "Failed to persist chat session end"));
     }
 
     publishLiveEvent({
@@ -234,7 +235,7 @@ export function chatService(db?: Db) {
             .where(eq(chatSessions.id, session!.id))
             .execute();
         })
-        .catch((err) => console.error("[chat] Failed to persist message:", err));
+        .catch((err) => logger.error({ err }, "Failed to persist chat message"));
     }
 
     publishLiveEvent({
@@ -296,7 +297,7 @@ export function chatService(db?: Db) {
             .where(eq(chatSessions.id, session!.id))
             .execute();
         })
-        .catch((err) => console.error("[chat] Failed to persist response:", err));
+        .catch((err) => logger.error({ err }, "Failed to persist chat response"));
     }
 
     publishLiveEvent({
