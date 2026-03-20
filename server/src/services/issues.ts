@@ -378,6 +378,36 @@ export function issueService(db: Db) {
     }
   }
 
+  async function assertValidProject(companyId: string, projectId: string) {
+    const project = await db
+      .select({ id: projects.id, companyId: projects.companyId })
+      .from(projects)
+      .where(eq(projects.id, projectId))
+      .then((rows) => rows[0] ?? null);
+    if (!project) throw unprocessable("Project not found");
+    if (project.companyId !== companyId) throw unprocessable("Project must belong to same company");
+  }
+
+  async function assertValidGoal(companyId: string, goalId: string) {
+    const goal = await db
+      .select({ id: goals.id, companyId: goals.companyId })
+      .from(goals)
+      .where(eq(goals.id, goalId))
+      .then((rows) => rows[0] ?? null);
+    if (!goal) throw unprocessable("Goal not found");
+    if (goal.companyId !== companyId) throw unprocessable("Goal must belong to same company");
+  }
+
+  async function assertValidParentIssue(companyId: string, parentId: string) {
+    const parent = await db
+      .select({ id: issues.id, companyId: issues.companyId })
+      .from(issues)
+      .where(eq(issues.id, parentId))
+      .then((rows) => rows[0] ?? null);
+    if (!parent) throw unprocessable("Parent issue not found");
+    if (parent.companyId !== companyId) throw unprocessable("Parent issue must belong to same company");
+  }
+
   async function assertValidExecutionWorkspace(companyId: string, projectId: string | null | undefined, executionWorkspaceId: string) {
     const workspace = await db
       .select({
@@ -695,6 +725,15 @@ export function issueService(db: Db) {
       if (data.assigneeUserId) {
         await assertAssignableUser(companyId, data.assigneeUserId);
       }
+      if (data.projectId) {
+        await assertValidProject(companyId, data.projectId);
+      }
+      if (data.goalId) {
+        await assertValidGoal(companyId, data.goalId);
+      }
+      if (data.parentId) {
+        await assertValidParentIssue(companyId, data.parentId);
+      }
       if (data.projectWorkspaceId) {
         await assertValidProjectWorkspace(companyId, data.projectId, data.projectWorkspaceId);
       }
@@ -824,6 +863,15 @@ export function issueService(db: Db) {
       }
       if (issueData.assigneeUserId) {
         await assertAssignableUser(existing.companyId, issueData.assigneeUserId);
+      }
+      if (issueData.projectId) {
+        await assertValidProject(existing.companyId, issueData.projectId);
+      }
+      if (issueData.goalId) {
+        await assertValidGoal(existing.companyId, issueData.goalId);
+      }
+      if (issueData.parentId) {
+        await assertValidParentIssue(existing.companyId, issueData.parentId);
       }
       const nextProjectId = issueData.projectId !== undefined ? issueData.projectId : existing.projectId;
       const nextProjectWorkspaceId =
