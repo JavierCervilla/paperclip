@@ -92,7 +92,7 @@ export function createBetterAuthInstance(db: Db, config: Config, trustedOrigins?
       disableSignUp: config.authDisableSignUp,
     },
     logger: {
-      verboseLogging: true,
+      level: "debug" as const,
     },
     ...(isHttpOnly ? { advanced: { useSecureCookies: false } } : {}),
   };
