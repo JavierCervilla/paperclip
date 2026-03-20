@@ -298,7 +298,7 @@ export function HeartbeatMonitoring() {
 
   useEffect(() => {
     setBreadcrumbs([
-      { label: "Dashboard", to: "/dashboard" },
+      { label: "Dashboard", href: "/dashboard" },
       { label: "Heartbeat Monitoring" },
     ]);
   }, [setBreadcrumbs]);
