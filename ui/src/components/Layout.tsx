@@ -303,7 +303,7 @@ export function Layout() {
                     <TooltipTrigger asChild>
                       <span className="px-2 text-xs text-muted-foreground shrink-0 cursor-default">v</span>
                     </TooltipTrigger>
-                    <TooltipContent>v{health.version}</TooltipContent>
+                    <TooltipContent>v{health.version}{health.commit ? ` (${health.commit})` : ""}</TooltipContent>
                   </Tooltip>
                 )}
                 <Button variant="ghost" size="icon-sm" className="text-muted-foreground shrink-0" asChild>
@@ -361,7 +361,7 @@ export function Layout() {
                     <TooltipTrigger asChild>
                       <span className="px-2 text-xs text-muted-foreground shrink-0 cursor-default">v</span>
                     </TooltipTrigger>
-                    <TooltipContent>v{health.version}</TooltipContent>
+                    <TooltipContent>v{health.version}{health.commit ? ` (${health.commit})` : ""}</TooltipContent>
                   </Tooltip>
                 )}
                 <Button variant="ghost" size="icon-sm" className="text-muted-foreground shrink-0" asChild>
