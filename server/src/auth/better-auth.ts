@@ -91,6 +91,9 @@ export function createBetterAuthInstance(db: Db, config: Config, trustedOrigins?
       requireEmailVerification: false,
       disableSignUp: config.authDisableSignUp,
     },
+    logger: {
+      verboseLogging: true,
+    },
     ...(isHttpOnly ? { advanced: { useSecureCookies: false } } : {}),
   };
 
