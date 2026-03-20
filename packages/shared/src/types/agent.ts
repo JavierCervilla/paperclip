@@ -9,6 +9,17 @@ import type {
   PrincipalPermissionGrant,
 } from "./access.js";
 
+export interface AgentWorkspacePreference {
+  priority: number;
+}
+
+export interface AgentWorkspaceConfig {
+  defaultProjectWorkspaceId?: string | null;
+  allowedProjectWorkspaceIds?: string[] | null;
+  workspacePreferences?: Record<string, AgentWorkspacePreference> | null;
+  crossWorkspaceRefs?: boolean | null;
+}
+
 export interface AgentPermissions {
   canCreateAgents: boolean;
 }
@@ -47,6 +58,7 @@ export interface Agent {
   pausedAt: Date | null;
   permissions: AgentPermissions;
   lastHeartbeatAt: Date | null;
+  workspaceConfig: AgentWorkspaceConfig;
   metadata: Record<string, unknown> | null;
   createdAt: Date;
   updatedAt: Date;

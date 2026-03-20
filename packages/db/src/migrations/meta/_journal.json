@@ -281,6 +281,13 @@
       "when": 1774065600000,
       "tag": "0039_chat_history",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1774023322024,
+      "tag": "0040_cute_kabuki",
+      "breakpoints": true
     }
   ]
 }

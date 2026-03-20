@@ -6,6 +6,8 @@ export type {
   AgentChainOfCommandEntry,
   AgentDetail,
   AgentPermissions,
+  AgentWorkspaceConfig,
+  AgentWorkspacePreference,
   AgentKeyCreated,
   AgentConfigRevision,
   AdapterEnvironmentCheckLevel,

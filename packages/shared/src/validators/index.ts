@@ -58,6 +58,10 @@ export {
   type ResetAgentSession,
   type TestAdapterEnvironment,
   type UpdateAgentPermissions,
+  agentWorkspaceConfigSchema,
+  updateAgentWorkspaceConfigSchema,
+  type AgentWorkspaceConfigInput,
+  type UpdateAgentWorkspaceConfig,
 } from "./agent.js";
 
 export {

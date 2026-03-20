@@ -36,6 +36,7 @@ export const createAgentSchema = z.object({
   runtimeConfig: z.record(z.unknown()).optional().default({}),
   budgetMonthlyCents: z.number().int().nonnegative().optional().default(0),
   permissions: agentPermissionsSchema.optional(),
+  workspaceConfig: z.record(z.unknown()).optional().default({}),
   metadata: z.record(z.unknown()).optional().nullable(),
 });
 
@@ -97,6 +98,19 @@ export const testAdapterEnvironmentSchema = z.object({
 });
 
 export type TestAdapterEnvironment = z.infer<typeof testAdapterEnvironmentSchema>;
+
+export const agentWorkspaceConfigSchema = z.object({
+  defaultProjectWorkspaceId: z.string().uuid().nullable().optional(),
+  allowedProjectWorkspaceIds: z.array(z.string().uuid()).nullable().optional(),
+  workspacePreferences: z.record(z.object({ priority: z.number() })).nullable().optional(),
+  crossWorkspaceRefs: z.boolean().nullable().optional(),
+});
+
+export type AgentWorkspaceConfigInput = z.infer<typeof agentWorkspaceConfigSchema>;
+
+export const updateAgentWorkspaceConfigSchema = agentWorkspaceConfigSchema;
+
+export type UpdateAgentWorkspaceConfig = z.infer<typeof updateAgentWorkspaceConfigSchema>;
 
 export const updateAgentPermissionsSchema = z.object({
   canCreateAgents: z.boolean(),

@@ -270,6 +270,8 @@ export {
   testAdapterEnvironmentSchema,
   agentPermissionsSchema,
   updateAgentPermissionsSchema,
+  updateAgentWorkspaceConfigSchema,
+  agentWorkspaceConfigSchema,
   type CreateAgent,
   type CreateAgentHire,
   type UpdateAgent,
@@ -279,6 +281,8 @@ export {
   type ResetAgentSession,
   type TestAdapterEnvironment,
   type UpdateAgentPermissions,
+  type UpdateAgentWorkspaceConfig,
+  type AgentWorkspaceConfigInput,
   createProjectSchema,
   updateProjectSchema,
   createProjectWorkspaceSchema,
@@ -457,3 +461,6 @@ export {
   type SecretsLocalEncryptedConfig,
   type ConfigMeta,
 } from "./config-schema.js";
+
+export { parseWorkspaceFileRefs, buildWorkspaceFileRef, resolveWorkspaceFileRef, expandWorkspaceFileRefs } from "./workspace-refs.js";
+export type { WorkspaceFileRef } from "./workspace-refs.js";

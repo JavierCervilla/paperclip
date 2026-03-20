@@ -334,6 +334,22 @@ function readNonEmptyString(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value : null;
 }
 
+function parseAgentWorkspaceConfig(agent: { workspaceConfig?: unknown }) {
+  const raw = agent.workspaceConfig;
+  if (!raw || typeof raw !== "object") return null;
+  const config = raw as Record<string, unknown>;
+  const defaultProjectWorkspaceId = readNonEmptyString(config.defaultProjectWorkspaceId);
+  const allowedProjectWorkspaceIds = Array.isArray(config.allowedProjectWorkspaceIds)
+    ? (config.allowedProjectWorkspaceIds as unknown[]).filter((id): id is string => typeof id === "string" && id.length > 0)
+    : null;
+  const crossWorkspaceRefs = typeof config.crossWorkspaceRefs === "boolean" ? config.crossWorkspaceRefs : false;
+  const workspacePreferences = config.workspacePreferences && typeof config.workspacePreferences === "object"
+    ? (config.workspacePreferences as Record<string, { priority?: number }>)
+    : null;
+  return { defaultProjectWorkspaceId, allowedProjectWorkspaceIds, crossWorkspaceRefs, workspacePreferences };
+}
+
+
 function normalizeLedgerBillingType(value: unknown): BillingType {
   const raw = readNonEmptyString(value);
   switch (raw) {
@@ -1081,9 +1097,17 @@ export function heartbeatService(db: Db) {
           )
           .orderBy(asc(projectWorkspaces.createdAt), asc(projectWorkspaces.id))
       : [];
+    const agentWsConfig = parseAgentWorkspaceConfig(agent);
+    const agentDefaultWsId = agentWsConfig?.defaultProjectWorkspaceId ?? null;
+    const effectivePreferredWsId = preferredProjectWorkspaceId ?? agentDefaultWsId;
+
+    const filteredProjectWorkspaceRows = agentWsConfig?.allowedProjectWorkspaceIds
+      ? unorderedProjectWorkspaceRows.filter((ws) => agentWsConfig.allowedProjectWorkspaceIds!.includes(ws.id))
+      : unorderedProjectWorkspaceRows;
+
     const projectWorkspaceRows = prioritizeProjectWorkspaceCandidatesForRun(
-      unorderedProjectWorkspaceRows,
-      preferredProjectWorkspaceId,
+      filteredProjectWorkspaceRows,
+      effectivePreferredWsId,
     );
 
     const workspaceHints = projectWorkspaceRows.map((workspace) => ({
