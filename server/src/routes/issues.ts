@@ -227,6 +227,8 @@ export function issueRoutes(db: Db, storage: StorageService) {
       return;
     }
 
+    const limitRaw = req.query.limit as string | undefined;
+    const offsetRaw = req.query.offset as string | undefined;
     const result = await svc.list(companyId, {
       status: req.query.status as string | undefined,
       assigneeAgentId: req.query.assigneeAgentId as string | undefined,
@@ -237,6 +239,8 @@ export function issueRoutes(db: Db, storage: StorageService) {
       parentId: req.query.parentId as string | undefined,
       labelId: req.query.labelId as string | undefined,
       q: req.query.q as string | undefined,
+      limit: limitRaw ? parseInt(limitRaw, 10) : undefined,
+      offset: offsetRaw ? parseInt(offsetRaw, 10) : undefined,
     });
     res.json(result);
   });

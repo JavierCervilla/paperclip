@@ -69,6 +69,8 @@ export interface IssueFilters {
   parentId?: string;
   labelId?: string;
   q?: string;
+  limit?: number;
+  offset?: number;
 }
 
 type IssueRow = typeof issues.$inferSelect;
@@ -548,11 +550,15 @@ export function issueService(db: Db) {
           ELSE 6
         END
       `;
+      const pageLimit = Math.min(Math.max(filters?.limit ?? 50, 1), 200);
+      const pageOffset = Math.max(filters?.offset ?? 0, 0);
       const rows = await db
         .select()
         .from(issues)
         .where(and(...conditions))
-        .orderBy(hasSearch ? asc(searchOrder) : asc(priorityOrder), asc(priorityOrder), desc(issues.updatedAt));
+        .orderBy(hasSearch ? asc(searchOrder) : asc(priorityOrder), asc(priorityOrder), desc(issues.updatedAt))
+        .limit(pageLimit)
+        .offset(pageOffset);
       const withLabels = await withIssueLabels(db, rows);
       const runMap = await activeRunMapForIssues(db, withLabels);
       const withRuns = withActiveRuns(withLabels, runMap);
