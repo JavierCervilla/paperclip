@@ -1,6 +1,7 @@
 export type HealthStatus = {
   status: "ok";
   version?: string;
+  commit?: string | null;
   deploymentMode?: "local_trusted" | "authenticated";
   deploymentExposure?: "private" | "public";
   authReady?: boolean;
