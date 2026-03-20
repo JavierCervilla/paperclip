@@ -651,6 +651,8 @@ export async function startServer(): Promise<StartedServer> {
         const red = "\x1b[41m\x1b[30m";
         const yellow = "\x1b[33m";
         const reset = "\x1b[0m";
+        logger.warn({ boardClaimUrl }, "Board claim required — sign in and open the one-time URL to claim ownership");
+        // Also print to console for visibility (ANSI-formatted for terminal)
         console.log(
           [
             `${red}  BOARD CLAIM REQUIRED  ${reset}`,

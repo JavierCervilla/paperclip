@@ -413,7 +413,7 @@ export async function flushPluginLogBuffer(): Promise<void> {
 /** Interval handle for the periodic log flush. */
 const _logFlushInterval = setInterval(() => {
   flushPluginLogBuffer().catch((err) => {
-    console.error("[plugin-host-services] Periodic log flush error:", err);
+    logger.error({ err }, "Periodic plugin log flush failed");
   });
 }, LOG_BUFFER_FLUSH_INTERVAL_MS);
 
@@ -630,7 +630,7 @@ export function buildHostServices(
         });
         if (_logBuffer.length >= LOG_BUFFER_FLUSH_SIZE) {
           flushPluginLogBuffer().catch((err) => {
-            console.error("[plugin-host-services] Triggered metric flush failed:", err);
+            logger.error({ err }, "Triggered plugin metric flush failed");
           });
         }
       },
@@ -664,7 +664,7 @@ export function buildHostServices(
         });
         if (_logBuffer.length >= LOG_BUFFER_FLUSH_SIZE) {
           flushPluginLogBuffer().catch((err) => {
-            console.error("[plugin-host-services] Triggered log flush failed:", err);
+            logger.error({ err }, "Triggered plugin log flush failed");
           });
         }
       },
@@ -1124,7 +1124,7 @@ export function buildHostServices(
 
       // Flush any buffered log entries synchronously-as-possible on dispose.
       flushPluginLogBuffer().catch((err) => {
-        console.error("[plugin-host-services] dispose() log flush failed:", err);
+        logger.error({ err }, "Plugin log flush on dispose failed");
       });
     },
   };
