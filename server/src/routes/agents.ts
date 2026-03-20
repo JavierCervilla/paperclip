@@ -2044,13 +2044,65 @@ export function agentRoutes(db: Db) {
     // Kill the chat process when ending the session
     chatProc.killProcess(id);
 
-    const ended = chat.endSession(id);
+    const ended = chat.endSession(id, "user_closed");
     if (!ended) {
       res.status(404).json({ error: "No active chat session for this agent" });
       return;
     }
 
     res.json({ ok: true });
+  });
+
+  /**
+   * POST /agents/:id/chat-typing
+   * Signal typing state. Board users signal "user" typing, agents signal "agent" typing.
+   * Body: { isTyping: boolean }
+   */
+  router.post("/agents/:id/chat-typing", async (req, res) => {
+    const id = req.params.id as string;
+    const agent = await svc.getById(id);
+    if (!agent) {
+      res.status(404).json({ error: "Agent not found" });
+      return;
+    }
+    assertCompanyAccess(req, agent.companyId);
+
+    const { isTyping } = req.body;
+    if (typeof isTyping !== "boolean") {
+      res.status(400).json({ error: "isTyping (boolean) is required" });
+      return;
+    }
+
+    const who: "user" | "agent" = req.actor.agentId ? "agent" : "user";
+    chat.setTyping(id, who, isTyping);
+
+    res.json({ ok: true });
+  });
+
+  /**
+   * POST /agents/:id/chat-read
+   * Mark messages as read by the caller.
+   * Body: { messageIds: string[] }
+   */
+  router.post("/agents/:id/chat-read", async (req, res) => {
+    const id = req.params.id as string;
+    const agent = await svc.getById(id);
+    if (!agent) {
+      res.status(404).json({ error: "Agent not found" });
+      return;
+    }
+    assertCompanyAccess(req, agent.companyId);
+
+    const { messageIds } = req.body;
+    if (!Array.isArray(messageIds) || messageIds.length === 0) {
+      res.status(400).json({ error: "messageIds (string[]) is required" });
+      return;
+    }
+
+    const reader: "user" | "agent" = req.actor.agentId ? "agent" : "user";
+    const count = chat.markRead(id, messageIds, reader);
+
+    res.json({ ok: true, markedCount: count });
   });
 
   /**

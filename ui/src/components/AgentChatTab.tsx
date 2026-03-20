@@ -8,7 +8,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { cn } from "../lib/utils";
-import { Send, X, Loader2, MessageSquare, ChevronDown, ChevronRight, Paperclip, FileText, Download, History, ArrowLeft } from "lucide-react";
+import { Send, X, Loader2, MessageSquare, ChevronDown, ChevronRight, Paperclip, FileText, Download, History, ArrowLeft, CheckCheck } from "lucide-react";
 import type { Agent, AssetImage } from "@paperclipai/shared";
 import { agentsApi, type ChatHistorySession, type ChatHistoryMessage } from "../api/agents";
 import { assetsApi } from "../api/assets";
@@ -33,6 +33,7 @@ interface ChatMessage {
   sender: "user" | "agent";
   content: string;
   attachments?: ChatAttachment[];
+  readAt?: string | null;
   createdAt: string;
 }
 
@@ -322,11 +323,14 @@ export function AgentChatTab({ agent, companyId }: { agent: Agent; companyId: st
   const [uploadingCount, setUploadingCount] = useState(0);
   const [viewingHistoryId, setViewingHistoryId] = useState<string | null>(null);
   const [mobileHistoryOpen, setMobileHistoryOpen] = useState(false);
+  const [remoteTyping, setRemoteTyping] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const lastMessageIdRef = useRef<string | null>(null);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isTypingSignaledRef = useRef(false);
 
   // Track the agent's active chat process while typing
   useEffect(() => {
@@ -391,8 +395,25 @@ export function AgentChatTab({ agent, companyId }: { agent: Agent; companyId: st
     lastMessageIdRef.current = msg.id;
     if (msg.sender === "agent") {
       setIsTyping(false);
+      setRemoteTyping(false);
+      // Auto-mark agent messages as read (user is viewing the chat)
+      agentsApi.chatMarkRead(agent.id, [msg.id], companyId).catch(() => {});
     }
-  }, []);
+  }, [agent.id, companyId]);
+
+  // Signal typing state to the server with debounce
+  const signalTyping = useCallback((typing: boolean) => {
+    if (!sessionId) return;
+    if (typing === isTypingSignaledRef.current) return;
+    isTypingSignaledRef.current = typing;
+    agentsApi.chatTyping(agent.id, typing, companyId).catch(() => {});
+  }, [sessionId, agent.id, companyId]);
+
+  const handleTypingInput = useCallback(() => {
+    signalTyping(true);
+    if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+    typingTimerRef.current = setTimeout(() => signalTyping(false), 3000);
+  }, [signalTyping]);
 
   // Primary: WebSocket for real-time chat messages
   useEffect(() => {
@@ -438,10 +459,32 @@ export function AgentChatTab({ agent, companyId }: { agent: Agent; companyId: st
             }
           }
 
+          if (parsed.type === "chat.typing") {
+            const who = payload.who as string;
+            const typing = payload.isTyping as boolean;
+            // Show typing indicator when the agent is typing (not user's own typing)
+            if (who === "agent") {
+              setRemoteTyping(typing);
+            }
+          }
+
+          if (parsed.type === "chat.messages.read") {
+            const readMsgIds = payload.messageIds as string[];
+            const readAt = payload.readAt as string;
+            if (readMsgIds && readAt) {
+              setMessages((prev) =>
+                prev.map((m) =>
+                  readMsgIds.includes(m.id) ? { ...m, readAt } : m,
+                ),
+              );
+            }
+          }
+
           if (parsed.type === "chat.session.ended") {
             setSessionId(null);
             setMessages([]);
             setIsTyping(false);
+            setRemoteTyping(false);
             lastMessageIdRef.current = null;
           }
         } catch {
@@ -599,6 +642,9 @@ export function AgentChatTab({ agent, companyId }: { agent: Agent; companyId: st
       }
       setIsTyping(true);
       setInput("");
+      // Clear user typing signal on send
+      signalTyping(false);
+      if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
       // Revoke preview URLs
       for (const att of attachments) {
         if (att.previewUrl) URL.revokeObjectURL(att.previewUrl);
@@ -615,6 +661,7 @@ export function AgentChatTab({ agent, companyId }: { agent: Agent; companyId: st
       setSessionId(null);
       setMessages([]);
       setIsTyping(false);
+      setRemoteTyping(false);
       lastMessageIdRef.current = null;
       setPendingAttachments([]);
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
@@ -741,12 +788,30 @@ export function AgentChatTab({ agent, companyId }: { agent: Agent; companyId: st
                     {msg.attachments && msg.attachments.length > 0 && (
                       <MessageAttachments attachments={msg.attachments} isUser={msg.sender === "user"} />
                     )}
-                    <span className="block text-[10px] opacity-50 mt-1">
+                    <span className="flex items-center gap-1 text-[10px] opacity-50 mt-1">
                       {new Date(msg.createdAt).toLocaleTimeString()}
+                      {msg.sender === "user" && msg.readAt && (
+                        <CheckCheck className="h-3 w-3 text-blue-400" />
+                      )}
                     </span>
                   </div>
                 </div>
               ))}
+
+              {/* User typing indicator (from the other side) */}
+              {remoteTyping && (
+                <div className="flex justify-start">
+                  <div className="bg-muted rounded-lg px-3 py-2 text-sm text-muted-foreground">
+                    <span className="flex items-center gap-1.5">
+                      <span className="flex gap-0.5">
+                        <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:0ms]" />
+                        <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:150ms]" />
+                        <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:300ms]" />
+                      </span>
+                    </span>
+                  </div>
+                </div>
+              )}
 
               {isTyping && (
                 <div className="flex justify-start">
@@ -827,7 +892,7 @@ export function AgentChatTab({ agent, companyId }: { agent: Agent; companyId: st
                 <textarea
                   ref={inputRef}
                   value={input}
-                  onChange={(e) => setInput(e.target.value)}
+                  onChange={(e) => { setInput(e.target.value); handleTypingInput(); }}
                   onKeyDown={handleKeyDown}
                   onPaste={handlePaste}
                   placeholder={`Message ${agent.name}...`}

@@ -167,6 +167,10 @@ export const agentsApi = {
     api.delete<{ ok: true }>(agentPath(id, companyId, "/chat-session")),
   chatProcess: (id: string, companyId?: string) =>
     api.get<ChatProcessInfo | null>(agentPath(id, companyId, "/chat-process")),
+  chatTyping: (id: string, isTyping: boolean, companyId?: string) =>
+    api.post<{ ok: true }>(agentPath(id, companyId, "/chat-typing"), { isTyping }),
+  chatMarkRead: (id: string, messageIds: string[], companyId?: string) =>
+    api.post<{ ok: true; markedCount: number }>(agentPath(id, companyId, "/chat-read"), { messageIds }),
 
   // ── Chat History ──────────────────────────────────────────────
   chatHistory: (id: string, companyId?: string, opts?: { limit?: number; before?: string }) => {
@@ -199,6 +203,7 @@ export interface ChatHistorySession {
   messageCount: number;
   startedAt: string;
   endedAt: string | null;
+  endReason: string | null;
   firstMessagePreview: string | null;
 }
 
@@ -209,6 +214,7 @@ export interface ChatHistoryMessage {
   sender: "user" | "agent";
   content: string;
   attachments?: { assetId: string; contentPath: string; contentType: string; originalFilename: string | null }[];
+  readAt?: string | null;
   createdAt: string;
 }
 
