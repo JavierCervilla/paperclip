@@ -7,6 +7,8 @@ export interface ActivityFilters {
   agentId?: string;
   entityType?: string;
   entityId?: string;
+  limit?: number;
+  offset?: number;
 }
 
 export function activityService(db: Db) {
@@ -25,6 +27,8 @@ export function activityService(db: Db) {
         conditions.push(eq(activityLog.entityId, filters.entityId));
       }
 
+      const pageLimit = Math.min(Math.max(filters.limit ?? 50, 1), 200);
+      const pageOffset = Math.max(filters.offset ?? 0, 0);
       return db
         .select({ activityLog })
         .from(activityLog)
@@ -45,6 +49,8 @@ export function activityService(db: Db) {
           ),
         )
         .orderBy(desc(activityLog.createdAt))
+        .limit(pageLimit)
+        .offset(pageOffset)
         .then((rows) => rows.map((r) => r.activityLog));
     },
 
