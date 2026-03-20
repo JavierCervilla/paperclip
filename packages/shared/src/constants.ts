@@ -290,6 +290,8 @@ export const LIVE_EVENT_TYPES = [
   "chat.session.ended",
   "chat.message.sent",
   "chat.message.received",
+  "chat.typing",
+  "chat.messages.read",
 ] as const;
 export type LiveEventType = (typeof LIVE_EVENT_TYPES)[number];
 
