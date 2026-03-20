@@ -42,7 +42,9 @@ import { pluginLifecycleManager } from "./services/plugin-lifecycle.js";
 import { createPluginJobCoordinator } from "./services/plugin-job-coordinator.js";
 import { buildHostServices, flushPluginLogBuffer } from "./services/plugin-host-services.js";
 import { createPluginEventBus } from "./services/plugin-event-bus.js";
-import { setPluginEventBus } from "./services/activity-log.js";
+import { setPluginEventBus, setWebhookDb } from "./services/activity-log.js";
+import { webhookRoutes } from "./routes/webhooks.js";
+import { processWebhookRetries } from "./services/webhooks.js";
 import { createPluginDevWatcher } from "./services/plugin-dev-watcher.js";
 import { createPluginHostServiceCleanup } from "./services/plugin-host-service-cleanup.js";
 import { pluginRegistryService } from "./services/plugin-registry.js";
@@ -154,6 +156,17 @@ export async function createApp(
   api.use(instanceSettingsRoutes(db));
   api.use(infrastructureRoutes(db));
   api.use(githubFileRoutes(db));
+  api.use(webhookRoutes(db));
+  setWebhookDb(db);
+
+  // Start webhook retry processor (every 30 seconds)
+  const webhookRetryInterval = setInterval(() => {
+    void processWebhookRetries(db).catch((err) => {
+      logger.warn({ err }, "webhook retry processing failed");
+    });
+  }, 30_000);
+  process.once("exit", () => clearInterval(webhookRetryInterval));
+
   const hostServicesDisposers = new Map<string, () => void>();
   const workerManager = createPluginWorkerManager();
   const pluginRegistry = pluginRegistryService(db);

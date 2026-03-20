@@ -215,3 +215,10 @@ export {
   type SetPluginState,
   type ListPluginState,
 } from "./plugin.js";
+
+export {
+  createWebhookSchema,
+  updateWebhookSchema,
+  type CreateWebhook,
+  type UpdateWebhook,
+} from "./webhook.js";

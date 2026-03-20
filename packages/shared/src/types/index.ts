@@ -136,3 +136,4 @@ export type {
   PluginJobRunRecord,
   PluginWebhookDeliveryRecord,
 } from "./plugin.js";
+export type { Webhook, WebhookDelivery } from "./webhook.js";

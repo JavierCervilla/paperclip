@@ -56,9 +56,13 @@ export {
   PLUGIN_JOB_STATUSES,
   PLUGIN_JOB_RUN_STATUSES,
   PLUGIN_JOB_RUN_TRIGGERS,
+  WEBHOOK_EVENT_TYPES,
+  WEBHOOK_DELIVERY_STATUSES,
   PLUGIN_WEBHOOK_DELIVERY_STATUSES,
   PLUGIN_EVENT_TYPES,
   PLUGIN_BRIDGE_ERROR_CODES,
+  type WebhookEventType,
+  type WebhookDeliveryStatus,
   type CompanyStatus,
   type DeploymentMode,
   type DeploymentExposure,
@@ -243,6 +247,8 @@ export type {
   PluginJobRecord,
   PluginJobRunRecord,
   PluginWebhookDeliveryRecord,
+  Webhook,
+  WebhookDelivery,
   QuotaWindow,
   ProviderQuotaResult,
 } from "./types/index.js";
@@ -416,6 +422,10 @@ export {
   type PluginStateScopeKey,
   type SetPluginState,
   type ListPluginState,
+  createWebhookSchema,
+  updateWebhookSchema,
+  type CreateWebhook,
+  type UpdateWebhook,
 } from "./validators/index.js";
 
 export { API_PREFIX, API } from "./api.js";
