@@ -12,7 +12,7 @@ import {
   heartbeatRunEvents,
   heartbeatRuns,
 } from "@paperclipai/db";
-import { isUuidLike, normalizeAgentUrlKey } from "@paperclipai/shared";
+import { isUuidLike, normalizeAgentUrlKey, ROLE_HIERARCHY_LEVELS, type AgentRole } from "@paperclipai/shared";
 import { conflict, notFound, unprocessable } from "../errors.js";
 import { normalizeAgentPermissions } from "./agent-permissions.js";
 import { REDACTED_EVENT_VALUE, sanitizeRecord } from "../redaction.js";
@@ -317,7 +317,14 @@ export function agentService(db: Db) {
 
     if (data.reportsTo !== undefined) {
       if (data.reportsTo) {
-        await ensureManager(existing.companyId, data.reportsTo);
+        const manager = await ensureManager(existing.companyId, data.reportsTo);
+        // Validate hierarchy: agent must report to same-level or higher role
+        const agentRole = (data.role ?? existing.role) as AgentRole;
+        const agentLevel = ROLE_HIERARCHY_LEVELS[agentRole] ?? 0;
+        const managerLevel = ROLE_HIERARCHY_LEVELS[manager.role as AgentRole] ?? 0;
+        if (managerLevel < agentLevel) {
+          throw unprocessable("Agent cannot report to a lower-level role");
+        }
       }
       await assertNoCycle(id, data.reportsTo);
     }
