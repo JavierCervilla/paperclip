@@ -719,6 +719,50 @@ export const PLUGIN_JOB_RUN_TRIGGERS = [
 ] as const;
 export type PluginJobRunTrigger = (typeof PLUGIN_JOB_RUN_TRIGGERS)[number];
 
+// ---------------------------------------------------------------------------
+// Webhook Event System
+// ---------------------------------------------------------------------------
+
+/**
+ * Event types that can trigger outbound webhook deliveries.
+ * Reuses the same domain events as the plugin event system.
+ */
+export const WEBHOOK_EVENT_TYPES = [
+  "company.created",
+  "company.updated",
+  "project.created",
+  "project.updated",
+  "project.workspace_created",
+  "project.workspace_updated",
+  "project.workspace_deleted",
+  "issue.created",
+  "issue.updated",
+  "issue.comment.created",
+  "agent.created",
+  "agent.updated",
+  "agent.status_changed",
+  "agent.run.started",
+  "agent.run.finished",
+  "agent.run.failed",
+  "agent.run.cancelled",
+  "goal.created",
+  "goal.updated",
+  "approval.created",
+  "approval.decided",
+  "cost_event.created",
+  "activity.logged",
+] as const;
+export type WebhookEventType = (typeof WEBHOOK_EVENT_TYPES)[number];
+
+/** Statuses for outbound webhook deliveries. */
+export const WEBHOOK_DELIVERY_STATUSES = [
+  "pending",
+  "success",
+  "failed",
+  "dead_letter",
+] as const;
+export type WebhookDeliveryStatus = (typeof WEBHOOK_DELIVERY_STATUSES)[number];
+
 /** Statuses for inbound webhook deliveries. */
 export const PLUGIN_WEBHOOK_DELIVERY_STATUSES = [
   "pending",
