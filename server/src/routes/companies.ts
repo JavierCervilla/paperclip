@@ -27,7 +27,7 @@ import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
 export function companyRoutes(db: Db, storage?: StorageService) {
   const router = Router();
   const svc = companyService(db);
-  const agents = agentService(db);
+  const agentSvc = agentService(db);
   const portability = companyPortabilityService(db, storage);
   const access = accessService(db);
   const budgets = budgetService(db);
@@ -38,7 +38,7 @@ export function companyRoutes(db: Db, storage?: StorageService) {
     if (req.actor.type === "board") return;
     if (!req.actor.agentId) throw forbidden("Agent authentication required");
 
-    const actorAgent = await agents.getById(req.actor.agentId);
+    const actorAgent = await agentSvc.getById(req.actor.agentId);
     if (!actorAgent || actorAgent.companyId !== companyId) {
       throw forbidden("Agent key cannot access another company");
     }
@@ -52,7 +52,7 @@ export function companyRoutes(db: Db, storage?: StorageService) {
     if (req.actor.type === "board") return;
     if (!req.actor.agentId) throw forbidden("Agent authentication required");
 
-    const actorAgent = await agents.getById(req.actor.agentId);
+    const actorAgent = await agentSvc.getById(req.actor.agentId);
     if (!actorAgent || actorAgent.companyId !== companyId) {
       throw forbidden("Agent key cannot access another company");
     }
@@ -254,7 +254,6 @@ export function companyRoutes(db: Db, storage?: StorageService) {
 
     if (req.actor.type === "agent") {
       // Only CEO agents may update company branding fields
-      const agentSvc = agentService(db);
       const actorAgent = req.actor.agentId ? await agentSvc.getById(req.actor.agentId) : null;
       if (!actorAgent || actorAgent.role !== "ceo") {
         throw forbidden("Only CEO agents or board users may update company settings");

@@ -1,11 +1,13 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
+  agents,
   companyMemberships,
   instanceUserRoles,
   principalPermissionGrants,
 } from "@paperclipai/db";
 import type { PermissionKey, PrincipalType } from "@paperclipai/shared";
+import { defaultPermissionsForRole } from "./agent-permissions.js";
 
 type MembershipRow = typeof companyMemberships.$inferSelect;
 type GrantInput = {
@@ -62,7 +64,22 @@ export function accessService(db: Db) {
         ),
       )
       .then((rows) => rows[0] ?? null);
-    return Boolean(grant);
+    if (grant) return true;
+
+    // Fall back to role-based default permissions for agents
+    if (principalType === "agent") {
+      const agent = await db
+        .select({ role: agents.role })
+        .from(agents)
+        .where(eq(agents.id, principalId))
+        .then((rows) => rows[0] ?? null);
+      if (agent) {
+        const defaults = defaultPermissionsForRole(agent.role);
+        return Boolean(defaults[permissionKey]);
+      }
+    }
+
+    return false;
   }
 
   async function canUser(

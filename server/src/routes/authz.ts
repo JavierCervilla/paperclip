@@ -1,5 +1,9 @@
 import type { Request } from "express";
+import type { PermissionKey } from "@paperclipai/shared";
 import { forbidden, unauthorized } from "../errors.js";
+import type { accessService } from "../services/access.js";
+
+type AccessService = ReturnType<typeof accessService>;
 
 export function assertBoard(req: Request) {
   if (req.actor.type !== "board") {
@@ -19,6 +23,41 @@ export function assertCompanyAccess(req: Request, companyId: string) {
     if (!allowedCompanies.includes(companyId)) {
       throw forbidden("User does not have access to this company");
     }
+  }
+}
+
+export async function requirePermission(
+  req: Request,
+  companyId: string,
+  permission: PermissionKey,
+  access: AccessService,
+): Promise<void> {
+  if (req.actor.type === "none") {
+    throw unauthorized();
+  }
+
+  // Instance admins and local_implicit always pass
+  if (req.actor.type === "board") {
+    if (req.actor.isInstanceAdmin || req.actor.source === "local_implicit") {
+      return;
+    }
+    const allowed = await access.canUser(companyId, req.actor.userId, permission);
+    if (!allowed) {
+      throw forbidden(`Missing permission: ${permission}`);
+    }
+    return;
+  }
+
+  if (req.actor.type === "agent") {
+    const agentId = req.actor.agentId;
+    if (!agentId) {
+      throw forbidden("Agent identity required");
+    }
+    const allowed = await access.hasPermission(companyId, "agent", agentId, permission);
+    if (!allowed) {
+      throw forbidden(`Missing permission: ${permission}`);
+    }
+    return;
   }
 }
 
