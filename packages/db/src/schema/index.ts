@@ -58,3 +58,5 @@ export { pluginWebhookDeliveries } from "./plugin_webhooks.js";
 export { pluginLogs } from "./plugin_logs.js";
 export { chatSessions } from "./chat_sessions.js";
 export { chatMessages } from "./chat_messages.js";
+export { webhooks } from "./webhooks.js";
+export { webhookDeliveries } from "./webhook_deliveries.js";
