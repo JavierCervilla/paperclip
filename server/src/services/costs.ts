@@ -311,6 +311,29 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
         .orderBy(costEvents.provider, costEvents.biller, costEvents.billingType, costEvents.model);
     },
 
+    byBillingCode: async (companyId: string, range?: CostDateRange) => {
+      const conditions: ReturnType<typeof eq>[] = [
+        eq(costEvents.companyId, companyId),
+        isNotNull(costEvents.billingCode),
+      ];
+      if (range?.from) conditions.push(gte(costEvents.occurredAt, range.from));
+      if (range?.to) conditions.push(lte(costEvents.occurredAt, range.to));
+
+      return db
+        .select({
+          billingCode: costEvents.billingCode,
+          costCents: sql<number>`coalesce(sum(${costEvents.costCents}), 0)::int`,
+          inputTokens: sql<number>`coalesce(sum(${costEvents.inputTokens}), 0)::int`,
+          cachedInputTokens: sql<number>`coalesce(sum(${costEvents.cachedInputTokens}), 0)::int`,
+          outputTokens: sql<number>`coalesce(sum(${costEvents.outputTokens}), 0)::int`,
+          eventCount: sql<number>`count(*)::int`,
+        })
+        .from(costEvents)
+        .where(and(...conditions))
+        .groupBy(costEvents.billingCode)
+        .orderBy(desc(sql`coalesce(sum(${costEvents.costCents}), 0)::int`));
+    },
+
     byProject: async (companyId: string, range?: CostDateRange) => {
       const issueIdAsText = sql<string>`${issues.id}::text`;
       const runProjectLinks = db

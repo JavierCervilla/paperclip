@@ -32,7 +32,7 @@ export const createIssueSchema = z.object({
   projectWorkspaceId: z.string().uuid().optional().nullable(),
   goalId: z.string().uuid().optional().nullable(),
   parentId: z.string().uuid().optional().nullable(),
-  title: z.string().min(1),
+  title: z.string().min(1).max(200),
   description: z.string().optional().nullable(),
   status: z.enum(ISSUE_STATUSES).optional().default("backlog"),
   priority: z.enum(ISSUE_PRIORITIES).optional().default("medium"),
@@ -65,6 +65,7 @@ export type CreateIssueLabel = z.infer<typeof createIssueLabelSchema>;
 
 export const updateIssueSchema = createIssueSchema.partial().extend({
   comment: z.string().min(1).optional(),
+  reopen: z.boolean().optional(),
   hiddenAt: z.string().datetime().nullable().optional(),
 });
 

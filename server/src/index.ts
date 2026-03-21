@@ -26,7 +26,7 @@ import { createApp } from "./app.js";
 import { loadConfig } from "./config.js";
 import { logger } from "./middleware/logger.js";
 import { setupLiveEventsWebSocketServer } from "./realtime/live-events-ws.js";
-import { heartbeatService, reconcilePersistedRuntimeServicesOnStartup } from "./services/index.js";
+import { heartbeatService, reconcilePersistedRuntimeServicesOnStartup, routineService } from "./services/index.js";
 import { createStorageServiceFromConfig } from "./storage/index.js";
 import { printStartupBanner } from "./startup-banner.js";
 import { getBoardClaimWarningUrl, initializeBoardClaimChallenge } from "./board-claim.js";
@@ -526,6 +526,7 @@ export async function startServer(): Promise<StartedServer> {
   
   if (config.heartbeatSchedulerEnabled) {
     const heartbeat = heartbeatService(db as any);
+    const routines = routineService(db as any);
   
     // Reap orphaned running runs at startup while in-memory execution state is empty,
     // then resume any persisted queued runs that were waiting on the previous process.
@@ -545,6 +546,17 @@ export async function startServer(): Promise<StartedServer> {
         })
         .catch((err) => {
           logger.error({ err }, "heartbeat timer tick failed");
+        });
+
+      void routines
+        .tickScheduledTriggers(new Date())
+        .then((result) => {
+          if (result.triggered > 0) {
+            logger.info({ ...result }, "routine scheduler tick enqueued runs");
+          }
+        })
+        .catch((err) => {
+          logger.error({ err }, "routine scheduler tick failed");
         });
   
       // Periodically reap orphaned runs (5-min staleness threshold) and make sure
@@ -651,6 +663,8 @@ export async function startServer(): Promise<StartedServer> {
         const red = "\x1b[41m\x1b[30m";
         const yellow = "\x1b[33m";
         const reset = "\x1b[0m";
+        logger.warn({ boardClaimUrl }, "Board claim required — sign in and open the one-time URL to claim ownership");
+        // Also print to console for visibility (ANSI-formatted for terminal)
         console.log(
           [
             `${red}  BOARD CLAIM REQUIRED  ${reset}`,

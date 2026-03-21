@@ -1,5 +1,9 @@
 import type {
   Agent,
+  AgentDetail,
+  AgentInstructionsBundle,
+  AgentInstructionsFileDetail,
+  AgentSkillSnapshot,
   AdapterEnvironmentTestResult,
   AgentKeyCreated,
   AgentRuntimeState,
@@ -45,6 +49,11 @@ export interface AgentHireResponse {
   approval: Approval | null;
 }
 
+export interface AgentPermissionUpdate {
+  canCreateAgents: boolean;
+  canAssignTasks: boolean;
+}
+
 function withCompanyScope(path: string, companyId?: string) {
   if (!companyId) return path;
   const separator = path.includes("?") ? "&" : "?";
@@ -62,7 +71,7 @@ export const agentsApi = {
     api.get<Record<string, unknown>[]>(`/companies/${companyId}/agent-configurations`),
   get: async (id: string, companyId?: string) => {
     try {
-      return await api.get<Agent>(agentPath(id, companyId));
+      return await api.get<AgentDetail>(agentPath(id, companyId));
     } catch (error) {
       // Backward-compat fallback: if backend shortname lookup reports ambiguity,
       // resolve using company agent list while ignoring terminated agents.
@@ -83,7 +92,7 @@ export const agentsApi = {
         (agent) => agent.status !== "terminated" && normalizeAgentUrlKey(agent.urlKey) === urlKey,
       );
       if (matches.length !== 1) throw error;
-      return api.get<Agent>(agentPath(matches[0]!.id, companyId));
+      return api.get<AgentDetail>(agentPath(matches[0]!.id, companyId));
     }
   },
   getConfiguration: (id: string, companyId?: string) =>
@@ -100,13 +109,42 @@ export const agentsApi = {
     api.post<AgentHireResponse>(`/companies/${companyId}/agent-hires`, data),
   update: (id: string, data: Record<string, unknown>, companyId?: string) =>
     api.patch<Agent>(agentPath(id, companyId), data),
-  updatePermissions: (id: string, data: { canCreateAgents: boolean }, companyId?: string) =>
-    api.patch<Agent>(agentPath(id, companyId, "/permissions"), data),
+  updatePermissions: (id: string, data: AgentPermissionUpdate, companyId?: string) =>
+    api.patch<AgentDetail>(agentPath(id, companyId, "/permissions"), data),
+  instructionsBundle: (id: string, companyId?: string) =>
+    api.get<AgentInstructionsBundle>(agentPath(id, companyId, "/instructions-bundle")),
+  updateInstructionsBundle: (
+    id: string,
+    data: {
+      mode?: "managed" | "external";
+      rootPath?: string | null;
+      entryFile?: string;
+      clearLegacyPromptTemplate?: boolean;
+    },
+    companyId?: string,
+  ) => api.patch<AgentInstructionsBundle>(agentPath(id, companyId, "/instructions-bundle"), data),
+  instructionsFile: (id: string, relativePath: string, companyId?: string) =>
+    api.get<AgentInstructionsFileDetail>(
+      agentPath(id, companyId, `/instructions-bundle/file?path=${encodeURIComponent(relativePath)}`),
+    ),
+  saveInstructionsFile: (
+    id: string,
+    data: { path: string; content: string; clearLegacyPromptTemplate?: boolean },
+    companyId?: string,
+  ) => api.put<AgentInstructionsFileDetail>(agentPath(id, companyId, "/instructions-bundle/file"), data),
+  deleteInstructionsFile: (id: string, relativePath: string, companyId?: string) =>
+    api.delete<AgentInstructionsBundle>(
+      agentPath(id, companyId, `/instructions-bundle/file?path=${encodeURIComponent(relativePath)}`),
+    ),
   pause: (id: string, companyId?: string) => api.post<Agent>(agentPath(id, companyId, "/pause"), {}),
   resume: (id: string, companyId?: string) => api.post<Agent>(agentPath(id, companyId, "/resume"), {}),
   terminate: (id: string, companyId?: string) => api.post<Agent>(agentPath(id, companyId, "/terminate"), {}),
   remove: (id: string, companyId?: string) => api.delete<{ ok: true }>(agentPath(id, companyId)),
   listKeys: (id: string, companyId?: string) => api.get<AgentKey[]>(agentPath(id, companyId, "/keys")),
+  skills: (id: string, companyId?: string) =>
+    api.get<AgentSkillSnapshot>(agentPath(id, companyId, "/skills")),
+  syncSkills: (id: string, desiredSkills: string[], companyId?: string) =>
+    api.post<AgentSkillSnapshot>(agentPath(id, companyId, "/skills/sync"), { desiredSkills }),
   createKey: (id: string, name: string, companyId?: string) =>
     api.post<AgentKeyCreated>(agentPath(id, companyId, "/keys"), { name }),
   revokeKey: (agentId: string, keyId: string, companyId?: string) =>
@@ -161,6 +199,10 @@ export const agentsApi = {
     api.delete<{ ok: true }>(agentPath(id, companyId, "/chat-session")),
   chatProcess: (id: string, companyId?: string) =>
     api.get<ChatProcessInfo | null>(agentPath(id, companyId, "/chat-process")),
+  chatTyping: (id: string, isTyping: boolean, companyId?: string) =>
+    api.post<{ ok: true }>(agentPath(id, companyId, "/chat-typing"), { isTyping }),
+  chatMarkRead: (id: string, messageIds: string[], companyId?: string) =>
+    api.post<{ ok: true; markedCount: number }>(agentPath(id, companyId, "/chat-read"), { messageIds }),
 
   // ── Chat History ──────────────────────────────────────────────
   chatHistory: (id: string, companyId?: string, opts?: { limit?: number; before?: string }) => {
@@ -193,6 +235,7 @@ export interface ChatHistorySession {
   messageCount: number;
   startedAt: string;
   endedAt: string | null;
+  endReason: string | null;
   firstMessagePreview: string | null;
 }
 
@@ -203,6 +246,7 @@ export interface ChatHistoryMessage {
   sender: "user" | "agent";
   content: string;
   attachments?: { assetId: string; contentPath: string; contentType: string; originalFilename: string | null }[];
+  readAt?: string | null;
   createdAt: string;
 }
 

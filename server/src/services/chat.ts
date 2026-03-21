@@ -10,8 +10,9 @@
 import { randomUUID } from "node:crypto";
 import type { Db } from "@paperclipai/db";
 import { chatSessions, chatMessages } from "@paperclipai/db";
-import { eq, desc, asc, gt, sql } from "drizzle-orm";
+import { eq, desc, asc, gt, and, sql, isNull, inArray } from "drizzle-orm";
 import { publishLiveEvent } from "./live-events.js";
+import { logger } from "../middleware/logger.js";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -29,6 +30,7 @@ export interface ChatMessage {
   sender: "user" | "agent";
   content: string;
   attachments?: ChatAttachment[];
+  readAt?: string | null;
   createdAt: string;
 }
 
@@ -53,17 +55,27 @@ export interface ChatSessionSummary {
   messageCount: number;
   startedAt: string;
   endedAt: string | null;
+  endReason: string | null;
   firstMessagePreview: string | null;
 }
+
+export type SessionEndReason = "idle_timeout" | "user_closed" | "agent_closed";
 
 // ── Constants ──────────────────────────────────────────────────────
 
 const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+const RECONNECT_GRACE_MS = 30 * 1000; // 30 second grace period after idle timeout
 
 // ── In-memory store ────────────────────────────────────────────────
 
 /** agentId → active session */
 const sessions = new Map<string, ChatSession>();
+
+/** agentId → typing state { who: "user"|"agent", since: ISO } */
+const typingState = new Map<string, { who: "user" | "agent"; since: string }>();
+
+/** agentId → recently ended session (for reconnection grace period) */
+const recentlyEndedSessions = new Map<string, { session: ChatSession; endedAt: number; graceTimer: ReturnType<typeof setTimeout> }>();
 
 // ── Helpers ────────────────────────────────────────────────────────
 
@@ -92,6 +104,41 @@ export function chatService(db?: Db) {
     const existing = sessions.get(opts.agentId);
     if (existing) return existing;
 
+    // Check if there's a recently-ended session we can reconnect to
+    const recent = recentlyEndedSessions.get(opts.agentId);
+    if (recent && recent.session.startedByUserId === opts.userId) {
+      // Reconnect: restore the session
+      clearTimeout(recent.graceTimer);
+      recentlyEndedSessions.delete(opts.agentId);
+
+      const session = recent.session;
+      session.lastActivityAt = now();
+      sessions.set(opts.agentId, session);
+      resetIdleTimer(session, () => endSession(opts.agentId, "idle_timeout"));
+
+      // Update DB to clear endedAt (session is alive again)
+      if (db) {
+        db.update(chatSessions)
+          .set({ endedAt: null, endReason: null })
+          .where(eq(chatSessions.id, session.id))
+          .execute()
+          .catch((err) => logger.error({ err }, "Failed to persist chat session reconnect"));
+      }
+
+      publishLiveEvent({
+        companyId: opts.companyId,
+        type: "chat.session.started",
+        payload: {
+          sessionId: session.id,
+          agentId: opts.agentId,
+          startedByUserId: opts.userId,
+          reconnected: true,
+        },
+      });
+
+      return session;
+    }
+
     const sessionId = randomUUID();
     const startedAt = now();
 
@@ -108,7 +155,7 @@ export function chatService(db?: Db) {
 
     sessions.set(opts.agentId, session);
 
-    resetIdleTimer(session, () => endSession(opts.agentId));
+    resetIdleTimer(session, () => endSession(opts.agentId, "idle_timeout"));
 
     // Persist session to DB (async, non-blocking)
     if (db) {
@@ -121,12 +168,12 @@ export function chatService(db?: Db) {
           startedAt: new Date(startedAt),
         })
         .execute()
-        .catch((err) => console.error("[chat] Failed to persist session:", err));
+        .catch((err) => logger.error({ err }, "Failed to persist chat session"));
     }
 
     publishLiveEvent({
       companyId: opts.companyId,
-      type: "chat.session.started" as any,
+      type: "chat.session.started",
       payload: {
         sessionId: session.id,
         agentId: opts.agentId,
@@ -140,32 +187,45 @@ export function chatService(db?: Db) {
   /**
    * End an active chat session for an agent.
    */
-  function endSession(agentId: string): boolean {
+  function endSession(agentId: string, reason?: SessionEndReason): boolean {
     const session = sessions.get(agentId);
     if (!session) return false;
 
     if (session.idleTimer) clearTimeout(session.idleTimer);
     sessions.delete(agentId);
+    typingState.delete(agentId);
+
+    const endReason = reason ?? null;
+
+    // For idle timeouts, keep session available for reconnection during grace period
+    if (reason === "idle_timeout") {
+      const graceTimer = setTimeout(() => {
+        recentlyEndedSessions.delete(agentId);
+      }, RECONNECT_GRACE_MS);
+      recentlyEndedSessions.set(agentId, { session, endedAt: Date.now(), graceTimer });
+    }
 
     // Persist session end to DB (async, non-blocking)
     if (db) {
       db.update(chatSessions)
         .set({
           endedAt: new Date(),
+          endReason,
           messageCount: session.messages.length,
         })
         .where(eq(chatSessions.id, session.id))
         .execute()
-        .catch((err) => console.error("[chat] Failed to persist session end:", err));
+        .catch((err) => logger.error({ err }, "Failed to persist chat session end"));
     }
 
     publishLiveEvent({
       companyId: session.companyId,
-      type: "chat.session.ended" as any,
+      type: "chat.session.ended",
       payload: {
         sessionId: session.id,
         agentId,
         messageCount: session.messages.length,
+        endReason,
       },
     });
 
@@ -177,6 +237,42 @@ export function chatService(db?: Db) {
    */
   function getSession(agentId: string): ChatSession | null {
     return sessions.get(agentId) ?? null;
+  }
+
+  /**
+   * Set typing state for a participant (user or agent).
+   * Publishes a live event so the other party can show a typing indicator.
+   */
+  function setTyping(agentId: string, who: "user" | "agent", isTyping: boolean): void {
+    const session = sessions.get(agentId);
+    if (!session) return;
+
+    if (isTyping) {
+      typingState.set(agentId, { who, since: now() });
+    } else {
+      const current = typingState.get(agentId);
+      if (current?.who === who) {
+        typingState.delete(agentId);
+      }
+    }
+
+    publishLiveEvent({
+      companyId: session.companyId,
+      type: "chat.typing",
+      payload: {
+        sessionId: session.id,
+        agentId,
+        who,
+        isTyping,
+      },
+    });
+  }
+
+  /**
+   * Get current typing state for a session.
+   */
+  function getTypingState(agentId: string): { who: "user" | "agent"; since: string } | null {
+    return typingState.get(agentId) ?? null;
   }
 
   /**
@@ -212,7 +308,13 @@ export function chatService(db?: Db) {
     session.messages.push(msg);
     session.lastActivityAt = msg.createdAt;
 
-    resetIdleTimer(session, () => endSession(opts.agentId));
+    // Clear user typing state on send
+    const currentTyping = typingState.get(opts.agentId);
+    if (currentTyping?.who === "user") {
+      typingState.delete(opts.agentId);
+    }
+
+    resetIdleTimer(session, () => endSession(opts.agentId, "idle_timeout"));
 
     // Persist message to DB (async, non-blocking)
     if (db) {
@@ -234,12 +336,12 @@ export function chatService(db?: Db) {
             .where(eq(chatSessions.id, session!.id))
             .execute();
         })
-        .catch((err) => console.error("[chat] Failed to persist message:", err));
+        .catch((err) => logger.error({ err }, "Failed to persist chat message"));
     }
 
     publishLiveEvent({
       companyId: opts.companyId,
-      type: "chat.message.sent" as any,
+      type: "chat.message.sent",
       payload: {
         sessionId: session.id,
         messageId: msg.id,
@@ -275,7 +377,13 @@ export function chatService(db?: Db) {
     session.messages.push(msg);
     session.lastActivityAt = msg.createdAt;
 
-    resetIdleTimer(session, () => endSession(opts.agentId));
+    // Clear agent typing state on send
+    const currentTyping = typingState.get(opts.agentId);
+    if (currentTyping?.who === "agent") {
+      typingState.delete(opts.agentId);
+    }
+
+    resetIdleTimer(session, () => endSession(opts.agentId, "idle_timeout"));
 
     // Persist message to DB (async, non-blocking)
     if (db) {
@@ -296,12 +404,12 @@ export function chatService(db?: Db) {
             .where(eq(chatSessions.id, session!.id))
             .execute();
         })
-        .catch((err) => console.error("[chat] Failed to persist response:", err));
+        .catch((err) => logger.error({ err }, "Failed to persist chat response"));
     }
 
     publishLiveEvent({
       companyId: session.companyId,
-      type: "chat.message.received" as any,
+      type: "chat.message.received",
       payload: {
         sessionId: session.id,
         messageId: msg.id,
@@ -312,6 +420,62 @@ export function chatService(db?: Db) {
     });
 
     return msg;
+  }
+
+  /**
+   * Mark messages as read by the recipient.
+   * User marks agent messages as read, agent marks user messages as read.
+   */
+  function markRead(agentId: string, messageIds: string[], reader: "user" | "agent"): number {
+    const session = sessions.get(agentId);
+    if (!session) return 0;
+
+    const readTimestamp = now();
+    let count = 0;
+
+    // Mark in-memory messages
+    for (const msg of session.messages) {
+      if (messageIds.includes(msg.id) && !msg.readAt) {
+        // User reads agent messages, agent reads user messages
+        const isRecipient = (reader === "user" && msg.sender === "agent") ||
+                           (reader === "agent" && msg.sender === "user");
+        if (isRecipient) {
+          msg.readAt = readTimestamp;
+          count++;
+        }
+      }
+    }
+
+    if (count === 0) return 0;
+
+    // Persist to DB
+    if (db) {
+      db.update(chatMessages)
+        .set({ readAt: new Date(readTimestamp) })
+        .where(
+          and(
+            inArray(chatMessages.id, messageIds),
+            isNull(chatMessages.readAt),
+          ),
+        )
+        .execute()
+        .catch((err) => logger.error({ err }, "Failed to persist read receipts"));
+    }
+
+    // Publish live event
+    publishLiveEvent({
+      companyId: session.companyId,
+      type: "chat.messages.read",
+      payload: {
+        sessionId: session.id,
+        agentId,
+        reader,
+        messageIds,
+        readAt: readTimestamp,
+      },
+    });
+
+    return count;
   }
 
   /**
@@ -347,6 +511,7 @@ export function chatService(db?: Db) {
         messageCount: chatSessions.messageCount,
         startedAt: chatSessions.startedAt,
         endedAt: chatSessions.endedAt,
+        endReason: chatSessions.endReason,
       })
       .from(chatSessions)
       .where(
@@ -375,6 +540,7 @@ export function chatService(db?: Db) {
         messageCount: row.messageCount,
         startedAt: row.startedAt.toISOString(),
         endedAt: row.endedAt?.toISOString() ?? null,
+        endReason: row.endReason ?? null,
         firstMessagePreview: firstMsg[0]?.content.slice(0, 120) ?? null,
       });
     }
@@ -401,6 +567,7 @@ export function chatService(db?: Db) {
       sender: r.sender as "user" | "agent",
       content: r.content,
       ...(r.attachments ? { attachments: r.attachments as ChatAttachment[] } : {}),
+      readAt: r.readAt?.toISOString() ?? null,
       createdAt: r.createdAt.toISOString(),
     }));
   }
@@ -424,8 +591,11 @@ export function chatService(db?: Db) {
     startSession,
     endSession,
     getSession,
+    setTyping,
+    getTypingState,
     sendMessage,
     sendResponse,
+    markRead,
     getMessagesSince,
     getHistory,
     getSessionMessages,

@@ -103,9 +103,9 @@ export function costRoutes(db: Db) {
   }
 
   function parseLimit(query: Record<string, unknown>) {
-    const raw = query.limit as string | undefined;
-    if (!raw) return 100;
-    const limit = Number.parseInt(raw, 10);
+    const raw = Array.isArray(query.limit) ? query.limit[0] : query.limit;
+    if (raw == null || raw === "") return 100;
+    const limit = typeof raw === "number" ? raw : Number.parseInt(String(raw), 10);
     if (!Number.isFinite(limit) || limit <= 0 || limit > 500) {
       throw badRequest("invalid 'limit' value");
     }
@@ -238,6 +238,14 @@ export function costRoutes(db: Db) {
       res.json(incident);
     },
   );
+
+  router.get("/companies/:companyId/costs/by-billing-code", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const range = parseDateRange(req.query);
+    const rows = await costs.byBillingCode(companyId, range);
+    res.json(rows);
+  });
 
   router.get("/companies/:companyId/costs/by-project", async (req, res) => {
     const companyId = req.params.companyId as string;
