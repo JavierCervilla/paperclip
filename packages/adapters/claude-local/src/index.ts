@@ -34,4 +34,5 @@ Operational fields:
 
 Notes:
 - When Paperclip realizes a workspace/runtime for a run, it injects PAPERCLIP_WORKSPACE_* and PAPERCLIP_RUNTIME_* env vars for agent-side tooling.
+- Model routing: set runtimeConfig.modelRouting to auto-select models by task signals. Schema: { default: "model-id", rules: [{ match: { priority: ["critical"], wakeReason: ["chat"] }, model: "model-id" }] }. Rules evaluated in order; first match wins. Per-issue assigneeAdapterOverrides.model takes precedence over routing.
 `;
