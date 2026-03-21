@@ -17,6 +17,8 @@ import {
   type InstanceSchedulerHeartbeatAgent,
   upsertAgentInstructionsFileSchema,
   updateAgentInstructionsBundleSchema,
+  ROLE_HIERARCHY_LEVELS,
+  type AgentRole,
   updateAgentPermissionsSchema,
   updateAgentWorkspaceConfigSchema,
   updateAgentInstructionsPathSchema,
@@ -219,7 +221,11 @@ export function agentRoutes(db: Db) {
     return allowedByGrant || canCreateAgents(actorAgent);
   }
 
-  async function assertCanUpdateAgent(req: Request, targetAgent: { id: string; companyId: string }) {
+  function getRoleLevel(role: string): number {
+    return ROLE_HIERARCHY_LEVELS[role as AgentRole] ?? 0;
+  }
+
+  async function assertCanUpdateAgent(req: Request, targetAgent: { id: string; companyId: string; role?: string | null }) {
     assertCompanyAccess(req, targetAgent.companyId);
     if (req.actor.type === "board") return;
     if (!req.actor.agentId) throw forbidden("Agent authentication required");
@@ -231,6 +237,16 @@ export function agentRoutes(db: Db) {
 
     if (actorAgent.id === targetAgent.id) return;
     if (actorAgent.role === "ceo") return;
+
+    // Role hierarchy check: actor must be same level or higher than target
+    if (targetAgent.role) {
+      const actorLevel = getRoleLevel(actorAgent.role);
+      const targetLevel = getRoleLevel(targetAgent.role);
+      if (actorLevel < targetLevel) {
+        throw forbidden("Cannot manage an agent with a higher role level");
+      }
+    }
+
     const allowedByGrant = await access.hasPermission(
       targetAgent.companyId,
       "agent",

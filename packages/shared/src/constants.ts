@@ -349,13 +349,93 @@ export type JoinRequestStatus = (typeof JOIN_REQUEST_STATUSES)[number];
 
 export const PERMISSION_KEYS = [
   "agents:create",
+  "agents:manage",
   "users:invite",
   "users:manage_permissions",
   "tasks:assign",
   "tasks:assign_scope",
   "joins:approve",
+  "projects:create",
+  "projects:manage",
+  "goals:create",
+  "goals:manage",
+  "webhooks:manage",
+  "secrets:manage",
+  "plugins:manage",
+  "company:settings",
+  "activity:view",
 ] as const;
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];
+
+// ---------------------------------------------------------------------------
+// Role Hierarchy & Default Permissions
+// ---------------------------------------------------------------------------
+
+export const ROLE_HIERARCHY_LEVELS: Record<AgentRole, number> = {
+  ceo: 100,
+  cto: 80,
+  cmo: 80,
+  cfo: 80,
+  pm: 60,
+  engineer: 40,
+  designer: 40,
+  qa: 40,
+  devops: 40,
+  researcher: 40,
+  general: 20,
+};
+
+const ALL_PERMISSIONS: readonly PermissionKey[] = PERMISSION_KEYS;
+
+const C_SUITE_PERMISSIONS: readonly PermissionKey[] = [
+  "agents:create",
+  "agents:manage",
+  "projects:create",
+  "projects:manage",
+  "goals:create",
+  "goals:manage",
+  "tasks:assign",
+  "users:invite",
+  "users:manage_permissions",
+  "joins:approve",
+  "webhooks:manage",
+  "secrets:manage",
+  "plugins:manage",
+  "company:settings",
+  "activity:view",
+];
+
+const PM_PERMISSIONS: readonly PermissionKey[] = [
+  "projects:create",
+  "projects:manage",
+  "goals:create",
+  "goals:manage",
+  "tasks:assign",
+  "activity:view",
+];
+
+const IC_PERMISSIONS: readonly PermissionKey[] = [
+  "tasks:assign",
+  "activity:view",
+];
+
+const GENERAL_PERMISSIONS: readonly PermissionKey[] = [
+  "activity:view",
+];
+
+export const ROLE_DEFAULT_PERMISSIONS: Record<AgentRole, readonly PermissionKey[]> = {
+  ceo: ALL_PERMISSIONS,
+  cto: C_SUITE_PERMISSIONS,
+  cmo: C_SUITE_PERMISSIONS,
+  cfo: C_SUITE_PERMISSIONS,
+  pm: PM_PERMISSIONS,
+  engineer: IC_PERMISSIONS,
+  designer: IC_PERMISSIONS,
+  qa: IC_PERMISSIONS,
+  devops: IC_PERMISSIONS,
+  researcher: IC_PERMISSIONS,
+  general: GENERAL_PERMISSIONS,
+};
 
 // ---------------------------------------------------------------------------
 // Plugin System — see doc/plugins/PLUGIN_SPEC.md for the full specification
