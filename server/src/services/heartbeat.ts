@@ -565,6 +565,41 @@ function parseIssueAssigneeAdapterOverrides(
   };
 }
 
+/**
+ * Resolve model from agent runtimeConfig.modelRouting rules.
+ * Returns the model ID to use, or null if no routing applies.
+ */
+function resolveModelFromRouting(
+  runtimeConfig: Record<string, unknown> | null | undefined,
+  signals: { priority: string | null; wakeReason: string | null },
+): string | null {
+  const routing = parseObject(
+    (runtimeConfig as Record<string, unknown> | null)?.modelRouting,
+  );
+  if (!routing || Object.keys(routing).length === 0) return null;
+
+  const rules = Array.isArray(routing.rules) ? routing.rules : [];
+  for (const rule of rules) {
+    const r = parseObject(rule);
+    const match = parseObject(r.match);
+    const model = readNonEmptyString(r.model);
+    if (!model || Object.keys(match).length === 0) continue;
+
+    let matched = true;
+    for (const [key, allowed] of Object.entries(match)) {
+      const allowedList = Array.isArray(allowed) ? allowed : [allowed];
+      const signalValue = signals[key as keyof typeof signals] ?? null;
+      if (!signalValue || !allowedList.includes(signalValue)) {
+        matched = false;
+        break;
+      }
+    }
+    if (matched) return model;
+  }
+
+  return readNonEmptyString(routing.default) ?? null;
+}
+
 function deriveTaskKey(
   contextSnapshot: Record<string, unknown> | null | undefined,
   payload: Record<string, unknown> | null | undefined,
@@ -1974,6 +2009,7 @@ export function heartbeatService(db: Db) {
             id: issues.id,
             identifier: issues.identifier,
             title: issues.title,
+            priority: issues.priority,
             projectId: issues.projectId,
             projectWorkspaceId: issues.projectWorkspaceId,
             executionWorkspaceId: issues.executionWorkspaceId,
@@ -2037,9 +2073,28 @@ export function heartbeatService(db: Db) {
       mode: executionWorkspaceMode,
       legacyUseProjectWorkspace: issueAssigneeOverrides?.useProjectWorkspace ?? null,
     });
+    const issueHasModelOverride = !!readNonEmptyString(
+      issueAssigneeOverrides?.adapterConfig?.model as unknown,
+    );
     const mergedConfig = issueAssigneeOverrides?.adapterConfig
       ? { ...workspaceManagedConfig, ...issueAssigneeOverrides.adapterConfig }
       : workspaceManagedConfig;
+
+    // Apply model routing from runtimeConfig if no explicit per-issue model override
+    if (!issueHasModelOverride) {
+      const wakeReason = readNonEmptyString(context.wakeReason);
+      const routedModel = resolveModelFromRouting(
+        parseObject(agent.runtimeConfig),
+        {
+          priority: issueContext?.priority ?? null,
+          wakeReason,
+        },
+      );
+      if (routedModel) {
+        (mergedConfig as Record<string, unknown>).model = routedModel;
+      }
+    }
+
     const { config: resolvedConfig, secretKeys } = await secretsSvc.resolveAdapterConfigForRuntime(
       agent.companyId,
       mergedConfig,
