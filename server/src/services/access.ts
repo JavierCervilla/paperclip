@@ -1,11 +1,13 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
+  agents,
   companyMemberships,
   instanceUserRoles,
   principalPermissionGrants,
 } from "@paperclipai/db";
 import type { PermissionKey, PrincipalType } from "@paperclipai/shared";
+import { defaultPermissionsForRole } from "./agent-permissions.js";
 
 type MembershipRow = typeof companyMemberships.$inferSelect;
 type GrantInput = {
@@ -62,7 +64,22 @@ export function accessService(db: Db) {
         ),
       )
       .then((rows) => rows[0] ?? null);
-    return Boolean(grant);
+    if (grant) return true;
+
+    // Fall back to role-based default permissions for agents
+    if (principalType === "agent") {
+      const agent = await db
+        .select({ role: agents.role })
+        .from(agents)
+        .where(eq(agents.id, principalId))
+        .then((rows) => rows[0] ?? null);
+      if (agent) {
+        const defaults = defaultPermissionsForRole(agent.role);
+        return Boolean(defaults[permissionKey]);
+      }
+    }
+
+    return false;
   }
 
   async function canUser(
@@ -81,6 +98,20 @@ export function accessService(db: Db) {
       .from(companyMemberships)
       .where(eq(companyMemberships.companyId, companyId))
       .orderBy(sql`${companyMemberships.createdAt} desc`);
+  }
+
+  async function listActiveUserMemberships(companyId: string) {
+    return db
+      .select()
+      .from(companyMemberships)
+      .where(
+        and(
+          eq(companyMemberships.companyId, companyId),
+          eq(companyMemberships.principalType, "user"),
+          eq(companyMemberships.status, "active"),
+        ),
+      )
+      .orderBy(sql`${companyMemberships.createdAt} asc`);
   }
 
   async function setMemberPermissions(
@@ -251,6 +282,20 @@ export function accessService(db: Db) {
     });
   }
 
+  async function copyActiveUserMemberships(sourceCompanyId: string, targetCompanyId: string) {
+    const sourceMemberships = await listActiveUserMemberships(sourceCompanyId);
+    for (const membership of sourceMemberships) {
+      await ensureMembership(
+        targetCompanyId,
+        "user",
+        membership.principalId,
+        membership.membershipRole,
+        "active",
+      );
+    }
+    return sourceMemberships;
+  }
+
   async function listPrincipalGrants(
     companyId: string,
     principalType: PrincipalType,
@@ -338,6 +383,8 @@ export function accessService(db: Db) {
     getMembership,
     ensureMembership,
     listMembers,
+    listActiveUserMemberships,
+    copyActiveUserMemberships,
     setMemberPermissions,
     promoteInstanceAdmin,
     demoteInstanceAdmin,

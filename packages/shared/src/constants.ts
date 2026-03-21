@@ -122,6 +122,9 @@ export type IssueStatus = (typeof ISSUE_STATUSES)[number];
 export const ISSUE_PRIORITIES = ["critical", "high", "medium", "low"] as const;
 export type IssuePriority = (typeof ISSUE_PRIORITIES)[number];
 
+export const ISSUE_ORIGIN_KINDS = ["manual", "routine_execution"] as const;
+export type IssueOriginKind = (typeof ISSUE_ORIGIN_KINDS)[number];
+
 export const GOAL_LEVELS = ["company", "team", "agent", "task"] as const;
 export type GoalLevel = (typeof GOAL_LEVELS)[number];
 
@@ -136,6 +139,34 @@ export const PROJECT_STATUSES = [
   "cancelled",
 ] as const;
 export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
+
+export const ROUTINE_STATUSES = ["active", "paused", "archived"] as const;
+export type RoutineStatus = (typeof ROUTINE_STATUSES)[number];
+
+export const ROUTINE_CONCURRENCY_POLICIES = ["coalesce_if_active", "always_enqueue", "skip_if_active"] as const;
+export type RoutineConcurrencyPolicy = (typeof ROUTINE_CONCURRENCY_POLICIES)[number];
+
+export const ROUTINE_CATCH_UP_POLICIES = ["skip_missed", "enqueue_missed_with_cap"] as const;
+export type RoutineCatchUpPolicy = (typeof ROUTINE_CATCH_UP_POLICIES)[number];
+
+export const ROUTINE_TRIGGER_KINDS = ["schedule", "webhook", "api"] as const;
+export type RoutineTriggerKind = (typeof ROUTINE_TRIGGER_KINDS)[number];
+
+export const ROUTINE_TRIGGER_SIGNING_MODES = ["bearer", "hmac_sha256"] as const;
+export type RoutineTriggerSigningMode = (typeof ROUTINE_TRIGGER_SIGNING_MODES)[number];
+
+export const ROUTINE_RUN_STATUSES = [
+  "received",
+  "coalesced",
+  "skipped",
+  "issue_created",
+  "completed",
+  "failed",
+ ] as const;
+export type RoutineRunStatus = (typeof ROUTINE_RUN_STATUSES)[number];
+
+export const ROUTINE_RUN_SOURCES = ["schedule", "manual", "api", "webhook"] as const;
+export type RoutineRunSource = (typeof ROUTINE_RUN_SOURCES)[number];
 
 export const PAUSE_REASONS = ["manual", "budget", "system", "quota_reset"] as const;
 export type PauseReason = (typeof PAUSE_REASONS)[number];
@@ -290,6 +321,8 @@ export const LIVE_EVENT_TYPES = [
   "chat.session.ended",
   "chat.message.sent",
   "chat.message.received",
+  "chat.typing",
+  "chat.messages.read",
 ] as const;
 export type LiveEventType = (typeof LIVE_EVENT_TYPES)[number];
 
@@ -316,13 +349,93 @@ export type JoinRequestStatus = (typeof JOIN_REQUEST_STATUSES)[number];
 
 export const PERMISSION_KEYS = [
   "agents:create",
+  "agents:manage",
   "users:invite",
   "users:manage_permissions",
   "tasks:assign",
   "tasks:assign_scope",
   "joins:approve",
+  "projects:create",
+  "projects:manage",
+  "goals:create",
+  "goals:manage",
+  "webhooks:manage",
+  "secrets:manage",
+  "plugins:manage",
+  "company:settings",
+  "activity:view",
 ] as const;
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];
+
+// ---------------------------------------------------------------------------
+// Role Hierarchy & Default Permissions
+// ---------------------------------------------------------------------------
+
+export const ROLE_HIERARCHY_LEVELS: Record<AgentRole, number> = {
+  ceo: 100,
+  cto: 80,
+  cmo: 80,
+  cfo: 80,
+  pm: 60,
+  engineer: 40,
+  designer: 40,
+  qa: 40,
+  devops: 40,
+  researcher: 40,
+  general: 20,
+};
+
+const ALL_PERMISSIONS: readonly PermissionKey[] = PERMISSION_KEYS;
+
+const C_SUITE_PERMISSIONS: readonly PermissionKey[] = [
+  "agents:create",
+  "agents:manage",
+  "projects:create",
+  "projects:manage",
+  "goals:create",
+  "goals:manage",
+  "tasks:assign",
+  "users:invite",
+  "users:manage_permissions",
+  "joins:approve",
+  "webhooks:manage",
+  "secrets:manage",
+  "plugins:manage",
+  "company:settings",
+  "activity:view",
+];
+
+const PM_PERMISSIONS: readonly PermissionKey[] = [
+  "projects:create",
+  "projects:manage",
+  "goals:create",
+  "goals:manage",
+  "tasks:assign",
+  "activity:view",
+];
+
+const IC_PERMISSIONS: readonly PermissionKey[] = [
+  "tasks:assign",
+  "activity:view",
+];
+
+const GENERAL_PERMISSIONS: readonly PermissionKey[] = [
+  "activity:view",
+];
+
+export const ROLE_DEFAULT_PERMISSIONS: Record<AgentRole, readonly PermissionKey[]> = {
+  ceo: ALL_PERMISSIONS,
+  cto: C_SUITE_PERMISSIONS,
+  cmo: C_SUITE_PERMISSIONS,
+  cfo: C_SUITE_PERMISSIONS,
+  pm: PM_PERMISSIONS,
+  engineer: IC_PERMISSIONS,
+  designer: IC_PERMISSIONS,
+  qa: IC_PERMISSIONS,
+  devops: IC_PERMISSIONS,
+  researcher: IC_PERMISSIONS,
+  general: GENERAL_PERMISSIONS,
+};
 
 // ---------------------------------------------------------------------------
 // Plugin System — see doc/plugins/PLUGIN_SPEC.md for the full specification

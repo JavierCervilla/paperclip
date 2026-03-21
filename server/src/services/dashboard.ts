@@ -80,6 +80,13 @@ export function dashboardService(db: Db) {
         company.budgetMonthlyCents > 0
           ? (monthSpendCents / company.budgetMonthlyCents) * 100
           : 0;
+
+      // Burn rate: spend per day so far this month, projected to month end
+      const daysElapsed = Math.max(now.getDate(), 1);
+      const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+      const burnRateCentsPerDay = Math.round(monthSpendCents / daysElapsed);
+      const projectedMonthEndSpendCents = Math.round(burnRateCentsPerDay * daysInMonth);
+
       const budgetOverview = await budgets.overview(companyId);
 
       return {
@@ -95,6 +102,8 @@ export function dashboardService(db: Db) {
           monthSpendCents,
           monthBudgetCents: company.budgetMonthlyCents,
           monthUtilizationPercent: Number(utilization.toFixed(2)),
+          burnRateCentsPerDay,
+          projectedMonthEndSpendCents,
         },
         pendingApprovals,
         budgets: {

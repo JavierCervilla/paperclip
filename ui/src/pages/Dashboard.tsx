@@ -265,6 +265,9 @@ export function Dashboard() {
                   {data.costs.monthBudgetCents > 0
                     ? `${data.costs.monthUtilizationPercent}% of ${formatCents(data.costs.monthBudgetCents)} budget`
                     : "Unlimited budget"}
+                  {data.costs.burnRateCentsPerDay > 0 && (
+                    <> · {formatCents(data.costs.burnRateCentsPerDay)}/day · proj. {formatCents(data.costs.projectedMonthEndSpendCents)}</>
+                  )}
                 </span>
               }
             />

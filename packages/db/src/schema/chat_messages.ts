@@ -11,6 +11,7 @@ export const chatMessages = pgTable(
     sender: text("sender").notNull(), // "user" | "agent"
     content: text("content").notNull(),
     attachments: jsonb("attachments"), // ChatAttachment[] | null
+    readAt: timestamp("read_at", { withTimezone: true }), // when the recipient read this message
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({

@@ -79,7 +79,8 @@
               "deploy/database",
               "deploy/secrets",
               "deploy/storage",
-              "deploy/environment-variables"
+              "deploy/environment-variables",
+              "deploy/branching-workflow"
             ]
           }
         ]
@@ -93,6 +94,7 @@
               "adapters/overview",
               "adapters/claude-local",
               "adapters/codex-local",
+              "adapters/gemini-local",
               "adapters/process",
               "adapters/http",
               "adapters/creating-an-adapter"

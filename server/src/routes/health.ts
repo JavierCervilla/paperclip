@@ -1,9 +1,11 @@
 import { Router } from "express";
 import type { Db } from "@paperclipai/db";
-import { and, count, eq, gt, isNull, sql } from "drizzle-orm";
-import { instanceUserRoles, invites } from "@paperclipai/db";
+import { and, count, eq, gt, inArray, isNull, sql } from "drizzle-orm";
+import { heartbeatRuns, instanceUserRoles, invites } from "@paperclipai/db";
 import type { DeploymentExposure, DeploymentMode } from "@paperclipai/shared";
-import { serverVersion } from "../version.js";
+import { readPersistedDevServerStatus, toDevServerHealthStatus } from "../dev-server-status.js";
+import { instanceSettingsService } from "../services/instance-settings.js";
+import { serverVersion, serverCommit } from "../version.js";
 import { Sentry, sentryEnabled } from "../sentry.js";
 
 const startedAt = Date.now();
@@ -31,6 +33,7 @@ export function healthRoutes(
       res.json({
         status: "ok",
         version: serverVersion,
+        commit: serverCommit,
         uptime: Math.floor((Date.now() - startedAt) / 1000),
       });
       return;
@@ -77,11 +80,29 @@ export function healthRoutes(
       }
     }
 
+    const persistedDevServerStatus = readPersistedDevServerStatus();
+    let devServer: ReturnType<typeof toDevServerHealthStatus> | undefined;
+    if (persistedDevServerStatus) {
+      const instanceSettings = instanceSettingsService(db);
+      const experimentalSettings = await instanceSettings.getExperimental();
+      const activeRunCount = await db
+        .select({ count: count() })
+        .from(heartbeatRuns)
+        .where(inArray(heartbeatRuns.status, ["queued", "running"]))
+        .then((rows) => Number(rows[0]?.count ?? 0));
+
+      devServer = toDevServerHealthStatus(persistedDevServerStatus, {
+        autoRestartEnabled: experimentalSettings.autoRestartDevServerWhenIdle ?? false,
+        activeRunCount,
+      });
+    }
+
     const responseTimeMs = Date.now() - requestStart;
 
     res.status(healthy ? 200 : 503).json({
       status: healthy ? "ok" : "degraded",
       version: serverVersion,
+      commit: serverCommit,
       uptime: Math.floor((Date.now() - startedAt) / 1000),
       database: {
         status: dbStatus,
@@ -96,6 +117,7 @@ export function healthRoutes(
       features: {
         companyDeletionEnabled: opts.companyDeletionEnabled,
       },
+      ...(devServer ? { devServer } : {}),
     });
   });
 

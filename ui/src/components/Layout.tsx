@@ -15,6 +15,7 @@ import { NewAgentDialog } from "./NewAgentDialog";
 import { ToastViewport } from "./ToastViewport";
 import { MobileBottomNav } from "./MobileBottomNav";
 import { WorktreeBanner } from "./WorktreeBanner";
+import { DevRestartBanner } from "./DevRestartBanner";
 import { useDialog } from "../context/DialogContext";
 import { usePanel } from "../context/PanelContext";
 import { useCompany } from "../context/CompanyContext";
@@ -78,6 +79,11 @@ export function Layout() {
     queryKey: queryKeys.health,
     queryFn: () => healthApi.get(),
     retry: false,
+    refetchInterval: (query) => {
+      const data = query.state.data as { devServer?: { enabled?: boolean } } | undefined;
+      return data?.devServer?.enabled ? 2000 : false;
+    },
+    refetchIntervalInBackground: true,
   });
 
   useEffect(() => {
@@ -266,6 +272,7 @@ export function Layout() {
         Skip to Main Content
       </a>
       <WorktreeBanner />
+      <DevRestartBanner devServer={health?.devServer} />
       <div className={cn("min-h-0 flex-1", isMobile ? "w-full" : "flex overflow-hidden")}>
         {isMobile && sidebarOpen && (
           <button
@@ -303,7 +310,7 @@ export function Layout() {
                     <TooltipTrigger asChild>
                       <span className="px-2 text-xs text-muted-foreground shrink-0 cursor-default">v</span>
                     </TooltipTrigger>
-                    <TooltipContent>v{health.version}</TooltipContent>
+                    <TooltipContent>v{health.version}{health.commit ? ` (${health.commit})` : ""}</TooltipContent>
                   </Tooltip>
                 )}
                 <Button variant="ghost" size="icon-sm" className="text-muted-foreground shrink-0" asChild>
@@ -361,7 +368,7 @@ export function Layout() {
                     <TooltipTrigger asChild>
                       <span className="px-2 text-xs text-muted-foreground shrink-0 cursor-default">v</span>
                     </TooltipTrigger>
-                    <TooltipContent>v{health.version}</TooltipContent>
+                    <TooltipContent>v{health.version}{health.commit ? ` (${health.commit})` : ""}</TooltipContent>
                   </Tooltip>
                 )}
                 <Button variant="ghost" size="icon-sm" className="text-muted-foreground shrink-0" asChild>

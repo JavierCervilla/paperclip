@@ -12,6 +12,7 @@ export const chatSessions = pgTable(
     messageCount: integer("message_count").notNull().default(0),
     startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
     endedAt: timestamp("ended_at", { withTimezone: true }),
+    endReason: text("end_reason"), // "idle_timeout" | "user_closed" | "agent_closed" | null
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({

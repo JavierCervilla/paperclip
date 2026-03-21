@@ -9,8 +9,51 @@ import type {
   PrincipalPermissionGrant,
 } from "./access.js";
 
+export interface AgentWorkspacePreference {
+  priority: number;
+}
+
+export interface AgentWorkspaceConfig {
+  defaultProjectWorkspaceId?: string | null;
+  allowedProjectWorkspaceIds?: string[] | null;
+  workspacePreferences?: Record<string, AgentWorkspacePreference> | null;
+  crossWorkspaceRefs?: boolean | null;
+}
+
 export interface AgentPermissions {
   canCreateAgents: boolean;
+}
+
+export type AgentInstructionsBundleMode = "managed" | "external";
+
+export interface AgentInstructionsFileSummary {
+  path: string;
+  size: number;
+  language: string;
+  markdown: boolean;
+  isEntryFile: boolean;
+  editable: boolean;
+  deprecated: boolean;
+  virtual: boolean;
+}
+
+export interface AgentInstructionsFileDetail extends AgentInstructionsFileSummary {
+  content: string;
+}
+
+export interface AgentInstructionsBundle {
+  agentId: string;
+  companyId: string;
+  mode: AgentInstructionsBundleMode | null;
+  rootPath: string | null;
+  managedRootPath: string;
+  entryFile: string;
+  resolvedEntryPath: string | null;
+  editable: boolean;
+  warnings: string[];
+  legacyPromptTemplateActive: boolean;
+  legacyBootstrapPromptTemplateActive: boolean;
+  files: AgentInstructionsFileSummary[];
 }
 
 export interface AgentAccessState {
@@ -47,6 +90,7 @@ export interface Agent {
   pausedAt: Date | null;
   permissions: AgentPermissions;
   lastHeartbeatAt: Date | null;
+  workspaceConfig: AgentWorkspaceConfig;
   metadata: Record<string, unknown> | null;
   createdAt: Date;
   updatedAt: Date;
