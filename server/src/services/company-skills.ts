@@ -2020,14 +2020,14 @@ export function companySkillService(db: Db) {
       }
       if (!source) continue;
 
-      const required = sourceKind === "paperclip_bundled";
+      const required = skill.key === "paperclipai/paperclip/paperclip";
       out.push({
         key: skill.key,
         runtimeName: buildSkillRuntimeName(skill.key, skill.slug),
         source,
         required,
         requiredReason: required
-          ? "Bundled Paperclip skills are always available for local adapters."
+          ? "Core Paperclip skill is always loaded for local adapters."
           : null,
       });
     }
