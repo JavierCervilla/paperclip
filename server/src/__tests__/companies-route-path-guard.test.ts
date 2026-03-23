@@ -26,6 +26,7 @@ vi.mock("../services/index.js", () => ({
   budgetService: () => ({
     upsertPolicy: vi.fn(),
   }),
+  heartbeatService: () => ({}),
   agentService: () => ({
     getById: vi.fn(),
   }),
