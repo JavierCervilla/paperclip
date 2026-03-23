@@ -29,6 +29,11 @@ if [ -z "$CMD" ]; then
   exit 0
 fi
 
+# Skip RTK for Paperclip API calls — agents need raw JSON responses
+if echo "$CMD" | grep -qE 'curl.*(localhost:3100|\$PAPERCLIP_API_URL|\$\{PAPERCLIP_API_URL)'; then
+  exit 0
+fi
+
 # Delegate rewrite logic to rtk binary
 REWRITTEN=$(rtk rewrite "$CMD" 2>/dev/null) || exit 0
 
