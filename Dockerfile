@@ -1,7 +1,7 @@
 FROM node:lts-trixie-slim AS base
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
-    ca-certificates curl git unzip \
+    ca-certificates curl git unzip jq \
     libglib2.0-0 libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 \
     libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 \
     libxfixes3 libxrandr2 libgbm1 libasound2 \
@@ -48,6 +48,8 @@ RUN npm install --global --omit=dev @anthropic-ai/claude-code@latest @openai/cod
   && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
   && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
   && apt-get update && apt-get install -y gh && rm -rf /var/lib/apt/lists/* \
+  && curl -fsSL -o /tmp/rtk.deb https://github.com/rtk-ai/rtk/releases/download/v0.31.0/rtk_0.31.0-1_amd64.deb \
+  && dpkg -i /tmp/rtk.deb && rm /tmp/rtk.deb \
   && mkdir -p /paperclip \
   && chown node:node /paperclip
 
