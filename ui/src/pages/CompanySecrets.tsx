@@ -1,10 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { CompanySecret, SecretProvider } from "@paperclipai/shared";
+import type { Agent, CompanySecret, SecretProvider } from "@paperclipai/shared";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { secretsApi } from "../api/secrets";
+import { agentsApi } from "../api/agents";
 import { queryKeys } from "../lib/queryKeys";
+import { CopyText } from "../components/CopyText";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -15,7 +17,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Field } from "../components/agent-config-primitives";
-import { KeyRound, Plus, RotateCw, Pencil, Trash2, Shield } from "lucide-react";
+import { KeyRound, Plus, RotateCw, Pencil, Trash2, Shield, Copy } from "lucide-react";
 
 const inputClass =
   "w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none";
@@ -330,15 +332,47 @@ function DeleteSecretDialog({
   );
 }
 
+/* ---- Helpers: extract secret usage from agents ---- */
+
+/** Build a map of secretId → list of agents that reference it in their env config */
+function buildSecretUsageMap(agents: Agent[]): Map<string, { agent: Agent; envKeys: string[] }[]> {
+  const map = new Map<string, { agent: Agent; envKeys: string[] }[]>();
+  for (const agent of agents) {
+    const env = (agent.adapterConfig as Record<string, unknown>)?.env;
+    if (!env || typeof env !== "object") continue;
+    for (const [key, binding] of Object.entries(env as Record<string, unknown>)) {
+      if (
+        binding &&
+        typeof binding === "object" &&
+        (binding as { type?: string }).type === "secret_ref"
+      ) {
+        const secretId = (binding as { secretId?: string }).secretId;
+        if (!secretId) continue;
+        const existing = map.get(secretId);
+        if (existing) {
+          const agentEntry = existing.find((e) => e.agent.id === agent.id);
+          if (agentEntry) agentEntry.envKeys.push(key);
+          else existing.push({ agent, envKeys: [key] });
+        } else {
+          map.set(secretId, [{ agent, envKeys: [key] }]);
+        }
+      }
+    }
+  }
+  return map;
+}
+
 /* ---- Secret Row ---- */
 
 function SecretRow({
   secret,
+  usedBy,
   onEdit,
   onRotate,
   onDelete,
 }: {
   secret: CompanySecret;
+  usedBy?: { agent: Agent; envKeys: string[] }[];
   onEdit: () => void;
   onRotate: () => void;
   onDelete: () => void;
@@ -359,10 +393,31 @@ function SecretRow({
         {secret.description && (
           <p className="text-xs text-muted-foreground mt-0.5 truncate">{secret.description}</p>
         )}
-        <p className="text-[11px] text-muted-foreground/60 mt-0.5">
-          Created {formatDate(secret.createdAt)}
-          {secret.updatedAt !== secret.createdAt && <> · Updated {formatDate(secret.updatedAt)}</>}
-        </p>
+        <div className="flex items-center gap-2 mt-0.5">
+          <CopyText text={secret.id} copiedLabel="Copied ID!" className="text-[11px] text-muted-foreground/60 font-mono hover:text-muted-foreground">
+            <span className="inline-flex items-center gap-1">
+              <Copy className="h-2.5 w-2.5" />
+              {secret.id.slice(0, 8)}…
+            </span>
+          </CopyText>
+          <span className="text-[11px] text-muted-foreground/60">·</span>
+          <span className="text-[11px] text-muted-foreground/60">
+            Created {formatDate(secret.createdAt)}
+            {secret.updatedAt !== secret.createdAt && <> · Updated {formatDate(secret.updatedAt)}</>}
+          </span>
+        </div>
+        {usedBy && usedBy.length > 0 && (
+          <p className="text-[11px] text-muted-foreground/80 mt-1">
+            Used by:{" "}
+            {usedBy.map((entry, i) => (
+              <span key={entry.agent.id}>
+                {i > 0 && ", "}
+                <span className="font-medium">{entry.agent.name}</span>
+                <span className="text-muted-foreground/60"> ({entry.envKeys.join(", ")})</span>
+              </span>
+            ))}
+          </p>
+        )}
       </div>
       <div className="flex items-center gap-1 shrink-0">
         <Button variant="ghost" size="icon-sm" onClick={onEdit} title="Edit metadata">
@@ -401,6 +456,17 @@ export function CompanySecrets() {
     queryFn: () => secretsApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
+
+  const { data: agents } = useQuery({
+    queryKey: queryKeys.agents.list(selectedCompanyId!),
+    queryFn: () => agentsApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
+
+  const secretUsageMap = useMemo(
+    () => (agents ? buildSecretUsageMap(agents) : new Map()),
+    [agents],
+  );
 
   useEffect(() => {
     setBreadcrumbs([
@@ -451,6 +517,7 @@ export function CompanySecrets() {
             <SecretRow
               key={secret.id}
               secret={secret}
+              usedBy={secretUsageMap.get(secret.id)}
               onEdit={() => setEditSecret(secret)}
               onRotate={() => setRotateSecret(secret)}
               onDelete={() => setDeleteSecret(secret)}
