@@ -41,6 +41,18 @@ const MAX_ISSUE_COMMENT_LIMIT = 500;
 
 export function issueRoutes(db: Db, storage: StorageService) {
   const router = Router();
+
+  // Reject unauthenticated requests before any route handler runs.
+  // Without this guard, handlers that fetch the issue before checking
+  // auth can leak 404/400 responses to anonymous callers (GH #58).
+  router.use(["/issues", "/attachments"], (req, res, next) => {
+    if (req.actor.type === "none") {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    next();
+  });
+
   const svc = issueService(db);
   const access = accessService(db);
   const heartbeat = heartbeatService(db);

@@ -68,6 +68,11 @@ export function errorHandler(
     return;
   }
 
+  if (err instanceof SyntaxError && "body" in err) {
+    res.status(400).json({ error: "Invalid JSON body" });
+    return;
+  }
+
   if (err instanceof ZodError) {
     res.status(400).json({ error: "Validation error", details: err.errors });
     return;
