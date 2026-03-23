@@ -73,6 +73,15 @@ export function errorHandler(
     return;
   }
 
+  if (
+    err instanceof SyntaxError &&
+    (err as any).status === 400 &&
+    (err as any).type === "entity.parse.failed"
+  ) {
+    res.status(400).json({ error: "Malformed JSON in request body" });
+    return;
+  }
+
   const rootError = err instanceof Error ? err : new Error(String(err));
   attachErrorContext(
     req,
