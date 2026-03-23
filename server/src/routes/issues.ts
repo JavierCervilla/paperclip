@@ -41,6 +41,19 @@ const MAX_ISSUE_COMMENT_LIMIT = 500;
 
 export function issueRoutes(db: Db, storage: StorageService) {
   const router = Router();
+
+  // Auth guard: reject unauthenticated requests to entity-scoped endpoints
+  // before any route-level validation or entity lookup can leak information.
+  for (const prefix of ["/issues/:id", "/attachments/:id"]) {
+    router.use(prefix, (req, _res, next) => {
+      if (req.actor.type === "none") {
+        next(unauthorized());
+        return;
+      }
+      next();
+    });
+  }
+
   const svc = issueService(db);
   const access = accessService(db);
   const heartbeat = heartbeatService(db);
