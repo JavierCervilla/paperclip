@@ -271,14 +271,16 @@ function subscribeToEvents(ctx: PluginContext, token: string, config: TelegramCo
       const chatId = config.defaultChatId;
       if (!chatId) return;
       const { text, options } = formatIssueCreated(event);
-      const projectName = event.payload?.projectName;
+      const projectName = (event.payload as any)?.projectName;
       await notifyChat(ctx, token, chatId, text, options, projectName);
       // Store message mapping for reply routing
     });
   }
 
   if (config.notifyOnIssueDone) {
-    ctx.events.on("issue.done", async (event) => {
+    ctx.events.on("issue.updated", async (event) => {
+      const p = event.payload as any;
+      if (p?.status !== "done") return;
       const chatId = config.defaultChatId;
       if (!chatId) return;
       const { text, options } = formatIssueDone(event);
@@ -307,7 +309,7 @@ function subscribeToEvents(ctx: PluginContext, token: string, config: TelegramCo
   }
 
   if (config.notifyOnAgentError) {
-    ctx.events.on("agent.error", async (event) => {
+    ctx.events.on("agent.run.failed", async (event) => {
       const chatId = config.errorsChatId || config.defaultChatId;
       if (!chatId) return;
       const { text, options } = formatAgentError(event);
@@ -315,8 +317,8 @@ function subscribeToEvents(ctx: PluginContext, token: string, config: TelegramCo
     });
   }
 
-  // Escalation events
-  ctx.events.on("agent.escalation", async (event) => {
+  // Escalation events (custom plugin event)
+  ctx.events.on("plugin.paperclip-plugin-telegram.escalation", async (event) => {
     const chatId = config.escalationChatId || config.defaultChatId;
     if (!chatId) return;
     await escalationManager.create(ctx, token, event.payload, chatId);
@@ -451,7 +453,7 @@ function registerJobHandlers(ctx: PluginContext, token: string, config: Telegram
 
 function registerWebhookRoute(ctx: PluginContext, token: string, config: TelegramConfig): void {
   // The plugin host delivers inbound webhook POSTs as events
-  ctx.events.on("telegram.webhook", async (event) => {
+  ctx.events.on("plugin.paperclip-plugin-telegram.webhook", async (event) => {
     try {
       await processUpdate(ctx, token, event.payload, config);
     } catch (err) {

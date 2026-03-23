@@ -10,7 +10,7 @@ import {
 
 // --- Setup: register ACP output listener ---
 export function setupAcpOutputListener(ctx: PluginContext, token: string) {
-  ctx.events.subscribe(ACP_OUTPUT_EVENT, async (event: any) => {
+  ctx.events.on(ACP_OUTPUT_EVENT as any, async (event: any) => {
     await handleAcpOutput(ctx, token, event.payload);
   });
 }
