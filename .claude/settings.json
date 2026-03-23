@@ -9,6 +9,15 @@
             "command": "bash .claude/hooks/block-no-verify.sh"
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash tools/rtk/rtk-rewrite.sh"
+          }
+        ]
       }
     ],
     "PostToolUse": [
