@@ -587,5 +587,34 @@ export {
   type ConfigMeta,
 } from "./config-schema.js";
 
-export { parseWorkspaceFileRefs, buildWorkspaceFileRef, resolveWorkspaceFileRef, expandWorkspaceFileRefs } from "./workspace-refs.js";
+export {
+  parseWorkspaceFileRefs,
+  buildWorkspaceFileRef,
+  resolveWorkspaceFileRef,
+  expandWorkspaceFileRefs,
+} from "./workspace-refs.js";
 export type { WorkspaceFileRef } from "./workspace-refs.js";
+
+export {
+  isPlainObject,
+  isEnvPlainBinding,
+  isEnvSecretRefBinding,
+  isEnvStringBinding,
+  errorMessage,
+  isNonNullable,
+} from "./type-guards.js";
+
+export {
+  HttpError,
+  badRequest,
+  unauthorized,
+  forbidden,
+  notFound,
+  conflict,
+  unprocessable,
+  internalError,
+  isHttpError,
+  toApiErrorResponse,
+  asHttpError,
+} from "./errors.js";
+export type { ApiErrorResponse } from "./errors.js";
