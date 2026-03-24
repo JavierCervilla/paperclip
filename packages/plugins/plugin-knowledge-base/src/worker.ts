@@ -37,7 +37,13 @@ const plugin = definePlugin({
         },
       },
       async (params, runCtx): Promise<ToolResult> => {
-        const p = params as { title?: string; description?: string; type?: string; tags?: string[]; externalId?: string };
+        const p = params as {
+          title?: string;
+          description?: string;
+          type?: string;
+          tags?: string[];
+          externalId?: string;
+        };
         const title = (p.title ?? "").trim();
         const description = (p.description ?? "").trim();
         if (!title || !description) {
@@ -87,11 +93,10 @@ const plugin = definePlugin({
           entityType: KB_ENTITY_TYPE,
           scopeKind: "company",
           scopeId: runCtx.companyId,
-          status,
           limit,
           offset: 0,
         });
-        let filtered = records;
+        let filtered = records.filter((r) => (r.status ?? "active") === status);
         if (p.type) {
           filtered = filtered.filter((r) => (r.data as KBEntryData)?.type === p.type);
         }
@@ -105,16 +110,27 @@ const plugin = definePlugin({
           const q = p.query.toLowerCase();
           filtered = filtered.filter((r) => {
             const d = r.data as KBEntryData;
-            return r.title.toLowerCase().includes(q) || (d?.description ?? "").toLowerCase().includes(q);
+            return (r.title ?? "").toLowerCase().includes(q) || (d?.description ?? "").toLowerCase().includes(q);
           });
         }
         if (filtered.length === 0) {
           return { content: "No matching KB entries found.", data: [] };
         }
-        const summary = filtered.map((r) => {
-          const d = r.data as KBEntryData;
-          return "[" + r.id + "] **" + r.title + "** (" + (d?.type ?? "?") + ") — " + (d?.description ?? "").slice(0, 120);
-        }).join("\n");
+        const summary = filtered
+          .map((r) => {
+            const d = r.data as KBEntryData;
+            return (
+              "[" +
+              r.id +
+              "] **" +
+              (r.title ?? "") +
+              "** (" +
+              (d?.type ?? "?") +
+              ") — " +
+              (d?.description ?? "").slice(0, 120)
+            );
+          })
+          .join("\n");
         return { content: summary, data: filtered };
       },
     );
@@ -140,7 +156,13 @@ const plugin = definePlugin({
       async (params, runCtx): Promise<ToolResult> => {
         const p = params as { id?: string; title?: string; description?: string; type?: string; tags?: string[] };
         if (!p.id) return { content: "id is required.", data: { error: "missing_id" } };
-        const records = await ctx.entities.list({ entityType: KB_ENTITY_TYPE, scopeKind: "company", scopeId: runCtx.companyId, limit: 1000, offset: 0 });
+        const records = await ctx.entities.list({
+          entityType: KB_ENTITY_TYPE,
+          scopeKind: "company",
+          scopeId: runCtx.companyId,
+          limit: 1000,
+          offset: 0,
+        });
         const existing = records.find((r) => r.id === p.id);
         if (!existing) return { content: "KB entry " + p.id + " not found.", data: { error: "not_found" } };
         const d = existing.data as KBEntryData;
@@ -148,10 +170,16 @@ const plugin = definePlugin({
           entityType: KB_ENTITY_TYPE,
           scopeKind: "company",
           scopeId: runCtx.companyId,
-          externalId: existing.externalId ?? p.id,
-          title: p.title ?? existing.title,
-          status: existing.status,
-          data: { ...d, ...(p.description ? { description: p.description } : {}), ...(p.type ? { type: p.type } : {}), ...(p.tags ? { tags: p.tags } : {}), updatedAt: new Date().toISOString() },
+          externalId: existing.externalId ?? p.id ?? undefined,
+          title: p.title ?? existing.title ?? undefined,
+          status: existing.status ?? undefined,
+          data: {
+            ...d,
+            ...(p.description ? { description: p.description } : {}),
+            ...(p.type ? { type: p.type } : {}),
+            ...(p.tags ? { tags: p.tags } : {}),
+            updatedAt: new Date().toISOString(),
+          },
         });
         return { content: "Updated KB entry: " + updated.title, data: updated };
       },
@@ -175,7 +203,13 @@ const plugin = definePlugin({
       async (params, runCtx): Promise<ToolResult> => {
         const p = params as { id?: string; reason?: string };
         if (!p.id) return { content: "id is required.", data: { error: "missing_id" } };
-        const records = await ctx.entities.list({ entityType: KB_ENTITY_TYPE, scopeKind: "company", scopeId: runCtx.companyId, limit: 1000, offset: 0 });
+        const records = await ctx.entities.list({
+          entityType: KB_ENTITY_TYPE,
+          scopeKind: "company",
+          scopeId: runCtx.companyId,
+          limit: 1000,
+          offset: 0,
+        });
         const existing = records.find((r) => r.id === p.id);
         if (!existing) return { content: "KB entry " + p.id + " not found.", data: { error: "not_found" } };
         const d = existing.data as KBEntryData;
@@ -183,8 +217,8 @@ const plugin = definePlugin({
           entityType: KB_ENTITY_TYPE,
           scopeKind: "company",
           scopeId: runCtx.companyId,
-          externalId: existing.externalId ?? p.id,
-          title: existing.title,
+          externalId: existing.externalId ?? p.id ?? undefined,
+          title: existing.title ?? undefined,
           status: "deprecated",
           data: { ...d, deprecatedAt: new Date().toISOString(), deprecatedReason: p.reason ?? "No reason provided" },
         });
@@ -195,22 +229,23 @@ const plugin = definePlugin({
     // Data endpoint for UI
     ctx.data.register("kb-entries", async (params) => {
       const p = params as { status?: string; limit?: number; query?: string; companyId?: string };
+      const statusFilter = typeof p.status === "string" ? p.status : "active";
       const records = await ctx.entities.list({
         entityType: KB_ENTITY_TYPE,
         scopeKind: "company",
         scopeId: typeof p.companyId === "string" ? p.companyId : undefined,
-        status: typeof p.status === "string" ? p.status : "active",
         limit: Math.min(typeof p.limit === "number" ? p.limit : 50, 100),
         offset: 0,
       });
+      let filtered = records.filter((r) => (r.status ?? "active") === statusFilter);
       if (typeof p.query === "string" && p.query.trim()) {
         const q = p.query.toLowerCase();
-        return records.filter((r) => {
+        filtered = filtered.filter((r) => {
           const d = r.data as KBEntryData;
-          return r.title.toLowerCase().includes(q) || (d?.description ?? "").toLowerCase().includes(q);
+          return (r.title ?? "").toLowerCase().includes(q) || (d?.description ?? "").toLowerCase().includes(q);
         });
       }
-      return records;
+      return filtered;
     });
   },
 
