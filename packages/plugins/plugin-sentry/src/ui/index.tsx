@@ -809,7 +809,7 @@ export function SentrySidebarLink(_props: PluginSidebarProps) {
   const prefix = ctx.companyPrefix ?? "";
   return (
     <a
-      href={`/${prefix}/plugins/${PLUGIN_ID}/${PAGE_ROUTE}`}
+      href={`/${prefix}/${PAGE_ROUTE}`}
       style={{
         ...styles.link,
         display: "flex",
