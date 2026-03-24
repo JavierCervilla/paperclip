@@ -8,13 +8,14 @@ import {
   updateSecretSchema,
 } from "@paperclipai/shared";
 import { validate } from "../middleware/validate.js";
-import { assertBoard, assertCompanyAccess, requirePermission } from "./authz.js";
-import { accessService, logActivity, secretService } from "../services/index.js";
+import { assertBoard, assertCompanyAccess, getActorInfo, requirePermission } from "./authz.js";
+import { accessService, agentService, logActivity, secretService } from "../services/index.js";
 
 export function secretRoutes(db: Db) {
   const router = Router();
   const svc = secretService(db);
   const access = accessService(db);
+  const agents = agentService(db);
   const configuredDefaultProvider = process.env.PAPERCLIP_SECRETS_PROVIDER;
   const defaultProvider = (
     configuredDefaultProvider && SECRET_PROVIDERS.includes(configuredDefaultProvider as SecretProvider)
@@ -164,6 +165,57 @@ export function secretRoutes(db: Db) {
     });
 
     res.json({ ok: true });
+  });
+
+  // Agent-accessible endpoint: resolve a secret value by ID.
+  // Requires either board access (secrets:manage) or an agent with canReadSecrets permission.
+  router.get("/secrets/:id/value", async (req, res) => {
+    const id = req.params.id as string;
+    const existing = await svc.getById(id);
+    if (!existing) {
+      res.status(404).json({ error: "Secret not found" });
+      return;
+    }
+
+    if (req.actor.type === "board") {
+      assertCompanyAccess(req, existing.companyId);
+      await requirePermission(req, existing.companyId, "secrets:manage", access);
+    } else if (req.actor.type === "agent") {
+      if (req.actor.companyId !== existing.companyId) {
+        res.status(403).json({ error: "Forbidden" });
+        return;
+      }
+      const agentId = req.actor.agentId;
+      if (!agentId) {
+        res.status(403).json({ error: "Agent identity required" });
+        return;
+      }
+      const agent = await agents.getById(agentId);
+      if (!agent || !agent.permissions?.canReadSecrets) {
+        res.status(403).json({ error: "Agent does not have secrets read permission" });
+        return;
+      }
+    } else {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+
+    const value = await svc.resolveSecretValue(existing.companyId, id, "latest");
+
+    const actor = getActorInfo(req);
+    await logActivity(db, {
+      companyId: existing.companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      action: "secret.read",
+      entityType: "secret",
+      entityId: existing.id,
+      details: { name: existing.name },
+    });
+
+    res.json({ value });
   });
 
   return router;

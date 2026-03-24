@@ -1,13 +1,5 @@
-import type {
-  AgentAdapterType,
-  PauseReason,
-  AgentRole,
-  AgentStatus,
-} from "../constants.js";
-import type {
-  CompanyMembership,
-  PrincipalPermissionGrant,
-} from "./access.js";
+import type { AgentAdapterType, PauseReason, AgentRole, AgentStatus } from "../constants.js";
+import type { CompanyMembership, PrincipalPermissionGrant } from "./access.js";
 
 export interface AgentWorkspacePreference {
   priority: number;
@@ -22,6 +14,7 @@ export interface AgentWorkspaceConfig {
 
 export interface AgentPermissions {
   canCreateAgents: boolean;
+  canReadSecrets?: boolean;
 }
 
 export type AgentInstructionsBundleMode = "managed" | "external";
