@@ -16,13 +16,15 @@
     "prebuild": "node ../../../scripts/ensure-plugin-build-deps.mjs",
     "build": "tsc && node ./scripts/build-ui.mjs",
     "clean": "rm -rf dist",
-    "typecheck": "pnpm --filter @paperclipai/plugin-sdk build && tsc --noEmit"
+    "typecheck": "pnpm --filter @paperclipai/plugin-sdk build && tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "@paperclipai/plugin-sdk": "workspace:*",
     "@paperclipai/shared": "workspace:*"
   },
   "devDependencies": {
+    "vitest": "^3.0.0",
     "esbuild": "^0.27.3",
     "@types/node": "^24.6.0",
     "@types/react": "^19.0.8",

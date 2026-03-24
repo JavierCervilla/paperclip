@@ -1,5 +1,6 @@
 import type { PluginContext } from "@paperclipai/plugin-sdk";
 import { METRIC_NAMES } from "./constants.js";
+import type { TelegramApiResponse, EditMessageOptions, InlineKeyboardRow } from "./types.js";
 
 const TELEGRAM_API = "https://api.telegram.org";
 
@@ -8,7 +9,7 @@ export interface SendMessageOptions {
   replyToMessageId?: number;
   messageThreadId?: number;
   disableNotification?: boolean;
-  inlineKeyboard?: Array<Array<{ text: string; callback_data: string }>>;
+  inlineKeyboard?: InlineKeyboardRow[];
 }
 
 export async function sendMessage(
@@ -18,7 +19,7 @@ export async function sendMessage(
   text: string,
   options: SendMessageOptions = {},
 ): Promise<number | null> {
-  const body: Record<string, any> = {
+  const body: Record<string, unknown> = {
     chat_id: chatId,
     text,
   };
@@ -38,7 +39,7 @@ export async function sendMessage(
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const data = (await res.json()) as any;
+      const data = (await res.json()) as TelegramApiResponse<{ message_id: number }>;
 
       if (!data.ok) {
         if (data.parameters?.retry_after && attempt < 2) {
@@ -81,9 +82,9 @@ export async function editMessage(
   chatId: string,
   messageId: number,
   text: string,
-  options: { parseMode?: string; inlineKeyboard?: any } = {},
+  options: EditMessageOptions = {},
 ): Promise<boolean> {
-  const body: Record<string, any> = {
+  const body: Record<string, unknown> = {
     chat_id: chatId,
     message_id: messageId,
     text,
@@ -102,7 +103,7 @@ export async function editMessage(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
-    const data = (await res.json()) as any;
+    const data = (await res.json()) as TelegramApiResponse;
     return data.ok;
   } catch (err) {
     ctx.logger.error("Telegram editMessage failed", { error: String(err) });
@@ -141,7 +142,7 @@ export async function setMyCommands(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ commands }),
     });
-    const data = (await res.json()) as any;
+    const data = (await res.json()) as TelegramApiResponse;
     return data.ok;
   } catch (err) {
     ctx.logger.error("Telegram setMyCommands failed", { error: String(err) });
