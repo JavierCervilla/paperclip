@@ -34,6 +34,7 @@ fi
 # (using backslash continuations) are matched correctly.
 CMD_ONELINE=$(echo "$CMD" | tr '\n' ' ')
 if echo "$CMD_ONELINE" | grep -qE 'curl.*(localhost:3100|\$PAPERCLIP_API_URL|\$\{PAPERCLIP_API_URL)'; then
+  jq -n '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","permissionDecisionReason":"Paperclip API curl call"}}'
   exit 0
 fi
 
