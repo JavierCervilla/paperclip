@@ -191,8 +191,9 @@ async function registerToolHandlers(ctx: PluginContext): Promise<void> {
       const { issueId } = params as { issueId: string };
       if (!issueId) return { error: "issueId is required" };
 
-      const issue = (await sentryFetch(ctx, config, `issues/${issueId}/`)) as SentryIssue;
-      const events = (await sentryFetch(ctx, config, `issues/${issueId}/events/?limit=5`)) as SentryEvent[];
+      const org = config.organizationSlug;
+      const issue = (await sentryFetch(ctx, config, `organizations/${org}/issues/${issueId}/`)) as SentryIssue;
+      const events = (await sentryFetch(ctx, config, `organizations/${org}/issues/${issueId}/events/?limit=5`)) as SentryEvent[];
       const latestEvent = events[0];
 
       // Extract stacktrace from latest event entries
@@ -364,8 +365,9 @@ async function registerDataHandlers(ctx: PluginContext): Promise<void> {
     const issueId = typeof params.issueId === "string" ? params.issueId : "";
     if (!issueId) throw new Error("issueId is required");
 
-    const issue = (await sentryFetch(ctx, config, `issues/${issueId}/`)) as SentryIssue;
-    const events = (await sentryFetch(ctx, config, `issues/${issueId}/events/?limit=10`)) as SentryEvent[];
+    const org = config.organizationSlug;
+    const issue = (await sentryFetch(ctx, config, `organizations/${org}/issues/${issueId}/`)) as SentryIssue;
+    const events = (await sentryFetch(ctx, config, `organizations/${org}/issues/${issueId}/events/?limit=10`)) as SentryEvent[];
     const latestEvent = events[0];
 
     let stacktrace: unknown = null;
