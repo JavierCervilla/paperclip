@@ -70,6 +70,9 @@ jobs:
           node-version: 24
           cache: pnpm
 
+      - name: Refresh lockfile if manifests changed
+        run: pnpm install --lockfile-only --no-frozen-lockfile
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -107,6 +110,9 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+
+      - name: Refresh lockfile if manifests changed
+        run: pnpm install --lockfile-only --no-frozen-lockfile
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
