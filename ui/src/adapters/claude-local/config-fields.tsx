@@ -8,6 +8,7 @@ import {
 } from "../../components/agent-config-primitives";
 import { ChoosePathButton } from "../../components/PathInstructionsModal";
 import { LocalWorkspaceRuntimeFields } from "../local-workspace-runtime-fields";
+import { useState } from "react";
 
 const inputClass =
   "w-full rounded-md border border-border px-2.5 py-1.5 bg-transparent outline-none text-sm font-mono placeholder:text-muted-foreground/40";
@@ -67,6 +68,70 @@ export function ClaudeLocalConfigFields({
         models={models}
       />
     </>
+  );
+}
+
+
+const TOOL_SUGGESTIONS = ["Bash(curl:*)", "Bash(git:*)", "Read", "Write", "Edit", "Grep", "Glob", "Agent", "WebFetch"];
+
+function TagListInput({
+  value,
+  onChange,
+  placeholder,
+  suggestions = TOOL_SUGGESTIONS,
+}: {
+  value: string[];
+  onChange: (v: string[]) => void;
+  placeholder?: string;
+  suggestions?: string[];
+}) {
+  const [input, setInput] = useState("");
+  const add = (tag: string) => {
+    const t = tag.trim();
+    if (t && !value.includes(t)) onChange([...value, t]);
+    setInput("");
+  };
+  const remove = (tag: string) => onChange(value.filter((t) => t !== tag));
+  return (
+    <div className="space-y-2">
+      {value.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {value.map((tag) => (
+            <span
+              key={tag}
+              className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-xs font-mono"
+            >
+              {tag}
+              <button
+                type="button"
+                onClick={() => remove(tag)}
+                className="text-muted-foreground hover:text-foreground ml-0.5 leading-none"
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      <input
+        type="text"
+        className={inputClass}
+        value={input}
+        onChange={(e) => setInput(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            add(input);
+          }
+        }}
+        placeholder={placeholder ?? "Type a tool pattern and press Enter to add"}
+      />
+      {suggestions.length > 0 && (
+        <p className="text-xs text-muted-foreground">
+          Examples: {suggestions.slice(0, 5).join(", ")}
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -132,6 +197,32 @@ export function ClaudeLocalAdvancedFields({
             className={inputClass}
           />
         )}
+      </Field>
+      <Field
+        label="Allowed tools"
+        hint="Restrict Claude to these tool patterns (e.g. Bash(curl:*), Read, Write). Leave empty to allow all tools."
+      >
+        <TagListInput
+          value={isCreate ? (values!.allowedTools ?? []) : ((config.allowedTools as string[] | undefined) ?? [])}
+          onChange={(v) =>
+            isCreate
+              ? set!({ allowedTools: v })
+              : mark("adapterConfig", "allowedTools", v.length ? v : undefined)
+          }
+        />
+      </Field>
+      <Field
+        label="Disallowed tools"
+        hint="Block Claude from using these tool patterns. Applied when Skip permissions is off."
+      >
+        <TagListInput
+          value={isCreate ? (values!.disallowedTools ?? []) : ((config.disallowedTools as string[] | undefined) ?? [])}
+          onChange={(v) =>
+            isCreate
+              ? set!({ disallowedTools: v })
+              : mark("adapterConfig", "disallowedTools", v.length ? v : undefined)
+          }
+        />
       </Field>
     </>
   );
