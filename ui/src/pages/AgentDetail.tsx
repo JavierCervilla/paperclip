@@ -78,15 +78,19 @@ import { AgentIcon, AgentIconPicker } from "../components/AgentIconPicker";
 import { RunTranscriptView, type TranscriptMode } from "../components/transcript/RunTranscriptView";
 import {
   isUuidLike,
+  PERMISSION_KEYS,
+  ROLE_DEFAULT_PERMISSIONS,
   type Agent,
   type AgentSkillEntry,
   type AgentSkillSnapshot,
   type AgentDetail as AgentDetailRecord,
+  type AgentRole,
   type BudgetPolicySummary,
   type HeartbeatRun,
   type HeartbeatRunEvent,
   type AgentRuntimeState,
   type LiveEvent,
+  type PermissionKey,
   type WorkspaceOperation,
 } from "@paperclipai/shared";
 import { redactHomePathUserSegments, redactHomePathUserSegmentsInValue } from "@paperclipai/adapter-utils";
@@ -1502,6 +1506,51 @@ function ConfigurationTab({
           ? "Enabled via explicit company permission grant."
           : "Disabled unless explicitly granted.";
 
+  const roleDefaults = ROLE_DEFAULT_PERMISSIONS[agent.role as AgentRole] ?? [];
+  const explicitGrants = new Set(
+    (agent.access?.grants ?? []).map((g) => g.permissionKey),
+  );
+
+  const PERMISSION_LABELS: Record<string, { label: string; description: string }> = {
+    "agents:create": { label: "Create agents", description: "Create or hire new agents." },
+    "agents:manage": { label: "Manage agents", description: "Update agent configuration, permissions, and status." },
+    "users:invite": { label: "Invite users", description: "Invite new users to the company." },
+    "users:manage_permissions": { label: "Manage user permissions", description: "Grant or revoke permissions for users." },
+    "tasks:assign": { label: "Assign tasks", description: "Assign issues to agents or users." },
+    "tasks:assign_scope": { label: "Assign tasks (scoped)", description: "Assign tasks within a restricted scope." },
+    "joins:approve": { label: "Approve join requests", description: "Approve or reject agent/user join requests." },
+    "projects:create": { label: "Create projects", description: "Create new projects in the company." },
+    "projects:manage": { label: "Manage projects", description: "Update or delete existing projects." },
+    "goals:create": { label: "Create goals", description: "Create new goals for the company." },
+    "goals:manage": { label: "Manage goals", description: "Update or delete existing goals." },
+    "webhooks:manage": { label: "Manage webhooks", description: "Create, update, or delete webhooks." },
+    "secrets:manage": { label: "Manage secrets", description: "Create, update, or delete company secrets." },
+    "plugins:manage": { label: "Manage plugins", description: "Install, configure, or remove plugins." },
+    "company:settings": { label: "Company settings", description: "Modify company-level settings." },
+    "activity:view": { label: "View activity", description: "View company activity logs." },
+  };
+
+  // Permissions handled separately by the legacy toggles above
+  const LEGACY_KEYS = new Set(["agents:create", "tasks:assign"]);
+
+  function isPermissionEnabled(key: PermissionKey) {
+    return explicitGrants.has(key) || roleDefaults.includes(key);
+  }
+
+  function permissionSource(key: PermissionKey): "role" | "grant" | "none" {
+    if (explicitGrants.has(key)) return "grant";
+    if (roleDefaults.includes(key)) return "role";
+    return "none";
+  }
+
+  function handleGrantToggle(key: PermissionKey, currentlyEnabled: boolean) {
+    updatePermissions.mutate({
+      canCreateAgents,
+      canAssignTasks,
+      grants: { [key]: !currentlyEnabled },
+    });
+  }
+
   return (
     <div className="space-y-6">
       <AgentConfigForm
@@ -1522,6 +1571,7 @@ function ConfigurationTab({
       <div>
         <h3 className="text-sm font-medium mb-3">Permissions</h3>
         <div className="border border-border rounded-lg p-4 space-y-4">
+          {/* Legacy toggles: create agents & assign tasks */}
           <div className="flex items-center justify-between gap-4 text-sm">
             <div className="space-y-1">
               <div>Can create new agents</div>
@@ -1583,6 +1633,57 @@ function ConfigurationTab({
                 )}
               />
             </button>
+          </div>
+
+          {/* Granular permission grants */}
+          <div className="border-t border-border pt-4 mt-4">
+            <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">Granular Permissions</h4>
+            <div className="space-y-3">
+              {PERMISSION_KEYS.filter((k) => !LEGACY_KEYS.has(k)).map((key) => {
+                const info = PERMISSION_LABELS[key] ?? { label: key, description: "" };
+                const enabled = isPermissionEnabled(key);
+                const source = permissionSource(key);
+                const isRoleDefault = source === "role";
+                return (
+                  <div key={key} className="flex items-center justify-between gap-4 text-sm">
+                    <div className="space-y-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span>{info.label}</span>
+                        {isRoleDefault && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-medium">
+                            role default
+                          </span>
+                        )}
+                        {source === "grant" && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-900/30 text-green-400 font-medium">
+                            explicit grant
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground">{info.description}</p>
+                    </div>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={enabled}
+                      className={cn(
+                        "relative inline-flex h-5 w-9 items-center rounded-full transition-colors shrink-0 disabled:cursor-not-allowed disabled:opacity-50",
+                        enabled ? "bg-green-600" : "bg-muted",
+                      )}
+                      onClick={() => handleGrantToggle(key, enabled)}
+                      disabled={updatePermissions.isPending}
+                    >
+                      <span
+                        className={cn(
+                          "inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform",
+                          enabled ? "translate-x-4.5" : "translate-x-0.5",
+                        )}
+                      />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       </div>
