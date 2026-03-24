@@ -2,13 +2,14 @@ import type { PluginContext } from "@paperclipai/plugin-sdk";
 import { sendMessage, escapeMarkdownV2, sendChatAction } from "./telegram-api.js";
 import { METRIC_NAMES } from "./constants.js";
 import { getSessions } from "./acp-bridge.js";
+import type { TelegramMessage, TelegramPhotoSize, TelegramApiResponse } from "./types.js";
 
 const TELEGRAM_API = "https://api.telegram.org";
 
 export async function handleMediaMessage(
   ctx: PluginContext,
   token: string,
-  msg: any,
+  msg: TelegramMessage,
   config: { briefAgentId: string; briefAgentChatIds: string[]; transcriptionApiKeyRef: string },
   companyId: string,
 ): Promise<boolean> {
@@ -17,7 +18,7 @@ export async function handleMediaMessage(
 
   const isIntakeChannel = config.briefAgentChatIds.includes(chatId);
   const hasActiveSession = threadId
-    ? (await getSessions(ctx, chatId, threadId)).some((s: any) => s.status === "active")
+    ? (await getSessions(ctx, chatId, threadId)).some((s) => s.status === "active")
     : false;
 
   if (!isIntakeChannel && !hasActiveSession) return false;
@@ -84,9 +85,9 @@ export async function handleMediaMessage(
     }
   } else if (hasActiveSession && threadId) {
     const sessions = await getSessions(ctx, chatId, threadId);
-    const activeSessions = sessions.filter((s: any) => s.status === "active");
+    const activeSessions = sessions.filter((s) => s.status === "active");
     const target = activeSessions.sort(
-      (a: any, b: any) =>
+      (a, b) =>
         new Date(b.lastActivityAt).getTime() - new Date(a.lastActivityAt).getTime(),
     )[0];
 
@@ -119,14 +120,14 @@ export async function handleMediaMessage(
   return true;
 }
 
-function extractFileId(msg: any): string | null {
+function extractFileId(msg: TelegramMessage): string | null {
   if (msg.voice) return msg.voice.file_id;
   if (msg.audio) return msg.audio.file_id;
   if (msg.video_note) return msg.video_note.file_id;
   if (msg.document) return msg.document.file_id;
   if (msg.photo && msg.photo.length > 0) {
     return msg.photo.sort(
-      (a: any, b: any) => b.width * b.height - a.width * a.height,
+      (a: TelegramPhotoSize, b: TelegramPhotoSize) => b.width * b.height - a.width * a.height,
     )[0].file_id;
   }
   return null;
@@ -142,7 +143,7 @@ async function transcribeAudio(
     `${TELEGRAM_API}/bot${botToken}/getFile?file_id=${fileId}`,
     { method: "GET" },
   );
-  const fileData = (await fileRes.json()) as any;
+  const fileData = (await fileRes.json()) as TelegramApiResponse<{ file_path: string }>;
   if (!fileData.ok || !fileData.result?.file_path) {
     ctx.logger.error("Failed to get file path from Telegram", { fileId });
     return null;
@@ -162,11 +163,11 @@ async function transcribeAudio(
     headers: { Authorization: `Bearer ${apiKey}` },
     body: formData,
   });
-  const whisperData = (await whisperRes.json()) as any;
+  const whisperData = (await whisperRes.json()) as { text?: string };
   return whisperData.text ?? null;
 }
 
-function buildBriefPrompt(msg: any, textContent: string): string {
+function buildBriefPrompt(msg: TelegramMessage, textContent: string): string {
   const parts: string[] = [];
   if (msg.voice) parts.push(`[Voice message, ${msg.voice.duration}s]`);
   else if (msg.audio) parts.push(`[Audio: ${msg.audio.title ?? "untitled"}, ${msg.audio.duration}s]`);

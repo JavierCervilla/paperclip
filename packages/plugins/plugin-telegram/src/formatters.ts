@@ -1,4 +1,6 @@
+import type { PluginEvent } from "@paperclipai/plugin-sdk";
 import { escapeMarkdownV2, truncateAtWord } from "./telegram-api.js";
+import type { IssueEventPayload, ApprovalEventPayload, AgentRunEventPayload } from "./types.js";
 
 function esc(s: string) {
   return escapeMarkdownV2(s);
@@ -10,7 +12,7 @@ function code(s: string) {
   return `\`${esc(s)}\``;
 }
 
-export function formatIssueCreated(event: any) {
+export function formatIssueCreated(event: PluginEvent<IssueEventPayload>) {
   const p = event.payload;
   const identifier = String(p.identifier ?? event.entityId);
   const title = String(p.title ?? "Untitled");
@@ -40,7 +42,7 @@ export function formatIssueCreated(event: any) {
   };
 }
 
-export function formatIssueDone(event: any) {
+export function formatIssueDone(event: PluginEvent<IssueEventPayload>) {
   const p = event.payload;
   const identifier = String(p.identifier ?? event.entityId);
   const title = String(p.title ?? "");
@@ -53,7 +55,7 @@ export function formatIssueDone(event: any) {
   };
 }
 
-export function formatApprovalCreated(event: any) {
+export function formatApprovalCreated(event: PluginEvent<ApprovalEventPayload>) {
   const p = event.payload;
   const approvalType = String(p.type ?? "unknown");
   const approvalId = String(p.approvalId ?? event.entityId);
@@ -99,7 +101,7 @@ export function formatApprovalCreated(event: any) {
   };
 }
 
-export function formatAgentError(event: any) {
+export function formatAgentError(event: PluginEvent<AgentRunEventPayload>) {
   const p = event.payload;
   const agentName = String(p.agentName ?? p.name ?? event.entityId);
   const errorMessage = String(p.error ?? p.message ?? "Unknown error");
@@ -113,7 +115,7 @@ export function formatAgentError(event: any) {
   };
 }
 
-export function formatAgentRunStarted(event: any) {
+export function formatAgentRunStarted(event: PluginEvent<AgentRunEventPayload>) {
   const p = event.payload;
   const agentName = String(p.agentName ?? event.entityId);
   return {
@@ -122,7 +124,7 @@ export function formatAgentRunStarted(event: any) {
   };
 }
 
-export function formatAgentRunFinished(event: any) {
+export function formatAgentRunFinished(event: PluginEvent<AgentRunEventPayload>) {
   const p = event.payload;
   const agentName = String(p.agentName ?? event.entityId);
   return {

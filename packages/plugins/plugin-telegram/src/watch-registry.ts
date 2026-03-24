@@ -1,8 +1,9 @@
 import type { PluginContext } from "@paperclipai/plugin-sdk";
 import { sendMessage, escapeMarkdownV2 } from "./telegram-api.js";
 import { METRIC_NAMES } from "./constants.js";
+import type { Watch, WatchCondition, RegisterWatchParams } from "./types.js";
 
-const BUILTIN_TEMPLATES: Record<string, any> = {
+const BUILTIN_TEMPLATES: Record<string, Omit<Watch, "watchId" | "chatId" | "threadId" | "companyId" | "createdBy" | "createdAt">> = {
   "invoice-overdue": {
     name: "Invoice Overdue",
     description: "Alert when invoices are past due",
@@ -25,10 +26,10 @@ const BUILTIN_TEMPLATES: Record<string, any> = {
   },
 };
 
-export async function handleRegisterWatch(ctx: PluginContext, params: any, companyId: string) {
+export async function handleRegisterWatch(ctx: PluginContext, params: RegisterWatchParams, companyId: string) {
   const name = String(params.name ?? "");
   const description = String(params.description ?? "");
-  const entityType = String(params.entityType ?? "custom");
+  const entityType = String(params.entityType ?? "custom") as Watch["entityType"];
   const conditions = params.conditions ?? [];
   const template = String(params.template ?? "");
   const chatId = String(params.chatId ?? "");
@@ -38,7 +39,7 @@ export async function handleRegisterWatch(ctx: PluginContext, params: any, compa
   if (!name && !useBuiltin) return { error: "Either 'name' or 'builtinTemplate' is required" };
   if (!chatId) return { error: "'chatId' is required" };
 
-  let watch: any;
+  let watch: Watch;
   const watchId = `watch_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
   if (useBuiltin && BUILTIN_TEMPLATES[useBuiltin]) {
@@ -106,27 +107,32 @@ async function checkWatchesForCompany(ctx: PluginContext, token: string, company
   }
 }
 
-async function evaluateWatch(ctx: PluginContext, watch: any, companyId: string): Promise<any[]> {
-  const matches: any[] = [];
+interface MatchedEntity {
+  id: string;
+  [key: string]: unknown;
+}
+
+async function evaluateWatch(ctx: PluginContext, watch: Watch, companyId: string): Promise<MatchedEntity[]> {
+  const matches: MatchedEntity[] = [];
   switch (watch.entityType) {
     case "issue": {
       const issues = await ctx.issues.list({ companyId, limit: 100 });
       for (const issue of issues) {
-        if (matchesConditions(issue as any, watch.conditions)) matches.push({ id: issue.id, ...issue as any });
+        if (matchesConditions(issue as unknown as Record<string, unknown>, watch.conditions)) matches.push({ id: issue.id, ...(issue as unknown as Record<string, unknown>) });
       }
       break;
     }
     case "agent": {
       const agents = await ctx.agents.list({ companyId });
       for (const agent of agents) {
-        if (matchesConditions(agent as any, watch.conditions)) matches.push({ id: agent.id, ...agent as any });
+        if (matchesConditions(agent as unknown as Record<string, unknown>, watch.conditions)) matches.push({ id: agent.id, ...(agent as unknown as Record<string, unknown>) });
       }
       break;
     }
     case "custom": {
       const customData = await ctx.state.get({ scopeKind: "company", scopeId: companyId, stateKey: `watch_data_${watch.watchId}` });
       if (customData) {
-        for (const item of customData as any[]) {
+        for (const item of customData as Array<Record<string, unknown>>) {
           if (matchesConditions(item, watch.conditions)) matches.push({ id: String(item.id ?? "unknown"), ...item });
         }
       }
@@ -136,12 +142,12 @@ async function evaluateWatch(ctx: PluginContext, watch: any, companyId: string):
   return matches;
 }
 
-function matchesConditions(record: Record<string, any>, conditions: any[]): boolean {
+function matchesConditions(record: Record<string, unknown>, conditions: WatchCondition[]): boolean {
   const now = Date.now();
   const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000;
   for (const condition of conditions) {
     const fieldValue = record[condition.field];
-    let compareValue = condition.value;
+    let compareValue: string = condition.value;
     if (compareValue === "{{now}}") compareValue = new Date().toISOString();
     if (compareValue === "{{7daysAgo}}") compareValue = new Date(sevenDaysAgo).toISOString();
     switch (condition.operator) {
@@ -156,7 +162,7 @@ function matchesConditions(record: Record<string, any>, conditions: any[]): bool
   return true;
 }
 
-function interpolateTemplate(template: string, entity: Record<string, any>): string {
+function interpolateTemplate(template: string, entity: Record<string, unknown>): string {
   let result = template;
   for (const [key, value] of Object.entries(entity)) {
     result = result.replace(new RegExp(`\\{\\{${key}\\}\\}`, "g"), String(value ?? ""));
@@ -165,7 +171,7 @@ function interpolateTemplate(template: string, entity: Record<string, any>): str
 }
 
 async function checkDedup(ctx: PluginContext, watchId: string, entityId: string, windowMs: number): Promise<boolean> {
-  const log = await ctx.state.get({ scopeKind: "instance", stateKey: `suggestion_log_${watchId}_${entityId}` }) as any;
+  const log = await ctx.state.get({ scopeKind: "instance", stateKey: `suggestion_log_${watchId}_${entityId}` }) as { sentAt: string } | null;
   if (!log) return false;
   return Date.now() - new Date(log.sentAt).getTime() < windowMs;
 }
@@ -186,11 +192,11 @@ async function incrementHourlySuggestionCount(ctx: PluginContext, companyId: str
   await ctx.state.set({ scopeKind: "instance", stateKey: key }, current + amount);
 }
 
-async function getWatchRegistry(ctx: PluginContext, companyId: string): Promise<any[]> {
+async function getWatchRegistry(ctx: PluginContext, companyId: string): Promise<Watch[]> {
   const watches = await ctx.state.get({ scopeKind: "company", scopeId: companyId, stateKey: `watches_${companyId}` });
-  return (watches as any[]) ?? [];
+  return (watches as Watch[]) ?? [];
 }
 
-async function saveWatchRegistry(ctx: PluginContext, companyId: string, watches: any[]) {
+async function saveWatchRegistry(ctx: PluginContext, companyId: string, watches: Watch[]) {
   await ctx.state.set({ scopeKind: "company", scopeId: companyId, stateKey: `watches_${companyId}` }, watches);
 }

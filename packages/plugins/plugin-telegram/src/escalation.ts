@@ -1,5 +1,11 @@
 import type { PluginContext } from "@paperclipai/plugin-sdk";
 import { sendMessage, editMessage, escapeMarkdownV2, truncateAtWord } from "./telegram-api.js";
+import type {
+  EscalationEvent,
+  StoredEscalation,
+  EscalationResponse,
+  InlineKeyboardRow,
+} from "./types.js";
 
 const REASON_LABELS: Record<string, string> = {
   low_confidence: "Low Confidence",
@@ -13,7 +19,7 @@ function esc(s: string) {
 }
 
 export class EscalationManager {
-  async create(ctx: PluginContext, token: string, event: any, escalationChatId: string) {
+  async create(ctx: PluginContext, token: string, event: EscalationEvent, escalationChatId: string) {
     const reasonLabel = REASON_LABELS[event.reason] ?? event.reason;
     const confidence =
       event.context.confidenceScore != null
@@ -42,7 +48,7 @@ export class EscalationManager {
     lines.push("");
     lines.push(`ID: \`${esc(event.escalationId)}\``);
 
-    const buttons: any[][] = [];
+    const buttons: InlineKeyboardRow[] = [];
     if (event.context.suggestedReply) {
       buttons.push([
         { text: "Send Suggested Reply", callback_data: `esc_suggested_${event.escalationId}` },
@@ -65,7 +71,7 @@ export class EscalationManager {
     }
 
     const timeoutAt = new Date(Date.now() + event.timeout.durationMs).toISOString();
-    const stored = {
+    const stored: StoredEscalation = {
       escalationId: event.escalationId,
       agentId: event.agentId,
       companyId: event.companyId,
@@ -132,7 +138,7 @@ export class EscalationManager {
     const stored = (await ctx.state.get({
       scopeKind: "instance",
       stateKey: `escalation_${escalationId}`,
-    })) as any;
+    })) as StoredEscalation | null;
     if (!stored || stored.status !== "pending") return;
 
     switch (action) {
@@ -184,11 +190,11 @@ export class EscalationManager {
     }
   }
 
-  async respond(ctx: PluginContext, token: string, escalationId: string, response: any) {
+  async respond(ctx: PluginContext, token: string, escalationId: string, response: EscalationResponse) {
     const stored = (await ctx.state.get({
       scopeKind: "instance",
       stateKey: `escalation_${escalationId}`,
-    })) as any;
+    })) as StoredEscalation | null;
     if (!stored || stored.status !== "pending") {
       ctx.logger.warn("Escalation respond called for non-pending escalation", { escalationId });
       return;
@@ -196,7 +202,7 @@ export class EscalationManager {
     await this.resolve(ctx, token, stored, response);
   }
 
-  async resolve(ctx: PluginContext, token: string, stored: any, response: any) {
+  async resolve(ctx: PluginContext, token: string, stored: StoredEscalation, response: EscalationResponse) {
     stored.status = "resolved";
     await ctx.state.set(
       { scopeKind: "instance", stateKey: `escalation_${stored.escalationId}` },
@@ -270,7 +276,7 @@ export class EscalationManager {
       const stored = (await ctx.state.get({
         scopeKind: "instance",
         stateKey: `escalation_${escalationId}`,
-      })) as any;
+      })) as StoredEscalation | null;
       if (!stored || stored.status !== "pending") {
         await this.removePending(ctx, escalationId);
         continue;
