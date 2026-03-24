@@ -603,3 +603,18 @@ export {
   errorMessage,
   isNonNullable,
 } from "./type-guards.js";
+
+export {
+  HttpError,
+  badRequest,
+  unauthorized,
+  forbidden,
+  notFound,
+  conflict,
+  unprocessable,
+  internalError,
+  isHttpError,
+  toApiErrorResponse,
+  asHttpError,
+} from "./errors.js";
+export type { ApiErrorResponse } from "./errors.js";
