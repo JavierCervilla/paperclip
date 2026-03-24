@@ -30,7 +30,10 @@ if [ -z "$CMD" ]; then
 fi
 
 # Skip RTK for Paperclip API calls — agents need raw JSON responses
-if echo "$CMD" | grep -qE 'curl.*(localhost:3100|\$PAPERCLIP_API_URL|\$\{PAPERCLIP_API_URL)'; then
+# Collapse the command to a single line first so multiline curl commands
+# (using backslash continuations) are matched correctly.
+CMD_ONELINE=$(echo "$CMD" | tr '\n' ' ')
+if echo "$CMD_ONELINE" | grep -qE 'curl.*(localhost:3100|\$PAPERCLIP_API_URL|\$\{PAPERCLIP_API_URL)'; then
   exit 0
 fi
 
