@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties, type FormEvent } from "react";
 import {
   useHostContext,
   usePluginData,
@@ -7,7 +7,7 @@ import {
   type PluginSidebarProps,
   type PluginWidgetProps,
 } from "@paperclipai/plugin-sdk/ui";
-import { DATA_KEYS, PAGE_ROUTE } from "../constants.js";
+import { DATA_KEYS, DEFAULT_CONFIG, PLUGIN_ID, PAGE_ROUTE } from "../constants.js";
 
 // ---------------------------------------------------------------------------
 // Shared types & styles
@@ -539,46 +539,264 @@ export function SentryDashboardWidget(_props: PluginWidgetProps) {
 }
 
 // ---------------------------------------------------------------------------
+// Settings config hook (reads/writes plugin config via host API)
+// ---------------------------------------------------------------------------
+
+function hostFetchJson<T>(path: string, init?: RequestInit): Promise<T> {
+  return fetch(path, {
+    credentials: "include",
+    headers: {
+      "content-type": "application/json",
+      ...(init?.headers ?? {}),
+    },
+    ...init,
+  }).then(async (response) => {
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(text || `Request failed: ${response.status}`);
+    }
+    return (await response.json()) as T;
+  });
+}
+
+function useSettingsConfig() {
+  const [configJson, setConfigJson] = useState<Record<string, unknown>>({
+    ...DEFAULT_CONFIG,
+  });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    hostFetchJson<{ configJson?: Record<string, unknown> | null } | null>(
+      `/api/plugins/${PLUGIN_ID}/config`,
+    )
+      .then((result) => {
+        if (cancelled) return;
+        setConfigJson({ ...DEFAULT_CONFIG, ...(result?.configJson ?? {}) });
+        setError(null);
+      })
+      .catch((nextError) => {
+        if (cancelled) return;
+        setError(
+          nextError instanceof Error ? nextError.message : String(nextError),
+        );
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function save(nextConfig: Record<string, unknown>) {
+    setSaving(true);
+    try {
+      await hostFetchJson(`/api/plugins/${PLUGIN_ID}/config`, {
+        method: "POST",
+        body: JSON.stringify({ configJson: nextConfig }),
+      });
+      setConfigJson(nextConfig);
+      setError(null);
+    } catch (nextError) {
+      setError(
+        nextError instanceof Error ? nextError.message : String(nextError),
+      );
+      throw nextError;
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return { configJson, setConfigJson, loading, saving, error, save };
+}
+
+const inputStyle: CSSProperties = {
+  background: "rgba(255,255,255,0.06)",
+  border: "1px solid rgba(255,255,255,0.12)",
+  borderRadius: "6px",
+  color: "#e0e0e0",
+  padding: "8px 10px",
+  fontSize: "13px",
+  width: "100%",
+  boxSizing: "border-box",
+};
+
+const labelStyle: CSSProperties = {
+  display: "grid",
+  gap: "4px",
+  fontSize: "13px",
+};
+
+const primaryBtnStyle: CSSProperties = {
+  background: "#3b82f6",
+  border: "none",
+  borderRadius: "6px",
+  color: "#fff",
+  padding: "8px 20px",
+  cursor: "pointer",
+  fontSize: "13px",
+  fontWeight: 600,
+};
+
+// ---------------------------------------------------------------------------
 // Exports: Settings Page
 // ---------------------------------------------------------------------------
 
 export function SentrySettingsPage(_props: PluginSettingsPageProps) {
-  const ctx = useHostContext();
-  return (
-    <div style={styles.container}>
-      <h2 style={styles.heading}>Sentry Plugin Settings</h2>
-      <div style={styles.card}>
-        <p style={{ fontSize: "13px", color: "#bbb", margin: 0 }}>
-          Configure this plugin via the plugin configuration panel. Set
-          the following values:
-        </p>
-        <ul
-          style={{
-            fontSize: "13px",
-            color: "#bbb",
-            paddingLeft: "20px",
-            marginTop: "8px",
-          }}
-        >
-          <li>
-            <strong>Auth Token</strong> — Sentry API token with{" "}
-            <code>org:read</code>, <code>project:read</code>,{" "}
-            <code>event:read</code> scopes
-          </li>
-          <li>
-            <strong>Organization Slug</strong> — Your Sentry org slug
-          </li>
-          <li>
-            <strong>Project Slug</strong> — Optional, filters to a specific
-            project
-          </li>
-          <li>
-            <strong>Sentry Base URL</strong> — For self-hosted instances
-            (defaults to https://sentry.io)
-          </li>
-        </ul>
+  const { configJson, setConfigJson, loading, saving, error, save } =
+    useSettingsConfig();
+  const [savedMessage, setSavedMessage] = useState<string | null>(null);
+  const [testStatus, setTestStatus] = useState<string | null>(null);
+
+  function setField(key: string, value: unknown) {
+    setConfigJson((current) => ({ ...current, [key]: value }));
+  }
+
+  async function onSubmit(event: FormEvent) {
+    event.preventDefault();
+    try {
+      await save(configJson);
+      setSavedMessage("Settings saved!");
+      window.setTimeout(() => setSavedMessage(null), 2000);
+    } catch {
+      // error is already set by the hook
+    }
+  }
+
+  async function onTestConnection() {
+    setTestStatus("Testing...");
+    try {
+      await hostFetchJson(`/api/plugins/${PLUGIN_ID}/config/test`, {
+        method: "POST",
+        body: JSON.stringify({ configJson }),
+      });
+      setTestStatus("Connection successful!");
+    } catch (err) {
+      setTestStatus(
+        `Failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    window.setTimeout(() => setTestStatus(null), 4000);
+  }
+
+  if (loading) {
+    return (
+      <div style={{ fontSize: "12px", opacity: 0.7, padding: "16px" }}>
+        Loading plugin config...
       </div>
-    </div>
+    );
+  }
+
+  return (
+    <form
+      onSubmit={onSubmit}
+      style={{ display: "grid", gap: "20px", padding: "16px", maxWidth: "600px" }}
+    >
+      <div>
+        <h3 style={{ ...styles.subheading, marginBottom: "4px" }}>
+          Sentry Configuration
+        </h3>
+        <div style={{ fontSize: "12px", color: "#888" }}>
+          Connect to your Sentry instance to enable error tracking for agents
+          and the board dashboard.
+        </div>
+      </div>
+
+      <label style={labelStyle}>
+        <span>
+          Auth Token <span style={{ color: "#f87171" }}>*</span>
+        </span>
+        <input
+          type="password"
+          style={inputStyle}
+          value={String(configJson.authToken ?? "")}
+          onChange={(e) => setField("authToken", e.target.value)}
+          placeholder="sntrys_..."
+        />
+        <span style={{ fontSize: "11px", color: "#666" }}>
+          Sentry API token with org:read, project:read, event:read scopes
+        </span>
+      </label>
+
+      <label style={labelStyle}>
+        <span>
+          Organization Slug <span style={{ color: "#f87171" }}>*</span>
+        </span>
+        <input
+          style={inputStyle}
+          value={String(configJson.organizationSlug ?? "")}
+          onChange={(e) => setField("organizationSlug", e.target.value)}
+          placeholder="my-org"
+        />
+      </label>
+
+      <label style={labelStyle}>
+        <span>Project Slug</span>
+        <input
+          style={inputStyle}
+          value={String(configJson.projectSlug ?? "")}
+          onChange={(e) => setField("projectSlug", e.target.value)}
+          placeholder="my-project (optional — leave empty for all projects)"
+        />
+      </label>
+
+      <label style={labelStyle}>
+        <span>Sentry Base URL</span>
+        <input
+          style={inputStyle}
+          value={String(
+            configJson.sentryBaseUrl ?? DEFAULT_CONFIG.sentryBaseUrl,
+          )}
+          onChange={(e) => setField("sentryBaseUrl", e.target.value)}
+          placeholder="https://sentry.io"
+        />
+        <span style={{ fontSize: "11px", color: "#666" }}>
+          For self-hosted Sentry instances. Defaults to https://sentry.io
+        </span>
+      </label>
+
+      {error && <div style={styles.error}>{error}</div>}
+
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "12px",
+          flexWrap: "wrap",
+        }}
+      >
+        <button type="submit" style={primaryBtnStyle} disabled={saving}>
+          {saving ? "Saving..." : "Save settings"}
+        </button>
+        <button
+          type="button"
+          style={styles.btn}
+          onClick={onTestConnection}
+          disabled={saving}
+        >
+          Test connection
+        </button>
+        {savedMessage && (
+          <span style={{ fontSize: "12px", color: "#4ade80" }}>
+            {savedMessage}
+          </span>
+        )}
+        {testStatus && (
+          <span
+            style={{
+              fontSize: "12px",
+              color: testStatus.startsWith("Failed") ? "#fca5a5" : "#4ade80",
+            }}
+          >
+            {testStatus}
+          </span>
+        )}
+      </div>
+    </form>
   );
 }
 
