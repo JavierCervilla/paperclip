@@ -589,19 +589,49 @@ export function SentrySettingsPage(_props: PluginSettingsPageProps) {
 export function SentrySidebarLink(_props: PluginSidebarProps) {
   const ctx = useHostContext();
   const prefix = ctx.companyPrefix ?? "";
+  const [hovered, setHovered] = useState(false);
   return (
     <a
       href={`/${prefix}/${PAGE_ROUTE}`}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
       style={{
-        ...styles.link,
         display: "flex",
         alignItems: "center",
-        gap: "8px",
-        padding: "6px 0",
+        gap: "10px",
+        padding: "8px 12px",
         fontSize: "13px",
+        fontWeight: 500,
+        color: hovered
+          ? "hsl(var(--foreground))"
+          : "hsl(var(--foreground) / 0.8)",
+        backgroundColor: hovered
+          ? "hsl(var(--accent) / 0.5)"
+          : "transparent",
+        textDecoration: "none",
+        cursor: "pointer",
+        transition: "color 0.15s, background-color 0.15s",
+        borderRadius: "4px",
       }}
     >
-      Sentry Errors
+      <svg
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        style={{ flexShrink: 0 }}
+      >
+        <circle cx="12" cy="12" r="10" />
+        <line x1="12" y1="8" x2="12" y2="12" />
+        <line x1="12" y1="16" x2="12.01" y2="16" />
+      </svg>
+      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        Sentry Errors
+      </span>
     </a>
   );
 }
