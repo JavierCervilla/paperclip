@@ -7,11 +7,19 @@ import {
   ACP_SPAWN_EVENT,
   ACP_OUTPUT_EVENT,
 } from "./constants.js";
+import type {
+  AcpSession,
+  AcpOutputEvent,
+  HandoffToolParams,
+  StoredHandoff,
+  DiscussToolParams,
+  AgentMessageMapping,
+} from "./types.js";
 
 // --- Setup: register ACP output listener ---
 export function setupAcpOutputListener(ctx: PluginContext, token: string) {
-  ctx.events.on(ACP_OUTPUT_EVENT as any, async (event: any) => {
-    await handleAcpOutput(ctx, token, event.payload);
+  ctx.events.on(ACP_OUTPUT_EVENT as "issue.created", async (event) => {
+    await handleAcpOutput(ctx, token, event.payload as unknown as AcpOutputEvent);
   });
 }
 
@@ -51,9 +59,9 @@ async function handleAcpSpawn(ctx: PluginContext, token: string, chatId: string,
   if (!messageThreadId) { await sendMessage(ctx, token, chatId, "Agent sessions must be started inside a topic thread.", { messageThreadId }); return; }
 
   const sessions = await getSessions(ctx, chatId, messageThreadId);
-  const activeSessions = sessions.filter((s: any) => s.status === "active");
+  const activeSessions = sessions.filter((s) => s.status === "active");
   if (activeSessions.length >= MAX_AGENTS_PER_THREAD) {
-    const listing = activeSessions.map((s: any) => `  - ${s.agentDisplayName} (${s.transport})`).join("\n");
+    const listing = activeSessions.map((s) => `  - ${s.agentDisplayName} (${s.transport})`).join("\n");
     await sendMessage(ctx, token, chatId, `Thread already has ${MAX_AGENTS_PER_THREAD} active agents (max):\n${listing}`, { messageThreadId });
     return;
   }
@@ -93,7 +101,7 @@ async function handleAcpSpawn(ctx: PluginContext, token: string, chatId: string,
 async function handleAcpStatus(ctx: PluginContext, token: string, chatId: string, messageThreadId?: number) {
   if (!messageThreadId) { await sendMessage(ctx, token, chatId, "Run /acp status inside a thread with an active session.", { messageThreadId }); return; }
   const sessions = await getSessions(ctx, chatId, messageThreadId);
-  const activeSessions = sessions.filter((s: any) => s.status === "active");
+  const activeSessions = sessions.filter((s) => s.status === "active");
   if (activeSessions.length === 0) { await sendMessage(ctx, token, chatId, "No agent sessions bound to this thread.", { messageThreadId }); return; }
   const lines = [escapeMarkdownV2("\u{1f50c}") + ` *Agent Sessions \\(${activeSessions.length}\\)*`, ""];
   for (const session of activeSessions) {
@@ -105,9 +113,9 @@ async function handleAcpStatus(ctx: PluginContext, token: string, chatId: string
 async function handleAcpCancel(ctx: PluginContext, token: string, chatId: string, messageThreadId?: number, companyId?: string) {
   if (!messageThreadId) { await sendMessage(ctx, token, chatId, "Run /acp cancel inside a thread with an active session.", { messageThreadId }); return; }
   const sessions = await getSessions(ctx, chatId, messageThreadId);
-  const activeSessions = sessions.filter((s: any) => s.status === "active");
+  const activeSessions = sessions.filter((s) => s.status === "active");
   if (activeSessions.length === 0) { await sendMessage(ctx, token, chatId, "No agent sessions bound to this thread.", { messageThreadId }); return; }
-  const target = activeSessions.sort((a: any, b: any) => new Date(b.lastActivityAt).getTime() - new Date(a.lastActivityAt).getTime())[0];
+  const target = mostRecentSession(activeSessions);
   const resolvedCompanyId = companyId ?? await resolveCompanyIdFromChat(ctx, chatId);
   if (target.transport === "native") { try { await ctx.agents.sessions.close(target.sessionId, resolvedCompanyId); } catch (err) { ctx.logger.error("Failed to close native session", { error: String(err) }); } }
   else { ctx.events.emit(ACP_SPAWN_EVENT, resolvedCompanyId, { type: "cancel", sessionId: target.sessionId, chatId, threadId: messageThreadId }); }
@@ -117,20 +125,20 @@ async function handleAcpCancel(ctx: PluginContext, token: string, chatId: string
 async function handleAcpClose(ctx: PluginContext, token: string, chatId: string, targetAgentName: string, messageThreadId?: number, companyId?: string) {
   if (!messageThreadId) { await sendMessage(ctx, token, chatId, "Run /acp close inside a thread with an active session.", { messageThreadId }); return; }
   const sessions = await getSessions(ctx, chatId, messageThreadId);
-  const activeSessions = sessions.filter((s: any) => s.status === "active");
+  const activeSessions = sessions.filter((s) => s.status === "active");
   if (activeSessions.length === 0) { await sendMessage(ctx, token, chatId, "No agent sessions bound to this thread.", { messageThreadId }); return; }
-  let targetSession: any;
+  let targetSession: AcpSession | undefined;
   if (targetAgentName) {
     const lowerTarget = targetAgentName.toLowerCase();
-    targetSession = activeSessions.find((s: any) => s.agentName.toLowerCase() === lowerTarget) ?? activeSessions.find((s: any) => s.agentName.toLowerCase().includes(lowerTarget));
+    targetSession = activeSessions.find((s) => s.agentName.toLowerCase() === lowerTarget) ?? activeSessions.find((s) => s.agentName.toLowerCase().includes(lowerTarget));
     if (!targetSession) { await sendMessage(ctx, token, chatId, `No agent named "${targetAgentName}" found.`, { messageThreadId }); return; }
   } else {
-    targetSession = activeSessions.sort((a: any, b: any) => new Date(b.lastActivityAt).getTime() - new Date(a.lastActivityAt).getTime())[0];
+    targetSession = mostRecentSession(activeSessions);
   }
   const resolvedCompanyId = companyId ?? await resolveCompanyIdFromChat(ctx, chatId);
   if (targetSession.transport === "native") { try { await ctx.agents.sessions.close(targetSession.sessionId, resolvedCompanyId); } catch (err) { ctx.logger.error("Failed to close native session", { error: String(err) }); } }
   else { ctx.events.emit(ACP_SPAWN_EVENT, resolvedCompanyId, { type: "close", sessionId: targetSession.sessionId, chatId, threadId: messageThreadId }); }
-  const idx = sessions.findIndex((s: any) => s.sessionId === targetSession.sessionId);
+  const idx = sessions.findIndex((s) => s.sessionId === targetSession!.sessionId);
   if (idx >= 0) sessions[idx].status = "closed";
   await saveSessions(ctx, chatId, messageThreadId, sessions);
   await sendMessage(ctx, token, chatId, `${escapeMarkdownV2("\u{1f50c}")} Session for *${escapeMarkdownV2(targetSession.agentDisplayName)}* closed\\.`, { parseMode: "MarkdownV2", messageThreadId });
@@ -139,23 +147,23 @@ async function handleAcpClose(ctx: PluginContext, token: string, chatId: string,
 // --- Multi-agent message routing ---
 export async function routeMessageToAgent(ctx: PluginContext, token: string, chatId: string, threadId: number, text: string, replyToMessageId: number | undefined, companyId: string): Promise<boolean> {
   const sessions = await getSessions(ctx, chatId, threadId);
-  const activeSessions = sessions.filter((s: any) => s.status === "active");
+  const activeSessions = sessions.filter((s) => s.status === "active");
   if (activeSessions.length === 0) return false;
 
-  let targetSession: any;
+  let targetSession: AcpSession | undefined;
   const mentionMatch = text.match(/@(\w+)/);
   if (mentionMatch) {
     const mentionName = mentionMatch[1].toLowerCase();
-    targetSession = activeSessions.find((s: any) => s.agentName.toLowerCase() === mentionName || s.agentDisplayName?.toLowerCase() === mentionName);
+    targetSession = activeSessions.find((s) => s.agentName.toLowerCase() === mentionName || s.agentDisplayName?.toLowerCase() === mentionName);
   }
   if (!targetSession && replyToMessageId) {
-    const agentMapping = await ctx.state.get({ scopeKind: "instance", stateKey: `agent_msg_${chatId}_${replyToMessageId}` }) as any;
-    if (agentMapping) targetSession = activeSessions.find((s: any) => s.sessionId === agentMapping.sessionId);
+    const agentMapping = await ctx.state.get({ scopeKind: "instance", stateKey: `agent_msg_${chatId}_${replyToMessageId}` }) as AgentMessageMapping | null;
+    if (agentMapping) targetSession = activeSessions.find((s) => s.sessionId === agentMapping.sessionId);
   }
-  if (!targetSession) targetSession = activeSessions.sort((a: any, b: any) => new Date(b.lastActivityAt).getTime() - new Date(a.lastActivityAt).getTime())[0];
+  if (!targetSession) targetSession = mostRecentSession(activeSessions);
 
   targetSession.lastActivityAt = new Date().toISOString();
-  const idx = sessions.findIndex((s: any) => s.sessionId === targetSession.sessionId);
+  const idx = sessions.findIndex((s) => s.sessionId === targetSession!.sessionId);
   if (idx >= 0) sessions[idx] = targetSession;
   await saveSessions(ctx, chatId, threadId, sessions);
 
@@ -170,15 +178,15 @@ export async function routeMessageToAgent(ctx: PluginContext, token: string, cha
 }
 
 // --- ACP output handler ---
-export async function handleAcpOutput(ctx: PluginContext, token: string, event: any) {
+export async function handleAcpOutput(ctx: PluginContext, token: string, event: AcpOutputEvent) {
   const { sessionId, chatId, threadId, text, done } = event;
   const sessions = await getSessions(ctx, chatId, threadId);
-  const session = sessions.find((s: any) => s.sessionId === sessionId);
+  const session = sessions.find((s) => s.sessionId === sessionId);
   const displayName = session?.agentDisplayName ?? "Agent";
 
   if (session) {
     session.lastActivityAt = new Date().toISOString();
-    const idx = sessions.findIndex((s: any) => s.sessionId === sessionId);
+    const idx = sessions.findIndex((s) => s.sessionId === sessionId);
     if (idx >= 0) sessions[idx] = session;
     await saveSessions(ctx, chatId, threadId, sessions);
   }
@@ -186,11 +194,11 @@ export async function handleAcpOutput(ctx: PluginContext, token: string, event: 
   const prefix = done ? escapeMarkdownV2("\u2705") : escapeMarkdownV2("\u{1f916}");
   const label = `*\\[${escapeMarkdownV2(displayName)}\\]*`;
   const messageId = await sendMessage(ctx, token, chatId, `${prefix} ${label} ${escapeMarkdownV2(text)}`, { parseMode: "MarkdownV2", messageThreadId: threadId });
-  if (messageId) { await ctx.state.set({ scopeKind: "instance", stateKey: `agent_msg_${chatId}_${messageId}` }, { sessionId }); }
+  if (messageId) { await ctx.state.set({ scopeKind: "instance", stateKey: `agent_msg_${chatId}_${messageId}` }, { sessionId } satisfies AgentMessageMapping); }
 }
 
 // --- Handoff / discuss tool handlers ---
-export async function handleHandoffToolCall(ctx: PluginContext, token: string, params: any, companyId: string, sourceAgentId: string) {
+export async function handleHandoffToolCall(ctx: PluginContext, token: string, params: HandoffToolParams, companyId: string, sourceAgentId: string) {
   const targetAgent = String(params.targetAgent ?? "");
   const reason = String(params.reason ?? "");
   const contextSummary = String(params.contextSummary ?? "");
@@ -199,7 +207,7 @@ export async function handleHandoffToolCall(ctx: PluginContext, token: string, p
   if (!targetAgent || !chatId || !threadId) return { error: "Missing required fields" };
 
   const sessions = await getSessions(ctx, chatId, threadId);
-  const sourceSession = sessions.find((s: any) => s.agentId === sourceAgentId);
+  const sourceSession = sessions.find((s) => s.agentId === sourceAgentId);
   const sourceAgent = sourceSession?.agentDisplayName ?? "Agent";
   const handoffId = `handoff_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const handoffText = `${escapeMarkdownV2("\u{1f504}")} *\\[${escapeMarkdownV2(sourceAgent)}\\]* ${escapeMarkdownV2("Handing off to")} *${escapeMarkdownV2(targetAgent)}*\n\n${escapeMarkdownV2("Reason:")} ${escapeMarkdownV2(reason)}`;
@@ -209,7 +217,8 @@ export async function handleHandoffToolCall(ctx: PluginContext, token: string, p
       parseMode: "MarkdownV2", messageThreadId: threadId,
       inlineKeyboard: [[{ text: "Approve", callback_data: `handoff_approve_${handoffId}` }, { text: "Reject", callback_data: `handoff_reject_${handoffId}` }]],
     });
-    await ctx.state.set({ scopeKind: "instance", stateKey: `handoff_${handoffId}` }, { handoffId, sourceSessionId: sourceSession?.sessionId ?? "", sourceAgent, targetAgent, reason, contextSummary, chatId, threadId, companyId });
+    const stored: StoredHandoff = { handoffId, sourceSessionId: sourceSession?.sessionId ?? "", sourceAgent, targetAgent, reason, contextSummary, chatId, threadId, companyId };
+    await ctx.state.set({ scopeKind: "instance", stateKey: `handoff_${handoffId}` }, stored);
     return { content: JSON.stringify({ status: "pending_approval", handoffId }) };
   }
 
@@ -218,20 +227,20 @@ export async function handleHandoffToolCall(ctx: PluginContext, token: string, p
 }
 
 export async function handleHandoffApproval(ctx: PluginContext, token: string, handoffId: string, actor: string, callbackQueryId: string, chatId: string | null, messageId: number | undefined) {
-  const pending = await ctx.state.get({ scopeKind: "instance", stateKey: `handoff_${handoffId}` }) as any;
+  const pending = await ctx.state.get({ scopeKind: "instance", stateKey: `handoff_${handoffId}` }) as StoredHandoff | null;
   if (!pending) return;
   await ctx.state.set({ scopeKind: "instance", stateKey: `handoff_${handoffId}` }, null);
   ctx.logger.info("Handoff approved", { handoffId, actor, targetAgent: pending.targetAgent });
 }
 
 export async function handleHandoffRejection(ctx: PluginContext, token: string, handoffId: string, actor: string, callbackQueryId: string, chatId: string | null, messageId: number | undefined) {
-  const pending = await ctx.state.get({ scopeKind: "instance", stateKey: `handoff_${handoffId}` }) as any;
+  const pending = await ctx.state.get({ scopeKind: "instance", stateKey: `handoff_${handoffId}` }) as StoredHandoff | null;
   if (!pending) return;
   await sendMessage(ctx, token, pending.chatId, `${escapeMarkdownV2("\u274c")} Handoff to *${escapeMarkdownV2(pending.targetAgent)}* rejected by ${escapeMarkdownV2(actor)}`, { parseMode: "MarkdownV2", messageThreadId: pending.threadId });
   await ctx.state.set({ scopeKind: "instance", stateKey: `handoff_${handoffId}` }, null);
 }
 
-export async function handleDiscussToolCall(ctx: PluginContext, token: string, params: any, companyId: string, sourceAgentId: string) {
+export async function handleDiscussToolCall(ctx: PluginContext, token: string, params: DiscussToolParams, companyId: string, sourceAgentId: string) {
   const targetAgent = String(params.targetAgent ?? "");
   const topic = String(params.topic ?? "");
   const initialMessage = String(params.initialMessage ?? "");
@@ -249,13 +258,17 @@ export async function handleDiscussToolCall(ctx: PluginContext, token: string, p
 }
 
 // --- Session state helpers ---
-export async function getSessions(ctx: PluginContext, chatId: string, threadId: number): Promise<any[]> {
+export async function getSessions(ctx: PluginContext, chatId: string, threadId: number | undefined): Promise<AcpSession[]> {
   const sessions = await ctx.state.get({ scopeKind: "instance", stateKey: `sessions_${chatId}_${threadId}` });
-  return (sessions as any[]) ?? [];
+  return (sessions as AcpSession[]) ?? [];
 }
 
-async function saveSessions(ctx: PluginContext, chatId: string, threadId: number, sessions: any[]) {
+async function saveSessions(ctx: PluginContext, chatId: string, threadId: number, sessions: AcpSession[]) {
   await ctx.state.set({ scopeKind: "instance", stateKey: `sessions_${chatId}_${threadId}` }, sessions);
+}
+
+function mostRecentSession(sessions: AcpSession[]): AcpSession {
+  return sessions.sort((a, b) => new Date(b.lastActivityAt).getTime() - new Date(a.lastActivityAt).getTime())[0];
 }
 
 /**

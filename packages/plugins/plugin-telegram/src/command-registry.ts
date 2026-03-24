@@ -1,6 +1,7 @@
 import type { PluginContext } from "@paperclipai/plugin-sdk";
 import { sendMessage, escapeMarkdownV2, sendChatAction } from "./telegram-api.js";
 import { METRIC_NAMES } from "./constants.js";
+import type { CustomCommand, WorkflowStep } from "./types.js";
 
 const BUILTIN_COMMANDS = new Set([
   "status", "issues", "agents", "approve", "help",
@@ -54,7 +55,7 @@ export async function tryCustomCommand(
   if (BUILTIN_COMMANDS.has(command)) return false;
   const resolvedCompanyId = companyId ?? chatId;
   const commands = await getCommandRegistry(ctx, resolvedCompanyId);
-  const cmd = commands.find((c: any) => c.name === command);
+  const cmd = commands.find((c) => c.name === command);
   if (!cmd) return false;
   const args = argsStr.trim().split(/\s+/).filter(Boolean);
   await executeWorkflow(ctx, token, chatId, cmd, args, messageThreadId, resolvedCompanyId);
@@ -81,7 +82,7 @@ async function importCommand(ctx: PluginContext, token: string, chatId: string, 
     await sendMessage(ctx, token, chatId, "Usage: /commands import <json-definition>", { messageThreadId });
     return;
   }
-  let definition: any;
+  let definition: { name?: string; description?: string; steps?: WorkflowStep[] };
   try {
     definition = JSON.parse(jsonStr);
   } catch {
@@ -109,11 +110,11 @@ async function importCommand(ctx: PluginContext, token: string, chatId: string, 
   }
   const resolvedCompanyId = companyId ?? chatId;
   const commands = await getCommandRegistry(ctx, resolvedCompanyId);
-  const existingIdx = commands.findIndex((c: any) => c.name === definition.name);
-  const newCmd = {
-    name: definition.name,
+  const existingIdx = commands.findIndex((c) => c.name === definition.name);
+  const newCmd: CustomCommand = {
+    name: definition.name!,
     description: definition.description ?? "No description",
-    steps: definition.steps,
+    steps: definition.steps!,
     createdBy: `telegram:${chatId}`,
     createdAt: new Date().toISOString(),
   };
@@ -123,7 +124,7 @@ async function importCommand(ctx: PluginContext, token: string, chatId: string, 
     commands.push(newCmd);
   }
   await saveCommandRegistry(ctx, resolvedCompanyId, commands);
-  await sendMessage(ctx, token, chatId, `${escapeMarkdownV2("\u2705")} Command /${escapeMarkdownV2(definition.name)} ${existingIdx >= 0 ? "updated" : "imported"} \\(${escapeMarkdownV2(String(definition.steps.length))} steps\\)`, { parseMode: "MarkdownV2", messageThreadId });
+  await sendMessage(ctx, token, chatId, `${escapeMarkdownV2("\u2705")} Command /${escapeMarkdownV2(definition.name!)} ${existingIdx >= 0 ? "updated" : "imported"} \\(${escapeMarkdownV2(String(definition.steps!.length))} steps\\)`, { parseMode: "MarkdownV2", messageThreadId });
 }
 
 async function deleteCommand(ctx: PluginContext, token: string, chatId: string, name: string, messageThreadId: number | undefined, companyId: string) {
@@ -133,7 +134,7 @@ async function deleteCommand(ctx: PluginContext, token: string, chatId: string, 
   }
   const resolvedCompanyId = companyId ?? chatId;
   const commands = await getCommandRegistry(ctx, resolvedCompanyId);
-  const filtered = commands.filter((c: any) => c.name !== name);
+  const filtered = commands.filter((c) => c.name !== name);
   if (filtered.length === commands.length) {
     await sendMessage(ctx, token, chatId, `Command /${name} not found.`, { messageThreadId });
     return;
@@ -145,7 +146,7 @@ async function deleteCommand(ctx: PluginContext, token: string, chatId: string, 
 async function runCommand(ctx: PluginContext, token: string, chatId: string, name: string, args: string[], messageThreadId: number | undefined, companyId: string) {
   const resolvedCompanyId = companyId ?? chatId;
   const commands = await getCommandRegistry(ctx, resolvedCompanyId);
-  const cmd = commands.find((c: any) => c.name === name);
+  const cmd = commands.find((c) => c.name === name);
   if (!cmd) {
     await sendMessage(ctx, token, chatId, `Command /${name} not found.`, { messageThreadId });
     return;
@@ -153,7 +154,7 @@ async function runCommand(ctx: PluginContext, token: string, chatId: string, nam
   await executeWorkflow(ctx, token, chatId, cmd, args, messageThreadId, resolvedCompanyId);
 }
 
-async function executeWorkflow(ctx: PluginContext, token: string, chatId: string, cmd: any, args: string[], messageThreadId: number | undefined, companyId: string) {
+async function executeWorkflow(ctx: PluginContext, token: string, chatId: string, cmd: CustomCommand, args: string[], messageThreadId: number | undefined, companyId: string) {
   await sendChatAction(ctx, token, chatId);
   await ctx.metrics.write(METRIC_NAMES.commandsExecuted, 1);
   const results: Array<{ stepId: string; result: string }> = [];
@@ -170,7 +171,7 @@ async function executeWorkflow(ctx: PluginContext, token: string, chatId: string
   ctx.logger.info("Workflow completed", { command: cmd.name, steps: results.length });
 }
 
-async function executeStep(ctx: PluginContext, token: string, chatId: string, step: any, args: string[], prevResults: Array<{ stepId: string; result: string }>, messageThreadId: number | undefined, companyId: string): Promise<string | null> {
+async function executeStep(ctx: PluginContext, token: string, chatId: string, step: WorkflowStep, args: string[], prevResults: Array<{ stepId: string; result: string }>, messageThreadId: number | undefined, companyId: string): Promise<string | null> {
   const interpolate = (template: string) => {
     let result = template;
     for (let i = 0; i < args.length; i++) {
@@ -189,44 +190,44 @@ async function executeStep(ctx: PluginContext, token: string, chatId: string, st
 
   switch (step.type) {
     case "fetch_issue": {
-      const issueId = interpolate(step.issueId);
+      const issueId = interpolate(step.issueId!);
       const issue = await ctx.issues.get(issueId, companyId);
       if (!issue) return JSON.stringify({ error: "Issue not found", issueId });
       return JSON.stringify({ id: issue.id, title: issue.title, status: issue.status });
     }
     case "invoke_agent": {
-      const prompt = interpolate(step.prompt);
-      const { runId } = await ctx.agents.invoke(step.agentId, companyId, { prompt, reason: `custom_command:${step.id}` });
+      const prompt = interpolate(step.prompt!);
+      const { runId } = await ctx.agents.invoke(step.agentId!, companyId, { prompt, reason: `custom_command:${step.id}` });
       return runId;
     }
     case "http_request": {
-      const url = interpolate(step.url);
+      const url = interpolate(step.url!);
       const body = step.body ? interpolate(step.body) : undefined;
       const res = await ctx.http.fetch(url, {
         method: step.method,
-        headers: step.headers ? Object.fromEntries(Object.entries(step.headers).map(([k, v]) => [k, interpolate(v as string)])) : undefined,
+        headers: step.headers ? Object.fromEntries(Object.entries(step.headers).map(([k, v]) => [k, interpolate(v)])) : undefined,
         body,
       });
       return await res.text();
     }
     case "send_message": {
-      const text = interpolate(step.text);
+      const text = interpolate(step.text!);
       await sendMessage(ctx, token, chatId, text, { messageThreadId });
       return "sent";
     }
     case "create_issue": {
-      const title = interpolate(step.title);
+      const title = interpolate(step.title!);
       const description = step.description ? interpolate(step.description) : undefined;
       const res = await ctx.http.fetch(`${await resolveBaseUrl(ctx)}/api/issues`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ companyId, title, description, projectId: step.projectId }),
       });
-      const data = (await res.json()) as any;
+      const data = (await res.json()) as { id: string };
       return data.id;
     }
     case "wait_approval": {
-      const prompt = interpolate(step.prompt);
+      const prompt = interpolate(step.prompt!);
       const approvalId = `cmd_approval_${Date.now()}`;
       await sendMessage(ctx, token, chatId, prompt, {
         messageThreadId,
@@ -241,8 +242,8 @@ async function executeStep(ctx: PluginContext, token: string, chatId: string, st
       return "awaiting_approval";
     }
     case "set_state": {
-      const key = interpolate(step.key);
-      const value = interpolate(step.value);
+      const key = interpolate(step.key!);
+      const value = interpolate(step.value!);
       await ctx.state.set({ scopeKind: "company", scopeId: companyId, stateKey: key }, value);
       return value;
     }
@@ -251,16 +252,16 @@ async function executeStep(ctx: PluginContext, token: string, chatId: string, st
   }
 }
 
-async function getCommandRegistry(ctx: PluginContext, companyId: string): Promise<any[]> {
+async function getCommandRegistry(ctx: PluginContext, companyId: string): Promise<CustomCommand[]> {
   const commands = await ctx.state.get({ scopeKind: "company", scopeId: companyId, stateKey: `commands_${companyId}` });
-  return (commands as any[]) ?? [];
+  return (commands as CustomCommand[]) ?? [];
 }
 
-async function saveCommandRegistry(ctx: PluginContext, companyId: string, commands: any[]) {
+async function saveCommandRegistry(ctx: PluginContext, companyId: string, commands: CustomCommand[]) {
   await ctx.state.set({ scopeKind: "company", scopeId: companyId, stateKey: `commands_${companyId}` }, commands);
 }
 
 async function resolveBaseUrl(ctx: PluginContext): Promise<string> {
   const config = await ctx.config.get();
-  return (config as any).paperclipBaseUrl ?? "http://localhost:3100";
+  return (config as Record<string, unknown>)?.paperclipBaseUrl as string ?? "http://localhost:3100";
 }

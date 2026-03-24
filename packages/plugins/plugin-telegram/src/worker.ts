@@ -18,6 +18,7 @@ import {
   setMyCommands,
   answerCallbackQuery,
 } from "./telegram-api.js";
+import type { SendMessageOptions } from "./telegram-api.js";
 import {
   handleCommand,
   resolveCompanyId,
@@ -35,6 +36,18 @@ import { EscalationManager } from "./escalation.js";
 import { handleMediaMessage } from "./media-pipeline.js";
 import { handleRegisterWatch, checkWatches } from "./watch-registry.js";
 import { getSessions, setupAcpOutputListener, routeMessageToAgent } from "./acp-bridge.js";
+import type {
+  TelegramUpdate,
+  TelegramCallbackQuery,
+  TelegramMessage,
+  IssueEventPayload,
+  AgentRunEventPayload,
+  AcpOutputEvent,
+  EscalateToolParams,
+  EscalationEvent,
+  MessageMapping,
+  RegisterWatchParams,
+} from "./types.js";
 
 type TelegramConfig = typeof DEFAULT_CONFIG;
 
@@ -62,7 +75,7 @@ async function notifyChat(
   token: string,
   chatId: string,
   text: string,
-  options: any = {},
+  options: SendMessageOptions = {},
   projectName?: string,
 ): Promise<void> {
   const config = await getConfig(ctx);
@@ -80,7 +93,7 @@ async function notifyChat(
 async function processUpdate(
   ctx: PluginContext,
   token: string,
-  update: any,
+  update: TelegramUpdate,
   config: TelegramConfig,
 ): Promise<void> {
   // Callback queries (inline button presses)
@@ -139,16 +152,16 @@ async function routeInboundMessage(
   token: string,
   chatId: string,
   text: string,
-  msg: any,
+  msg: TelegramMessage,
   threadId?: number,
 ): Promise<void> {
   // Check for active agent sessions in this thread
   const sessions = await getSessions(ctx, chatId, threadId);
-  const activeSessions = sessions.filter((s: any) => s.status === "active");
+  const activeSessions = sessions.filter((s) => s.status === "active");
 
   if (activeSessions.length > 0) {
     const target = activeSessions.sort(
-      (a: any, b: any) =>
+      (a, b) =>
         new Date(b.lastActivityAt).getTime() - new Date(a.lastActivityAt).getTime(),
     )[0];
 
@@ -182,7 +195,7 @@ async function routeInboundMessage(
     const mapping = await ctx.state.get({
       scopeKind: "instance",
       stateKey: `msg_${chatId}_${replyMsgId}`,
-    }) as any;
+    }) as MessageMapping | null;
 
     if (mapping?.entityType === "escalation") {
       await escalationManager.respond(ctx, token, mapping.entityId, {
@@ -213,11 +226,11 @@ async function routeInboundMessage(
 async function handleCallbackQuery(
   ctx: PluginContext,
   token: string,
-  query: any,
+  query: TelegramCallbackQuery,
   config: TelegramConfig,
 ): Promise<void> {
   const data = query.data ?? "";
-  const actor = query.from?.username ?? query.from?.id ?? "unknown";
+  const actor = query.from?.username ?? String(query.from?.id) ?? "unknown";
   const callbackQueryId = query.id;
   const chatId = query.message?.chat?.id ? String(query.message.chat.id) : null;
   const messageId = query.message?.message_id;
@@ -271,7 +284,7 @@ function subscribeToEvents(ctx: PluginContext, token: string, config: TelegramCo
       const chatId = config.defaultChatId;
       if (!chatId) return;
       const { text, options } = formatIssueCreated(event);
-      const projectName = (event.payload as any)?.projectName;
+      const projectName = (event.payload as IssueEventPayload)?.projectName;
       await notifyChat(ctx, token, chatId, text, options, projectName);
       // Store message mapping for reply routing
     });
@@ -279,7 +292,7 @@ function subscribeToEvents(ctx: PluginContext, token: string, config: TelegramCo
 
   if (config.notifyOnIssueDone) {
     ctx.events.on("issue.updated", async (event) => {
-      const p = event.payload as any;
+      const p = event.payload as IssueEventPayload;
       if (p?.status !== "done") return;
       const chatId = config.defaultChatId;
       if (!chatId) return;
@@ -302,7 +315,7 @@ function subscribeToEvents(ctx: PluginContext, token: string, config: TelegramCo
             entityType: "approval",
             companyId: event.companyId,
             eventType: "approval.created",
-          },
+          } satisfies MessageMapping,
         );
       }
     });
@@ -321,13 +334,13 @@ function subscribeToEvents(ctx: PluginContext, token: string, config: TelegramCo
   ctx.events.on("plugin.paperclip-plugin-telegram.escalation", async (event) => {
     const chatId = config.escalationChatId || config.defaultChatId;
     if (!chatId) return;
-    await escalationManager.create(ctx, token, event.payload, chatId);
+    await escalationManager.create(ctx, token, event.payload as EscalationEvent, chatId);
     await ctx.metrics.write(METRIC_NAMES.escalationsCreated, 1);
   });
 
   // ACP output events — relay agent output to Telegram
   ctx.events.on(ACP_OUTPUT_EVENT, async (event) => {
-    const payload = event.payload as any;
+    const payload = event.payload as AcpOutputEvent;
     if (!payload?.chatId || !payload?.text) return;
     await sendMessage(ctx, token, payload.chatId, escapeMarkdownV2(payload.text), {
       parseMode: "MarkdownV2",
@@ -349,11 +362,11 @@ function registerToolHandlers(ctx: PluginContext, token: string, config: Telegra
       parametersSchema: { type: "object" },
     },
     async (params) => {
-      const p = params as any;
+      const p = params as EscalateToolParams;
       const chatId = config.escalationChatId || config.defaultChatId;
       if (!chatId) return { error: "No escalation chat configured" };
 
-      const event = {
+      const event: EscalationEvent = {
         escalationId: `esc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
         agentId: p.agentId ?? "unknown",
         companyId: p.companyId ?? "",
@@ -388,8 +401,9 @@ function registerToolHandlers(ctx: PluginContext, token: string, config: Telegra
       parametersSchema: { type: "object" },
     },
     async (params) => {
-      const companyId = (params as any).companyId ?? "";
-      return await handleRegisterWatch(ctx, params, companyId);
+      const p = params as RegisterWatchParams;
+      const companyId = p.companyId ?? "";
+      return await handleRegisterWatch(ctx, p, companyId);
     },
   );
 }
@@ -407,9 +421,9 @@ function registerJobHandlers(ctx: PluginContext, token: string, config: Telegram
       for (const company of companies) {
         const agents = await ctx.agents.list({ companyId: company.id });
         const issues = await ctx.issues.list({ companyId: company.id, limit: 20 });
-        const active = agents.filter((a: any) => a.status === "active" || a.status === "running");
-        const done = issues.filter((i: any) => i.status === "done");
-        const inProgress = issues.filter((i: any) => i.status === "in_progress");
+        const active = agents.filter((a) => a.status === "active" || a.status === "running");
+        const done = issues.filter((i) => i.status === "done");
+        const inProgress = issues.filter((i) => i.status === "in_progress");
 
         const lines = [
           escapeMarkdownV2("\ud83d\udcca") + ` *Daily Digest: ${escapeMarkdownV2(company.name)}*`,
@@ -421,8 +435,8 @@ function registerJobHandlers(ctx: PluginContext, token: string, config: Telegram
         if (inProgress.length > 0) {
           lines.push("", `${escapeMarkdownV2("\ud83d\udd04")} *In Progress:*`);
           for (const issue of inProgress.slice(0, 5)) {
-            const id = (issue as any).identifier ?? issue.id;
-            lines.push(`  ${escapeMarkdownV2("-")} ${escapeMarkdownV2(id)}: ${escapeMarkdownV2((issue as any).title ?? "")}`);
+            const id = issue.identifier ?? issue.id;
+            lines.push(`  ${escapeMarkdownV2("-")} ${escapeMarkdownV2(id)}: ${escapeMarkdownV2(issue.title)}`);
           }
         }
 
@@ -455,7 +469,7 @@ function registerWebhookRoute(ctx: PluginContext, token: string, config: Telegra
   // The plugin host delivers inbound webhook POSTs as events
   ctx.events.on("plugin.paperclip-plugin-telegram.webhook", async (event) => {
     try {
-      await processUpdate(ctx, token, event.payload, config);
+      await processUpdate(ctx, token, event.payload as TelegramUpdate, config);
     } catch (err) {
       ctx.logger.error("Webhook processing error", { error: String(err) });
     }

@@ -4,6 +4,8 @@ import {
   editMessage as editTelegramMessage,
   escapeMarkdownV2,
 } from "./telegram-api.js";
+import type { SendMessageOptions } from "./telegram-api.js";
+import type { InlineKeyboardRow } from "./types.js";
 
 export class TelegramAdapter {
   ctx: PluginContext;
@@ -15,8 +17,8 @@ export class TelegramAdapter {
     this.botToken = botToken;
   }
 
-  async sendText(chatId: string, threadId: string, text: string, opts?: any) {
-    const options: any = { parseMode: "MarkdownV2" };
+  async sendText(chatId: string, threadId: string, text: string, opts?: { replyTo?: string; silent?: boolean }) {
+    const options: SendMessageOptions = { parseMode: "MarkdownV2" };
     if (threadId) options.messageThreadId = Number(threadId);
     if (opts?.replyTo) options.replyToMessageId = Number(opts.replyTo);
     if (opts?.silent) options.disableNotification = true;
@@ -35,7 +37,7 @@ export class TelegramAdapter {
     text: string,
     buttons: Array<{ label: string; callbackData: string }>,
   ) {
-    const keyboard: any[][] = [];
+    const keyboard: InlineKeyboardRow[] = [];
     for (let i = 0; i < buttons.length; i += 2) {
       const row = buttons.slice(i, i + 2).map((b) => ({
         text: b.label,
@@ -43,7 +45,7 @@ export class TelegramAdapter {
       }));
       keyboard.push(row);
     }
-    const options: any = { parseMode: "MarkdownV2", inlineKeyboard: keyboard };
+    const options: SendMessageOptions = { parseMode: "MarkdownV2", inlineKeyboard: keyboard };
     if (threadId) options.messageThreadId = Number(threadId);
 
     const messageId = await sendMessage(this.ctx, this.botToken, chatId, text, options);
@@ -59,9 +61,9 @@ export class TelegramAdapter {
     text: string,
     buttons?: Array<{ label: string; callbackData: string }>,
   ) {
-    const keyboard = buttons
+    const keyboard: InlineKeyboardRow[] | undefined = buttons
       ? (() => {
-          const rows: any[][] = [];
+          const rows: InlineKeyboardRow[] = [];
           for (let i = 0; i < buttons.length; i += 2) {
             const row = buttons.slice(i, i + 2).map((b) => ({
               text: b.label,

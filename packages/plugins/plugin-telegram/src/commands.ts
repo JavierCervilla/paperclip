@@ -69,9 +69,9 @@ async function handleStatus(
   try {
     const companyId = await resolveCompanyId(ctx, chatId);
     const agents = await ctx.agents.list({ companyId });
-    const activeAgents = agents.filter((a: any) => a.status === "active");
+    const activeAgents = agents.filter((a) => a.status === "active");
     const issues = await ctx.issues.list({ companyId, limit: 10 });
-    const doneIssues = issues.filter((i: any) => i.status === "done");
+    const doneIssues = issues.filter((i) => i.status === "done");
 
     const lines = [
       escapeMarkdownV2("\u{1f4ca}") + " *Paperclip Status*",
@@ -115,7 +115,7 @@ async function handleIssues(
     const companyId = await resolveCompanyId(ctx, chatId);
     const issues = await ctx.issues.list({ companyId, limit: 10 });
     const filtered = projectFilter
-      ? issues.filter((i: any) => {
+      ? issues.filter((i) => {
           const projName = i.project?.name ?? "";
           return projName.toLowerCase().includes(projectFilter.toLowerCase());
         })
@@ -296,7 +296,7 @@ async function handleConnect(
   try {
     const companies = await ctx.companies.list();
     const match = companies.find(
-      (c: any) => c.name.toLowerCase() === trimmedName.toLowerCase(),
+      (c) => c.name.toLowerCase() === trimmedName.toLowerCase(),
     );
     if (!match) {
       await sendMessage(
