@@ -1350,7 +1350,11 @@ export function issueService(db: Db) {
           }),
       ),
 
-    addComment: async (issueId: string, body: string, actor: { agentId?: string; userId?: string }) => {
+    addComment: async (
+      issueId: string,
+      body: string,
+      actor: { agentId?: string; userId?: string; questionData?: unknown },
+    ) => {
       const issue = await db
         .select({ companyId: issues.companyId })
         .from(issues)
@@ -1371,6 +1375,7 @@ export function issueService(db: Db) {
           authorAgentId: actor.agentId ?? null,
           authorUserId: actor.userId ?? null,
           body: redactedBody,
+          questionData: actor.questionData ?? null,
         })
         .returning();
 
