@@ -106,3 +106,55 @@ export const priorityColor: Record<string, string> = {
 };
 
 export const priorityColorDefault = "text-yellow-600 dark:text-yellow-400";
+
+// ---------------------------------------------------------------------------
+// Hex colors — for chart rendering (canvas, SVG, inline styles)
+// ---------------------------------------------------------------------------
+
+export const issueStatusHex: Record<string, string> = {
+  backlog: "#64748b",
+  todo: "#3b82f6",
+  in_progress: "#8b5cf6",
+  in_review: "#a855f7",
+  done: "#10b981",
+  blocked: "#ef4444",
+  cancelled: "#6b7280",
+};
+
+export const issueStatusHexDefault = "#6b7280";
+
+export const priorityHex: Record<string, string> = {
+  critical: "#ef4444",
+  high: "#f97316",
+  medium: "#eab308",
+  low: "#6b7280",
+};
+
+export const priorityHexDefault = "#6b7280";
+
+export const successRateHex = {
+  good: "#10b981",
+  moderate: "#eab308",
+  poor: "#ef4444",
+} as const;
+
+// ---------------------------------------------------------------------------
+// Display labels
+// ---------------------------------------------------------------------------
+
+export const issueStatusLabel: Record<string, string> = {
+  backlog: "Backlog",
+  todo: "To Do",
+  in_progress: "In Progress",
+  in_review: "In Review",
+  done: "Done",
+  blocked: "Blocked",
+  cancelled: "Cancelled",
+};
+
+export const priorityLabel: Record<string, string> = {
+  critical: "Critical",
+  high: "High",
+  medium: "Medium",
+  low: "Low",
+};
