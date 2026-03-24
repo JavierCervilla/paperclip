@@ -1,7 +1,7 @@
 FROM node:lts-trixie-slim AS base
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
-    ca-certificates curl git unzip \
+    ca-certificates curl git unzip jq \
     libglib2.0-0 libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 \
     libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 \
     libxfixes3 libxrandr2 libgbm1 libasound2 \
@@ -25,6 +25,8 @@ COPY packages/adapters/openclaw-gateway/package.json packages/adapters/openclaw-
 COPY packages/adapters/opencode-local/package.json packages/adapters/opencode-local/
 COPY packages/adapters/pi-local/package.json packages/adapters/pi-local/
 COPY packages/plugins/sdk/package.json packages/plugins/sdk/
+COPY packages/plugins/plugin-sentry/package.json packages/plugins/plugin-sentry/
+COPY packages/plugins/plugin-obsidian/package.json packages/plugins/plugin-obsidian/
 
 RUN pnpm install --frozen-lockfile
 
@@ -34,6 +36,8 @@ COPY --from=deps /app /app
 COPY . .
 RUN git rev-parse --short HEAD > .git-commit 2>/dev/null || echo "unknown" > .git-commit
 RUN pnpm --filter @paperclipai/plugin-sdk build
+RUN pnpm --filter @paperclipai/plugin-sentry build
+RUN pnpm --filter @paperclipai/plugin-obsidian build
 RUN pnpm --filter @paperclipai/ui build
 RUN pnpm --filter @paperclipai/server build
 RUN test -f server/dist/index.js || (echo "ERROR: server build output missing" && exit 1)
@@ -48,6 +52,8 @@ RUN npm install --global --omit=dev @anthropic-ai/claude-code@latest @openai/cod
   && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
   && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
   && apt-get update && apt-get install -y gh && rm -rf /var/lib/apt/lists/* \
+  && curl -fsSL -o /tmp/rtk.deb https://github.com/rtk-ai/rtk/releases/download/v0.31.0/rtk_0.31.0-1_amd64.deb \
+  && dpkg -i /tmp/rtk.deb && rm /tmp/rtk.deb \
   && mkdir -p /paperclip \
   && chown node:node /paperclip
 

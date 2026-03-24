@@ -91,7 +91,7 @@ interface AvailablePluginExample {
   displayName: string;
   description: string;
   localPath: string;
-  tag: "example";
+  tag: "example" | "plugin";
 }
 
 /** Response body for GET /api/plugins/:pluginId/health */
@@ -115,6 +115,24 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "../../..");
 
 const BUNDLED_PLUGIN_EXAMPLES: AvailablePluginExample[] = [
+  // ---- Production plugins ------------------------------------------------
+  {
+    packageName: "@paperclipai/plugin-obsidian",
+    pluginKey: "paperclip-plugin-obsidian",
+    displayName: "Obsidian Vault Sync",
+    description: "Unidirectional sync from Paperclip to an Obsidian vault. Exports issues and goals as Markdown notes with YAML frontmatter and wikilinks.",
+    localPath: "packages/plugins/plugin-obsidian",
+    tag: "plugin",
+  },
+  {
+    packageName: "@paperclipai/plugin-sentry",
+    pluginKey: "paperclip-sentry",
+    displayName: "Sentry",
+    description: "Sentry error tracking integration. Provides agent tools for querying production errors and a UI dashboard for the board to visualize captured issues.",
+    localPath: "packages/plugins/plugin-sentry",
+    tag: "plugin",
+  },
+  // ---- Example plugins ---------------------------------------------------
   {
     packageName: "@paperclipai/plugin-hello-world-example",
     pluginKey: "paperclip.hello-world-example",
@@ -137,6 +155,22 @@ const BUNDLED_PLUGIN_EXAMPLES: AvailablePluginExample[] = [
     displayName: "Kitchen Sink (Example)",
     description: "Reference plugin that demonstrates the current Paperclip plugin API surface, bridge flows, UI extension surfaces, jobs, webhooks, tools, streams, and trusted local workspace/process demos.",
     localPath: "packages/plugins/examples/plugin-kitchen-sink-example",
+    tag: "example",
+  },
+  {
+    packageName: "@paperclipai/plugin-dokploy-mcp",
+    pluginKey: "paperclip-dokploy-mcp",
+    displayName: "Dokploy MCP",
+    description: "Wraps the Dokploy MCP server to expose infrastructure management tools to agents — view logs, list applications, check status, redeploy, and get resource stats.",
+    localPath: "packages/plugins/examples/plugin-dokploy-mcp",
+    tag: "example",
+  },
+  {
+    packageName: "@paperclipai/plugin-authoring-smoke-example",
+    pluginKey: "paperclipai.plugin-authoring-smoke-example",
+    displayName: "Plugin Authoring Smoke Example",
+    description: "Smoke-test plugin used for validating the plugin authoring pipeline — events, state read/write, and UI rendering.",
+    localPath: "packages/plugins/examples/plugin-authoring-smoke-example",
     tag: "example",
   },
 ];

@@ -7,6 +7,8 @@ export { authUsersRelations as userRelations, authAccountsRelations as accountRe
 export { instanceSettings } from "./instance_settings.js";
 export { instanceUserRoles } from "./instance_user_roles.js";
 export { agents } from "./agents.js";
+export { boardApiKeys } from "./board_api_keys.js";
+export { cliAuthChallenges } from "./cli_auth_challenges.js";
 export { companyMemberships } from "./company_memberships.js";
 export { principalPermissionGrants } from "./principal_permission_grants.js";
 export { invites } from "./invites.js";

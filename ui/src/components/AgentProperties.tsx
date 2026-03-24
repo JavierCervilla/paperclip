@@ -6,6 +6,7 @@ import { useCompany } from "../context/CompanyContext";
 import { queryKeys } from "../lib/queryKeys";
 import { StatusBadge } from "./StatusBadge";
 import { Identity } from "./Identity";
+import { CopyText } from "./CopyText";
 import { formatDate, agentUrl } from "../lib/utils";
 import { Separator } from "@/components/ui/separator";
 
@@ -50,6 +51,11 @@ export function AgentProperties({ agent, runtimeState }: AgentPropertiesProps) {
   return (
     <div className="space-y-4">
       <div className="space-y-1">
+        <PropertyRow label="Agent ID">
+          <CopyText text={agent.id} copiedLabel="Copied!" className="text-xs font-mono text-muted-foreground hover:text-foreground">
+            {agent.id.slice(0, 8)}…
+          </CopyText>
+        </PropertyRow>
         <PropertyRow label="Status">
           <StatusBadge status={agent.status} />
         </PropertyRow>
