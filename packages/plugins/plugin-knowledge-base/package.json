@@ -13,17 +13,16 @@
     "ui": "./dist/ui/"
   },
   "scripts": {
-    "prebuild": "node ../../../scripts/ensure-plugin-build-deps.mjs",
+    "prebuild": "node ../../../../scripts/ensure-plugin-build-deps.mjs",
     "clean": "rm -rf dist",
     "typecheck": "pnpm --filter @paperclipai/plugin-sdk build && tsc --noEmit",
     "test": "vitest run",
-    "build": "tsc && node ./scripts/build-ui.mjs"
+    "build": "tsc"
   },
   "dependencies": {
     "@paperclipai/plugin-sdk": "workspace:*"
   },
   "devDependencies": {
-    "esbuild": "^0.27.3",
     "@types/node": "^24.6.0",
     "@types/react": "^19.0.8",
     "@types/react-dom": "^19.0.3",
