@@ -587,5 +587,19 @@ export {
   type ConfigMeta,
 } from "./config-schema.js";
 
-export { parseWorkspaceFileRefs, buildWorkspaceFileRef, resolveWorkspaceFileRef, expandWorkspaceFileRefs } from "./workspace-refs.js";
+export {
+  parseWorkspaceFileRefs,
+  buildWorkspaceFileRef,
+  resolveWorkspaceFileRef,
+  expandWorkspaceFileRefs,
+} from "./workspace-refs.js";
 export type { WorkspaceFileRef } from "./workspace-refs.js";
+
+export {
+  isPlainObject,
+  isEnvPlainBinding,
+  isEnvSecretRefBinding,
+  isEnvStringBinding,
+  errorMessage,
+  isNonNullable,
+} from "./type-guards.js";
