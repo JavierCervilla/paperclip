@@ -1,4 +1,4 @@
-CREATE TABLE "webhooks" (
+CREATE TABLE IF NOT EXISTS "webhooks" (
   "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
   "company_id" uuid NOT NULL,
   "url" text NOT NULL,
@@ -13,9 +13,9 @@ CREATE TABLE "webhooks" (
   CONSTRAINT "webhooks_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "projects"("id") ON DELETE set null
 );
 --> statement-breakpoint
-CREATE INDEX "webhooks_company_active_idx" ON "webhooks" USING btree ("company_id", "active");
+CREATE INDEX IF NOT EXISTS "webhooks_company_active_idx" ON "webhooks" USING btree ("company_id", "active");
 --> statement-breakpoint
-CREATE TABLE "webhook_deliveries" (
+CREATE TABLE IF NOT EXISTS "webhook_deliveries" (
   "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
   "webhook_id" uuid NOT NULL,
   "event_id" text NOT NULL,
@@ -33,8 +33,8 @@ CREATE TABLE "webhook_deliveries" (
   CONSTRAINT "webhook_deliveries_webhook_id_webhooks_id_fk" FOREIGN KEY ("webhook_id") REFERENCES "webhooks"("id") ON DELETE cascade
 );
 --> statement-breakpoint
-CREATE INDEX "webhook_deliveries_webhook_status_idx" ON "webhook_deliveries" USING btree ("webhook_id", "status");
+CREATE INDEX IF NOT EXISTS "webhook_deliveries_webhook_status_idx" ON "webhook_deliveries" USING btree ("webhook_id", "status");
 --> statement-breakpoint
-CREATE INDEX "webhook_deliveries_next_retry_idx" ON "webhook_deliveries" USING btree ("status", "next_retry_at");
+CREATE INDEX IF NOT EXISTS "webhook_deliveries_next_retry_idx" ON "webhook_deliveries" USING btree ("status", "next_retry_at");
 --> statement-breakpoint
-CREATE INDEX "webhook_deliveries_event_type_idx" ON "webhook_deliveries" USING btree ("event_type");
+CREATE INDEX IF NOT EXISTS "webhook_deliveries_event_type_idx" ON "webhook_deliveries" USING btree ("event_type");
