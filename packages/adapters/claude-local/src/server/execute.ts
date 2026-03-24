@@ -307,6 +307,8 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const chrome = asBoolean(config.chrome, false);
   const maxTurns = asNumber(config.maxTurnsPerRun, 0);
   const dangerouslySkipPermissions = asBoolean(config.dangerouslySkipPermissions, false);
+  const allowedTools = asStringArray(config.allowedTools);
+  const disallowedTools = asStringArray(config.disallowedTools);
   const instructionsFilePath = asString(config.instructionsFilePath, "").trim();
   const instructionsFileDir = instructionsFilePath ? `${path.dirname(instructionsFilePath)}/` : "";
   const commandNotes = instructionsFilePath
@@ -412,6 +414,8 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     if (model) args.push("--model", model);
     if (effort) args.push("--effort", effort);
     if (maxTurns > 0) args.push("--max-turns", String(maxTurns));
+    if (allowedTools.length > 0) args.push("--allowedTools", ...allowedTools);
+    if (disallowedTools.length > 0) args.push("--disallowedTools", ...disallowedTools);
     if (effectiveInstructionsFilePath) {
       args.push("--append-system-prompt-file", effectiveInstructionsFilePath);
     }
