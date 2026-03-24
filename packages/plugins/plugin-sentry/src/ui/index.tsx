@@ -7,7 +7,7 @@ import {
   type PluginSidebarProps,
   type PluginWidgetProps,
 } from "@paperclipai/plugin-sdk/ui";
-import { DATA_KEYS, PLUGIN_ID, PAGE_ROUTE } from "../constants.js";
+import { DATA_KEYS, PAGE_ROUTE } from "../constants.js";
 
 // ---------------------------------------------------------------------------
 // Shared types & styles
@@ -591,7 +591,7 @@ export function SentrySidebarLink(_props: PluginSidebarProps) {
   const prefix = ctx.companyPrefix ?? "";
   return (
     <a
-      href={`/${prefix}/plugins/${PLUGIN_ID}/${PAGE_ROUTE}`}
+      href={`/${prefix}/${PAGE_ROUTE}`}
       style={{
         ...styles.link,
         display: "flex",
