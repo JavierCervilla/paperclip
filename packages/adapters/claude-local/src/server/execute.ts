@@ -42,18 +42,10 @@ async function buildSkillsDir(config: Record<string, unknown>): Promise<string> 
   const target = path.join(tmp, ".claude", "skills");
   await fs.mkdir(target, { recursive: true });
   const availableEntries = await readPaperclipRuntimeSkillEntries(config, __moduleDir);
-  const desiredNames = new Set(
-    resolveClaudeDesiredSkillNames(
-      config,
-      availableEntries,
-    ),
-  );
+  const desiredNames = new Set(resolveClaudeDesiredSkillNames(config, availableEntries));
   for (const entry of availableEntries) {
     if (!desiredNames.has(entry.key)) continue;
-    await fs.symlink(
-      entry.source,
-      path.join(target, entry.runtimeName),
-    );
+    await fs.symlink(entry.source, path.join(target, entry.runtimeName));
   }
   return tmp;
 }
@@ -78,10 +70,7 @@ interface ClaudeRuntimeConfig {
   extraArgs: string[];
 }
 
-function buildLoginResult(input: {
-  proc: RunProcessResult;
-  loginUrl: string | null;
-}) {
+function buildLoginResult(input: { proc: RunProcessResult; loginUrl: string | null }) {
   return {
     exitCode: input.proc.exitCode,
     signal: input.proc.signal,
@@ -149,17 +138,15 @@ async function buildClaudeRuntimeConfig(input: ClaudeExecutionInput): Promise<Cl
     (typeof context.issueId === "string" && context.issueId.trim().length > 0 && context.issueId.trim()) ||
     null;
   const wakeReason =
-    typeof context.wakeReason === "string" && context.wakeReason.trim().length > 0
-      ? context.wakeReason.trim()
-      : null;
+    typeof context.wakeReason === "string" && context.wakeReason.trim().length > 0 ? context.wakeReason.trim() : null;
   const wakeCommentId =
-    (typeof context.wakeCommentId === "string" && context.wakeCommentId.trim().length > 0 && context.wakeCommentId.trim()) ||
+    (typeof context.wakeCommentId === "string" &&
+      context.wakeCommentId.trim().length > 0 &&
+      context.wakeCommentId.trim()) ||
     (typeof context.commentId === "string" && context.commentId.trim().length > 0 && context.commentId.trim()) ||
     null;
   const approvalId =
-    typeof context.approvalId === "string" && context.approvalId.trim().length > 0
-      ? context.approvalId.trim()
-      : null;
+    typeof context.approvalId === "string" && context.approvalId.trim().length > 0 ? context.approvalId.trim() : null;
   const approvalStatus =
     typeof context.approvalStatus === "string" && context.approvalStatus.trim().length > 0
       ? context.approvalStatus.trim()
@@ -307,6 +294,9 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const chrome = asBoolean(config.chrome, false);
   const maxTurns = asNumber(config.maxTurnsPerRun, 0);
   const dangerouslySkipPermissions = asBoolean(config.dangerouslySkipPermissions, false);
+  // permissionMode takes precedence over dangerouslySkipPermissions when explicitly set.
+  // Valid values: "auto", "default", "bypassPermissions", "plan".
+  const permissionMode = config.permissionMode != null ? asString(config.permissionMode, "").trim() : null;
   const allowedTools = asStringArray(config.allowedTools);
   const disallowedTools = asStringArray(config.disallowedTools);
   const instructionsFilePath = asString(config.instructionsFilePath, "").trim();
@@ -324,17 +314,8 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     context,
     authToken,
   });
-  const {
-    command,
-    cwd,
-    workspaceId,
-    workspaceRepoUrl,
-    workspaceRepoRef,
-    env,
-    timeoutSec,
-    graceSec,
-    extraArgs,
-  } = runtimeConfig;
+  const { command, cwd, workspaceId, workspaceRepoUrl, workspaceRepoRef, env, timeoutSec, graceSec, extraArgs } =
+    runtimeConfig;
   const effectiveEnv = Object.fromEntries(
     Object.entries({ ...process.env, ...env }).filter(
       (entry): entry is [string, string] => typeof entry[1] === "string",
@@ -394,11 +375,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       ? renderTemplate(bootstrapPromptTemplate, templateData).trim()
       : "";
   const sessionHandoffNote = asString(context.paperclipSessionHandoffMarkdown, "").trim();
-  const prompt = joinPromptSections([
-    renderedBootstrapPrompt,
-    sessionHandoffNote,
-    renderedPrompt,
-  ]);
+  const prompt = joinPromptSections([renderedBootstrapPrompt, sessionHandoffNote, renderedPrompt]);
   const promptMetrics = {
     promptChars: prompt.length,
     bootstrapPromptChars: renderedBootstrapPrompt.length,
@@ -409,7 +386,13 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const buildClaudeArgs = (resumeSessionId: string | null) => {
     const args = ["--print", "-", "--output-format", "stream-json", "--verbose"];
     if (resumeSessionId) args.push("--resume", resumeSessionId);
-    if (dangerouslySkipPermissions) args.push("--dangerously-skip-permissions");
+    if (permissionMode) {
+      args.push("--permission-mode", permissionMode);
+    } else if (dangerouslySkipPermissions) {
+      args.push("--dangerously-skip-permissions");
+    } else {
+      args.push("--permission-mode", "auto");
+    }
     if (chrome) args.push("--chrome");
     if (model) args.push("--model", model);
     if (effort) args.push("--effort", effort);
@@ -532,16 +515,15 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       })();
 
     const resolvedSessionId =
-      parsedStream.sessionId ??
-      (asString(parsed.session_id, opts.fallbackSessionId ?? "") || opts.fallbackSessionId);
+      parsedStream.sessionId ?? (asString(parsed.session_id, opts.fallbackSessionId ?? "") || opts.fallbackSessionId);
     const resolvedSessionParams = resolvedSessionId
       ? ({
-        sessionId: resolvedSessionId,
-        cwd,
-        ...(workspaceId ? { workspaceId } : {}),
-        ...(workspaceRepoUrl ? { repoUrl: workspaceRepoUrl } : {}),
-        ...(workspaceRepoRef ? { repoRef: workspaceRepoRef } : {}),
-      } as Record<string, unknown>)
+          sessionId: resolvedSessionId,
+          cwd,
+          ...(workspaceId ? { workspaceId } : {}),
+          ...(workspaceRepoUrl ? { repoUrl: workspaceRepoUrl } : {}),
+          ...(workspaceRepoRef ? { repoRef: workspaceRepoRef } : {}),
+        } as Record<string, unknown>)
       : null;
     const clearSessionForMaxTurns = isClaudeMaxTurnsResult(parsed);
 
@@ -552,7 +534,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       errorMessage:
         (proc.exitCode ?? 0) === 0
           ? null
-          : describeClaudeFailure(parsed) ?? `Claude exited with code ${proc.exitCode ?? -1}`,
+          : (describeClaudeFailure(parsed) ?? `Claude exited with code ${proc.exitCode ?? -1}`),
       errorCode: loginMeta.requiresLogin ? "claude_auth_required" : null,
       errorMeta,
       usage,
