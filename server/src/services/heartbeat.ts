@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { execFile as execFileCallback } from "node:child_process";
 import { promisify } from "node:util";
-import { and, asc, desc, eq, gt, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNotNull, lt, or, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import type { BillingType } from "@paperclipai/shared";
 import {
@@ -1829,6 +1829,50 @@ export function heartbeatService(db: Db) {
     }
 
     return { clearedRuntimeStates: clearedRuntime, clearedTaskSessions };
+  }
+
+  /**
+   * Nullify heavy columns (`result_json`, `stdout_excerpt`, `stderr_excerpt`,
+   * `context_snapshot`) on completed runs older than `ttlDays` days.
+   * This prevents the heartbeat_runs table from growing unbounded and keeps the
+   * embedded PGlite database small enough for the backup routine.
+   */
+  async function pruneHeartbeatRunData(opts?: { ttlDays?: number }) {
+    const ttlDays = Math.max(1, Math.trunc(opts?.ttlDays ?? 7));
+    const cutoff = new Date(Date.now() - ttlDays * 24 * 60 * 60 * 1000);
+
+    const updated = await db
+      .update(heartbeatRuns)
+      .set({
+        resultJson: null,
+        stdoutExcerpt: null,
+        stderrExcerpt: null,
+        contextSnapshot: null,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          inArray(heartbeatRuns.status, ["done", "failed", "cancelled", "timed_out", "error"]),
+          lt(heartbeatRuns.finishedAt, cutoff),
+          or(
+            isNotNull(heartbeatRuns.resultJson),
+            isNotNull(heartbeatRuns.stdoutExcerpt),
+            isNotNull(heartbeatRuns.stderrExcerpt),
+            isNotNull(heartbeatRuns.contextSnapshot),
+          ),
+        ),
+      )
+      .returning({ id: heartbeatRuns.id })
+      .then((rows) => rows.length);
+
+    if (updated > 0) {
+      logger.info(
+        { prunedRuns: updated, ttlDays, cutoff },
+        "heartbeat_runs TTL pruning: nullified heavy columns on old completed runs",
+      );
+    }
+
+    return { prunedRuns: updated };
   }
 
   async function resumeQueuedRuns() {
@@ -3819,6 +3863,8 @@ export function heartbeatService(db: Db) {
     reportRunActivity: clearDetachedRunWarning,
 
     reapOrphanedRuns,
+
+    pruneHeartbeatRunData,
 
     resetAllAgentSessions,
 

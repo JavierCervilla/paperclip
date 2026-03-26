@@ -620,6 +620,16 @@ export async function startServer(): Promise<StartedServer> {
     }, backupIntervalMs);
   }
 
+  // Periodically prune heavy columns from old completed heartbeat runs to prevent
+  // the heartbeat_runs table from growing unbounded (linked to the backup crash issue).
+  // Run every 6 hours; TTL defaults to 7 days.
+  const heartbeatRunPruneIntervalMs = 6 * 60 * 60 * 1000;
+  setInterval(() => {
+    void heartbeat.pruneHeartbeatRunData({ ttlDays: 7 }).catch((err) => {
+      logger.error({ err }, "heartbeat_runs TTL pruning failed");
+    });
+  }, heartbeatRunPruneIntervalMs);
+
   await new Promise<void>((resolveListen, rejectListen) => {
     const onError = (err: Error) => {
       server.off("error", onError);
