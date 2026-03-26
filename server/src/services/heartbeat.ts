@@ -95,6 +95,67 @@ const SESSIONED_LOCAL_ADAPTERS = new Set([
 const QUOTA_LIMIT_PATTERN = /you(?:'ve|'ve| have) hit your limit/i;
 const RESET_TIME_PATTERN = /resets?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*\(?\s*UTC\s*\)?/i;
 
+/**
+ * Detects transient API rate-limit errors (HTTP 429 / rate_limit_error /
+ * overloaded_error) that should trigger a short exponential-backoff pause
+ * rather than leaving the agent in a permanent error state.
+ */
+const TRANSIENT_RATE_LIMIT_PATTERN =
+  /rate[_\s-]?limit(?:ed|_error)?|overloaded(?:_error)?|too\s+many\s+requests|\b429\b/i;
+
+/** Initial backoff duration in seconds for the first rate-limit hit. */
+const RATE_LIMIT_BACKOFF_BASE_SEC = 60;
+/** Maximum backoff cap in seconds (~15 min). */
+const RATE_LIMIT_BACKOFF_MAX_SEC = 900;
+
+/**
+ * Returns true when the text indicates a transient provider rate-limit (not a
+ * subscription quota limit — those are handled by detectQuotaResetTime).
+ */
+function isTransientRateLimitError(text: string | null | undefined): boolean {
+  if (!text) return false;
+  // Exclude subscription-quota messages — those have their own reset-time flow.
+  if (QUOTA_LIMIT_PATTERN.test(text)) return false;
+  return TRANSIENT_RATE_LIMIT_PATTERN.test(text);
+}
+
+/**
+ * Scans multiple error surfaces for a transient rate-limit signal and returns
+ * a backoff Date if found.  `retryCount` drives exponential back-off capping at
+ * RATE_LIMIT_BACKOFF_MAX_SEC.
+ */
+function detectRateLimitBackoff(
+  adapterResult: { errorMessage?: string | null; resultJson?: unknown },
+  stderrExcerpt?: string | null,
+  retryCount = 0,
+): Date | null {
+  const isRateLimited =
+    isTransientRateLimitError(adapterResult.errorMessage) ||
+    isTransientRateLimitError(stderrExcerpt) ||
+    (() => {
+      if (!adapterResult.resultJson || typeof adapterResult.resultJson !== "object") return false;
+      const rj = adapterResult.resultJson as Record<string, unknown>;
+      if (rj.is_error && typeof rj.result === "string" && isTransientRateLimitError(rj.result)) return true;
+      // Also check errors array from Claude JSON output
+      if (Array.isArray(rj.errors)) {
+        return rj.errors.some(
+          (e) =>
+            (typeof e === "string" && isTransientRateLimitError(e)) ||
+            (typeof e === "object" &&
+              e !== null &&
+              (isTransientRateLimitError(String((e as Record<string, unknown>).type ?? "")) ||
+                isTransientRateLimitError(String((e as Record<string, unknown>).message ?? "")))),
+        );
+      }
+      return false;
+    })();
+
+  if (!isRateLimited) return null;
+
+  const backoffSec = Math.min(RATE_LIMIT_BACKOFF_BASE_SEC * 2 ** retryCount, RATE_LIMIT_BACKOFF_MAX_SEC);
+  return new Date(Date.now() + backoffSec * 1000);
+}
+
 function detectQuotaResetTime(errorText: string | null | undefined): Date | null {
   if (!errorText) return null;
   if (!QUOTA_LIMIT_PATTERN.test(errorText)) return null;
@@ -2801,6 +2862,19 @@ export function heartbeatService(db: Db) {
         }
         await finalizeAgentStatus(agent.id, outcome);
 
+        // Clear rate-limit retry counter on success so the next failure starts fresh backoff
+        if (outcome === "succeeded") {
+          const agentMeta = (agent.metadata as Record<string, unknown> | null) ?? {};
+          if (typeof agentMeta.rateLimitRetryCount === "number" && agentMeta.rateLimitRetryCount > 0) {
+            const cleanMeta = { ...agentMeta };
+            delete cleanMeta.rateLimitRetryCount;
+            await db
+              .update(agents)
+              .set({ metadata: Object.keys(cleanMeta).length > 0 ? cleanMeta : null, updatedAt: new Date() })
+              .where(eq(agents.id, agent.id));
+          }
+        }
+
         // Smart Retry: detect quota-limit errors and pause until reset
         if (outcome === "failed") {
           const quotaResetAt = detectQuotaResetFromRunResult(adapterResult, stderrExcerpt);
@@ -2832,6 +2906,47 @@ export function heartbeatService(db: Db) {
                 quotaResetAt: quotaResetAt.toISOString(),
               },
             });
+          } else {
+            // Smart Retry: detect transient 429/rate-limit errors and apply a short backoff pause
+            const agentMeta = (agent.metadata as Record<string, unknown> | null) ?? {};
+            const rateLimitRetryCount =
+              typeof agentMeta.rateLimitRetryCount === "number" ? agentMeta.rateLimitRetryCount : 0;
+            const rateLimitBackoffAt = detectRateLimitBackoff(adapterResult, stderrExcerpt, rateLimitRetryCount);
+            if (rateLimitBackoffAt) {
+              logger.info(
+                {
+                  agentId: agent.id,
+                  retryAfter: rateLimitBackoffAt.toISOString(),
+                  retryCount: rateLimitRetryCount,
+                  runId,
+                },
+                "transient rate-limit detected — pausing agent with backoff",
+              );
+              await db
+                .update(agents)
+                .set({
+                  status: "paused",
+                  pauseReason: "quota_reset",
+                  pausedAt: new Date(),
+                  metadata: {
+                    ...agentMeta,
+                    quotaResetAt: rateLimitBackoffAt.toISOString(),
+                    rateLimitRetryCount: rateLimitRetryCount + 1,
+                  },
+                  updatedAt: new Date(),
+                })
+                .where(eq(agents.id, agent.id));
+              publishLiveEvent({
+                companyId: agent.companyId,
+                type: "agent.status",
+                payload: {
+                  agentId: agent.id,
+                  status: "paused",
+                  pauseReason: "quota_reset",
+                  quotaResetAt: rateLimitBackoffAt.toISOString(),
+                },
+              });
+            }
           }
         }
       } catch (err) {
@@ -2932,6 +3047,43 @@ export function heartbeatService(db: Db) {
               status: "paused",
               pauseReason: "quota_reset",
               quotaResetAt: quotaResetAtCatch.toISOString(),
+            },
+          });
+        } else if (isTransientRateLimitError(message) || isTransientRateLimitError(stderrExcerpt)) {
+          // Transient rate-limit in the exception path — apply backoff pause
+          const agentMeta = (agent.metadata as Record<string, unknown> | null) ?? {};
+          const rateLimitRetryCount =
+            typeof agentMeta.rateLimitRetryCount === "number" ? agentMeta.rateLimitRetryCount : 0;
+          const rateLimitBackoffAt = new Date(
+            Date.now() +
+              Math.min(RATE_LIMIT_BACKOFF_BASE_SEC * 2 ** rateLimitRetryCount, RATE_LIMIT_BACKOFF_MAX_SEC) * 1000,
+          );
+          logger.info(
+            { agentId: agent.id, retryAfter: rateLimitBackoffAt.toISOString(), retryCount: rateLimitRetryCount, runId },
+            "transient rate-limit detected (catch path) — pausing agent with backoff",
+          );
+          await db
+            .update(agents)
+            .set({
+              status: "paused",
+              pauseReason: "quota_reset",
+              pausedAt: new Date(),
+              metadata: {
+                ...agentMeta,
+                quotaResetAt: rateLimitBackoffAt.toISOString(),
+                rateLimitRetryCount: rateLimitRetryCount + 1,
+              },
+              updatedAt: new Date(),
+            })
+            .where(eq(agents.id, agent.id));
+          publishLiveEvent({
+            companyId: agent.companyId,
+            type: "agent.status",
+            payload: {
+              agentId: agent.id,
+              status: "paused",
+              pauseReason: "quota_reset",
+              quotaResetAt: rateLimitBackoffAt.toISOString(),
             },
           });
         }
