@@ -68,28 +68,37 @@ function redactSecrets(obj: unknown): unknown {
   return out;
 }
 
-export const logger = pino({
-  level: "debug",
-  serializers: {
-    // Redact sensitive fields from arbitrary structured data attached to logs
-    reqBody: (val: unknown) => redactSecrets(val),
-    reqQuery: (val: unknown) => redactSecrets(val),
-    errorContext: (val: unknown) => redactSecrets(val),
+export const logger = pino(
+  {
+    level: "debug",
+    serializers: {
+      // Redact sensitive fields from arbitrary structured data attached to logs
+      reqBody: (val: unknown) => redactSecrets(val),
+      reqQuery: (val: unknown) => redactSecrets(val),
+      errorContext: (val: unknown) => redactSecrets(val),
+    },
   },
-}, pino.transport({
-  targets: [
-    {
-      target: "pino-pretty",
-      options: { ...sharedOpts, ignore: "pid,hostname,req,res,responseTime", colorize: true, destination: 1 },
-      level: "info",
-    },
-    {
-      target: "pino-pretty",
-      options: { ...sharedOpts, colorize: false, destination: logFile, mkdir: true },
-      level: "debug",
-    },
-  ],
-}));
+  pino.transport({
+    targets: [
+      {
+        target: "pino-pretty",
+        options: { ...sharedOpts, ignore: "pid,hostname,req,res,responseTime", colorize: true, destination: 1 },
+        level: "info",
+      },
+      {
+        target: "pino-pretty",
+        options: {
+          ...sharedOpts,
+          ignore: "pid,hostname,req,res,responseTime",
+          colorize: false,
+          destination: logFile,
+          mkdir: true,
+        },
+        level: "debug",
+      },
+    ],
+  }),
+);
 
 export const httpLogger = pinoHttp({
   logger,
