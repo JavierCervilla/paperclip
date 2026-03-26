@@ -1424,6 +1424,8 @@ function ConfigurationTab({
   hideInstructionsFile?: boolean;
 }) {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const { tab } = useParams<{ tab?: string }>();
   const { pushToast } = useToast();
   const [awaitingRefreshAfterSave, setAwaitingRefreshAfterSave] = useState(false);
   const lastAgentRef = useRef(agent);
@@ -1441,16 +1443,28 @@ function ConfigurationTab({
     onMutate: () => {
       setAwaitingRefreshAfterSave(true);
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(agent.id) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(agent.urlKey) });
       queryClient.invalidateQueries({ queryKey: queryKeys.agents.configRevisions(agent.id) });
       queryClient.invalidateQueries({ queryKey: queryKeys.agents.list(agent.companyId) });
+      if (data.urlKey !== agent.urlKey) {
+        // Agent was renamed — navigate to the new URL so the old urlKey query
+        // does not refetch and produce a misleading "Agent Not Found" error.
+        navigate(`/agents/${data.urlKey}/${tab ?? "configuration"}`, { replace: true });
+      } else {
+        queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(agent.urlKey) });
+      }
     },
     onError: (err) => {
       setAwaitingRefreshAfterSave(false);
-      const message =
-        err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Could not save agent";
+      let message: string;
+      if (err instanceof ApiError && err.status === 409) {
+        // 409 means a urlKey collision — show the server's conflict message rather
+        // than a generic fallback so the user understands why the save failed.
+        message = err.message || "This name is already in use by another agent.";
+      } else {
+        message = err instanceof Error ? err.message : "Could not save agent";
+      }
       pushToast({ title: "Save failed", body: message, tone: "error" });
     },
   });
