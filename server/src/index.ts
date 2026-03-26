@@ -532,9 +532,21 @@ export async function startServer(): Promise<StartedServer> {
 
     // Reap orphaned running runs at startup while in-memory execution state is empty,
     // then resume any persisted queued runs that were waiting on the previous process.
+    // Finally, wake any agents with in-progress assigned issues that have no active run
+    // (crash recovery for agents that were idle when the server went down).
     void heartbeat
       .reapOrphanedRuns()
       .then(() => heartbeat.resumeQueuedRuns())
+      .then(() =>
+        heartbeat.recoverInProgressAssignments().then((result) => {
+          if (result.recovered > 0) {
+            logger.warn(
+              { recovered: result.recovered },
+              "crash recovery: enqueued wakeups for in-progress assignments",
+            );
+          }
+        }),
+      )
       .catch((err) => {
         logger.error({ err }, "startup heartbeat recovery failed");
       });
@@ -570,6 +582,16 @@ export async function startServer(): Promise<StartedServer> {
           logger.error({ err }, "periodic heartbeat recovery failed");
         });
     }, config.heartbeatSchedulerIntervalMs);
+
+    // Periodically prune heavy columns from old completed heartbeat runs to prevent
+    // the heartbeat_runs table from growing unbounded (linked to the backup crash issue).
+    // Run every 6 hours; TTL defaults to 7 days.
+    const heartbeatRunPruneIntervalMs = 6 * 60 * 60 * 1000;
+    setInterval(() => {
+      void heartbeat.pruneHeartbeatRunData({ ttlDays: 7 }).catch((err: unknown) => {
+        logger.error({ err }, "heartbeat_runs TTL pruning failed");
+      });
+    }, heartbeatRunPruneIntervalMs);
   }
 
   if (config.databaseBackupEnabled) {
@@ -619,16 +641,6 @@ export async function startServer(): Promise<StartedServer> {
       void runScheduledBackup();
     }, backupIntervalMs);
   }
-
-  // Periodically prune heavy columns from old completed heartbeat runs to prevent
-  // the heartbeat_runs table from growing unbounded (linked to the backup crash issue).
-  // Run every 6 hours; TTL defaults to 7 days.
-  const heartbeatRunPruneIntervalMs = 6 * 60 * 60 * 1000;
-  setInterval(() => {
-    void heartbeat.pruneHeartbeatRunData({ ttlDays: 7 }).catch((err) => {
-      logger.error({ err }, "heartbeat_runs TTL pruning failed");
-    });
-  }, heartbeatRunPruneIntervalMs);
 
   await new Promise<void>((resolveListen, rejectListen) => {
     const onError = (err: Error) => {

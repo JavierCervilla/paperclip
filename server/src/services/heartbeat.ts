@@ -1187,9 +1187,11 @@ export function heartbeatService(db: Db) {
           `Project workspace has no local cwd configured. Using fallback workspace "${fallbackCwd}" for this run.`,
         );
       }
+      // Use "agent_home" source so adapters can fall back to their configured
+      // cwd when the project workspace paths are not yet available on disk.
       return {
         cwd: fallbackCwd,
-        source: "project_primary" as const,
+        source: "agent_home" as const,
         projectId: resolvedProjectId,
         workspaceId: projectWorkspaceRows[0]?.id ?? null,
         repoUrl: projectWorkspaceRows[0]?.repoUrl ?? null,
@@ -1885,6 +1887,58 @@ export function heartbeatService(db: Db) {
     for (const agentId of agentIds) {
       await startNextQueuedRunForAgent(agentId);
     }
+  }
+
+  // After a server restart, agents that had in-progress assigned issues but no
+  // queued or running run will never wake up on their own — the timer won't fire
+  // until the next interval, and even then the issue context was missing (see
+  // tickTimers fix). This function finds those agents and enqueues a recovery
+  // wakeup immediately so they resume work without waiting for the timer.
+  async function recoverInProgressAssignments() {
+    const inProgressIssues = await db
+      .select({
+        id: issues.id,
+        assigneeAgentId: issues.assigneeAgentId,
+        projectId: issues.projectId,
+      })
+      .from(issues)
+      .where(and(eq(issues.status, "in_progress"), isNotNull(issues.assigneeAgentId)));
+
+    let recovered = 0;
+    for (const issue of inProgressIssues) {
+      if (!issue.assigneeAgentId) continue;
+
+      // Skip if there's already an active or queued run for this agent/issue.
+      const [activeRun] = await db
+        .select({ id: heartbeatRuns.id })
+        .from(heartbeatRuns)
+        .where(
+          and(eq(heartbeatRuns.agentId, issue.assigneeAgentId), inArray(heartbeatRuns.status, ["queued", "running"])),
+        )
+        .limit(1);
+      if (activeRun) continue;
+
+      try {
+        const run = await enqueueWakeup(issue.assigneeAgentId, {
+          source: "timer",
+          triggerDetail: "system",
+          reason: "crash_recovery",
+          requestedByActorType: "system",
+          requestedByActorId: "heartbeat_scheduler",
+          contextSnapshot: {
+            source: "crash_recovery",
+            reason: "crash_recovery",
+            issueId: issue.id,
+            taskId: issue.id,
+            ...(issue.projectId ? { projectId: issue.projectId } : {}),
+          },
+        });
+        if (run) recovered += 1;
+      } catch (err) {
+        logger.warn({ err, issueId: issue.id, agentId: issue.assigneeAgentId }, "crash recovery wakeup skipped");
+      }
+    }
+    return { recovered };
   }
 
   async function updateRuntimeState(
@@ -3870,6 +3924,8 @@ export function heartbeatService(db: Db) {
 
     resumeQueuedRuns,
 
+    recoverInProgressAssignments,
+
     tickTimers: async (now = new Date()) => {
       const allAgents = await db.select().from(agents);
       // Load paused company IDs once per tick cycle
@@ -3952,6 +4008,22 @@ export function heartbeatService(db: Db) {
         const elapsedMs = now.getTime() - baseline;
         if (elapsedMs < policy.intervalSec * 1000) continue;
 
+        // Fetch the agent's currently assigned in-progress issue so workspace
+        // resolution in executeRun can find the correct project workspace.
+        const assignedIssue = await db
+          .select({ id: issues.id, projectId: issues.projectId })
+          .from(issues)
+          .where(
+            and(
+              eq(issues.companyId, agent.companyId),
+              eq(issues.assigneeAgentId, agent.id),
+              eq(issues.status, "in_progress"),
+            ),
+          )
+          .orderBy(desc(issues.updatedAt))
+          .limit(1)
+          .then((rows) => rows[0] ?? null);
+
         const run = await enqueueWakeup(agent.id, {
           source: "timer",
           triggerDetail: "system",
@@ -3962,6 +4034,9 @@ export function heartbeatService(db: Db) {
             source: "scheduler",
             reason: "interval_elapsed",
             now: now.toISOString(),
+            ...(assignedIssue
+              ? { issueId: assignedIssue.id, taskId: assignedIssue.id, projectId: assignedIssue.projectId }
+              : {}),
           },
         });
         if (run) enqueued += 1;
