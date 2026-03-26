@@ -1,5 +1,5 @@
 /// <reference path="./types/express.d.ts" />
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
@@ -30,6 +30,31 @@ import { heartbeatService, reconcilePersistedRuntimeServicesOnStartup, routineSe
 import { createStorageServiceFromConfig } from "./storage/index.js";
 import { printStartupBanner } from "./startup-banner.js";
 import { getBoardClaimWarningUrl, initializeBoardClaimChallenge } from "./board-claim.js";
+import { resolvePaperclipConfigPath } from "./paths.js";
+
+/**
+ * Writes the actual listen port back to the config file so that subsequent
+ * restarts (without an ambient PORT env var) use the same port.  This is
+ * particularly important for worktree instances whose config has an explicit
+ * port: if the preferred port was busy at startup and a fallback was used, the
+ * config file must be updated so the next start lands on the same port.
+ *
+ * The write is skipped when no config file exists (e.g. bare Docker deployments
+ * that rely entirely on PORT env vars).
+ */
+function maybePersistWorktreeRuntimePorts(selectedPort: number): void {
+  const configPath = resolvePaperclipConfigPath();
+  if (!existsSync(configPath)) return;
+  try {
+    const raw = JSON.parse(readFileSync(configPath, "utf-8")) as Record<string, unknown>;
+    const server = (raw.server ?? {}) as Record<string, unknown>;
+    if (server.port === selectedPort) return; // already correct, skip write
+    raw.server = { ...server, port: selectedPort };
+    writeFileSync(configPath, JSON.stringify(raw, null, 2) + "\n", "utf-8");
+  } catch (err) {
+    logger.warn({ err, configPath }, "failed to persist runtime listen port to config file");
+  }
+}
 
 type BetterAuthSessionUser = {
   id: string;
@@ -494,6 +519,10 @@ export async function startServer(): Promise<StartedServer> {
       `Requested port is busy; using next free port (requestedPort=${config.port}, selectedPort=${listenPort})`,
     );
   }
+
+  // Persist the actual listen port to the config file so restarts use the same
+  // port even when the ambient PORT env var is absent or differs.
+  maybePersistWorktreeRuntimePorts(listenPort);
 
   const runtimeListenHost = config.host;
   const runtimeApiHost =
