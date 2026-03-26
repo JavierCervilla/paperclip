@@ -812,8 +812,14 @@ export function agentRoutes(db: Db) {
     assertCompanyAccess(req, companyId);
     const result = await svc.list(companyId);
     const canReadConfigs = await actorCanReadConfigurationsForCompany(req, companyId);
-    if (canReadConfigs || req.actor.type === "board") {
-      res.json(result);
+    if (canReadConfigs) {
+      res.json(
+        result.map((agent) => ({
+          ...agent,
+          adapterConfig: redactEventPayload(agent.adapterConfig as Record<string, unknown>),
+          runtimeConfig: redactEventPayload(agent.runtimeConfig as Record<string, unknown>),
+        })),
+      );
       return;
     }
     res.json(result.map((agent) => redactForRestrictedAgentView(agent)));
@@ -985,7 +991,8 @@ export function agentRoutes(db: Db) {
       return;
     }
     assertCompanyAccess(req, agent.companyId);
-    if (req.actor.type === "agent" && req.actor.agentId !== id) {
+    const isSelf = req.actor.type === "agent" && req.actor.agentId === id;
+    if (!isSelf) {
       const canRead = await actorCanReadConfigurationsForCompany(req, agent.companyId);
       if (!canRead) {
         res.json(await buildAgentDetail(agent, { restricted: true }));
