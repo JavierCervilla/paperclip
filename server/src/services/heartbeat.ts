@@ -4070,6 +4070,46 @@ export function heartbeatService(db: Db) {
 
     reapOrphanedRuns,
 
+    sweepStaleExecutionLocks: async () => {
+      const TERMINAL_STATUSES = ["succeeded", "failed", "timed_out", "cancelled", "process_lost"];
+
+      // Find issues with an executionRunId that is either missing or terminal.
+      const staleIssues = await db.execute(sql`
+        SELECT i.id, i.identifier, i.execution_run_id
+        FROM issues i
+        WHERE i.execution_run_id IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM heartbeat_runs hr
+            WHERE hr.id = i.execution_run_id
+              AND hr.status NOT IN (${sql.join(
+                TERMINAL_STATUSES.map((s) => sql`${s}`),
+                sql`, `,
+              )})
+          )
+      `);
+
+      if (staleIssues.length === 0) return { cleared: 0 };
+
+      const staleIds = staleIssues.map((r: Record<string, unknown>) => r.id as string);
+
+      await db
+        .update(issues)
+        .set({
+          executionRunId: null,
+          executionAgentNameKey: null,
+          executionLockedAt: null,
+          updatedAt: new Date(),
+        })
+        .where(inArray(issues.id, staleIds));
+
+      logger.info(
+        { count: staleIds.length, issueIds: staleIds },
+        "swept stale execution locks from issues pointing to terminal/missing runs",
+      );
+
+      return { cleared: staleIds.length };
+    },
+
     pruneHeartbeatRunData,
 
     resetAllAgentSessions,
