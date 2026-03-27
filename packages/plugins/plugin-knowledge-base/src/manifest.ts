@@ -1,5 +1,5 @@
 import type { PaperclipPluginManifestV1 } from "@paperclipai/plugin-sdk";
-import { EXPORT_NAMES, JOB_KEYS, PAGE_ROUTE, PLUGIN_ID, PLUGIN_VERSION, SLOT_IDS, TOOL_NAMES } from "./constants.js";
+import { EXPORT_NAMES, PAGE_ROUTE, PLUGIN_ID, PLUGIN_VERSION, SLOT_IDS, TOOL_NAMES } from "./constants.js";
 
 const manifest: PaperclipPluginManifestV1 = {
   id: PLUGIN_ID,
@@ -9,17 +9,7 @@ const manifest: PaperclipPluginManifestV1 = {
   description: "Organizational memory for agents and teams. Store, search, and deprecate knowledge entries.",
   author: "Paperclip",
   categories: ["automation", "ui"],
-  capabilities: [
-    "agent.tools.register",
-    "ui.page.register",
-    "ui.dashboardWidget.register",
-    "ui.detailTab.register",
-    "events.subscribe",
-    "jobs.schedule",
-    "issues.read",
-    "issue.comments.read",
-    "companies.read",
-  ],
+  capabilities: ["agent.tools.register", "ui.page.register", "ui.dashboardWidget.register", "ui.detailTab.register"],
   entrypoints: {
     worker: "./dist/worker.js",
     ui: "./dist/ui",
@@ -85,14 +75,6 @@ const manifest: PaperclipPluginManifestV1 = {
         },
         required: ["id"],
       },
-    },
-  ],
-  jobs: [
-    {
-      jobKey: JOB_KEYS.decay,
-      displayName: "KB Decay",
-      description: "Marks stale, low-access knowledge base entries as deprecated (runs weekly).",
-      schedule: "0 3 * * 0",
     },
   ],
   ui: {

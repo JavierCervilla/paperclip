@@ -21,7 +21,3 @@ export const EXPORT_NAMES = {
   dashboardWidget: "KBDashboardWidget",
   issueTab: "KBIssueTab",
 } as const;
-
-export const JOB_KEYS = {
-  decay: "kb-decay",
-} as const;

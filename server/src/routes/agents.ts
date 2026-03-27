@@ -19,6 +19,7 @@ import {
   updateAgentInstructionsBundleSchema,
   ROLE_HIERARCHY_LEVELS,
   type AgentRole,
+  type PermissionKey,
   updateAgentPermissionsSchema,
   updateAgentWorkspaceConfigSchema,
   updateAgentInstructionsPathSchema,
@@ -1384,6 +1385,7 @@ export function agentRoutes(db: Db) {
 
     const effectiveCanAssignTasks =
       agent.role === "ceo" || Boolean(agent.permissions?.canCreateAgents) || req.body.canAssignTasks;
+    const grantedBy = req.actor.type === "board" ? (req.actor.userId ?? null) : null;
     await access.ensureMembership(agent.companyId, "agent", agent.id, "member", "active");
     await access.setPrincipalPermission(
       agent.companyId,
@@ -1391,8 +1393,25 @@ export function agentRoutes(db: Db) {
       agent.id,
       "tasks:assign",
       effectiveCanAssignTasks,
-      req.actor.type === "board" ? (req.actor.userId ?? null) : null,
+      grantedBy,
     );
+
+    // Process additional granular permission grants
+    if (req.body.grants && typeof req.body.grants === "object") {
+      const grants = req.body.grants as Record<string, boolean>;
+      for (const [key, enabled] of Object.entries(grants)) {
+        // Skip tasks:assign — already handled above
+        if (key === "tasks:assign") continue;
+        await access.setPrincipalPermission(
+          agent.companyId,
+          "agent",
+          agent.id,
+          key as PermissionKey,
+          enabled,
+          grantedBy,
+        );
+      }
+    }
 
     const actor = getActorInfo(req);
     await logActivity(db, {
@@ -1407,7 +1426,7 @@ export function agentRoutes(db: Db) {
       details: {
         canCreateAgents: agent.permissions?.canCreateAgents ?? false,
         canAssignTasks: effectiveCanAssignTasks,
-        canReadSecrets: agent.permissions?.canReadSecrets ?? false,
+        ...(req.body.grants ?? {}),
       },
     });
 

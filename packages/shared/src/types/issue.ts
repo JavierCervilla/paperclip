@@ -143,6 +143,7 @@ export interface Issue {
   myLastTouchAt?: Date | null;
   lastExternalCommentAt?: Date | null;
   isUnreadForMe?: boolean;
+  questionData?: QuestionData | null;
   createdAt: Date;
   updatedAt: Date;
 }

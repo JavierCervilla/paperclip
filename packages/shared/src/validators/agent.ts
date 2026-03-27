@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { AGENT_ADAPTER_TYPES, AGENT_ICON_NAMES, AGENT_ROLES, AGENT_STATUSES } from "../constants.js";
+import { AGENT_ADAPTER_TYPES, AGENT_ICON_NAMES, AGENT_ROLES, AGENT_STATUSES, PERMISSION_KEYS } from "../constants.js";
 import { envConfigSchema } from "./secret.js";
 
 export const agentPermissionsSchema = z.object({
@@ -130,10 +130,12 @@ export const updateAgentWorkspaceConfigSchema = agentWorkspaceConfigSchema;
 
 export type UpdateAgentWorkspaceConfig = z.infer<typeof updateAgentWorkspaceConfigSchema>;
 
+const permissionKeyEnum = z.enum(PERMISSION_KEYS as unknown as [string, ...string[]]);
+
 export const updateAgentPermissionsSchema = z.object({
   canCreateAgents: z.boolean(),
   canAssignTasks: z.boolean(),
-  canReadSecrets: z.boolean().optional(),
+  grants: z.record(permissionKeyEnum, z.boolean()).optional(),
 });
 
 export type UpdateAgentPermissions = z.infer<typeof updateAgentPermissionsSchema>;

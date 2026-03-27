@@ -2,12 +2,10 @@ import { useState } from "react";
 import {
   useHostContext,
   usePluginData,
-  usePluginAction,
   type PluginDetailTabProps,
   type PluginPageProps,
   type PluginWidgetProps,
 } from "@paperclipai/plugin-sdk/ui";
-import { TOOL_NAMES } from "../constants.js";
 
 type KBEntry = {
   id: string;
