@@ -3,6 +3,7 @@ import type { Goal } from "./goal.js";
 import type { Project, ProjectWorkspace } from "./project.js";
 import type { ExecutionWorkspace, IssueExecutionWorkspaceSettings } from "./workspace-runtime.js";
 import type { IssueWorkProduct } from "./work-product.js";
+import type { QuestionData } from "../validators/issue.js";
 
 export interface IssueAncestorProject {
   id: string;
@@ -142,6 +143,7 @@ export interface Issue {
   myLastTouchAt?: Date | null;
   lastExternalCommentAt?: Date | null;
   isUnreadForMe?: boolean;
+  questionData?: QuestionData | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -153,6 +155,7 @@ export interface IssueComment {
   authorAgentId: string | null;
   authorUserId: string | null;
   body: string;
+  questionData?: QuestionData | null;
   createdAt: Date;
   updatedAt: Date;
 }

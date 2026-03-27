@@ -1,11 +1,5 @@
 import type { AdapterConfigFieldsProps } from "../types";
-import {
-  Field,
-  ToggleField,
-  DraftInput,
-  DraftNumberInput,
-  help,
-} from "../../components/agent-config-primitives";
+import { Field, ToggleField, DraftInput, DraftNumberInput, help } from "../../components/agent-config-primitives";
 import { ChoosePathButton } from "../../components/PathInstructionsModal";
 import { LocalWorkspaceRuntimeFields } from "../local-workspace-runtime-fields";
 import { useState } from "react";
@@ -36,12 +30,8 @@ export function ClaudeLocalConfigFields({
             <DraftInput
               value={
                 isCreate
-                  ? values!.instructionsFilePath ?? ""
-                  : eff(
-                      "adapterConfig",
-                      "instructionsFilePath",
-                      String(config.instructionsFilePath ?? ""),
-                    )
+                  ? (values!.instructionsFilePath ?? "")
+                  : eff("adapterConfig", "instructionsFilePath", String(config.instructionsFilePath ?? ""))
               }
               onCommit={(v) =>
                 isCreate
@@ -70,7 +60,6 @@ export function ClaudeLocalConfigFields({
     </>
   );
 }
-
 
 const TOOL_SUGGESTIONS = ["Bash(curl:*)", "Bash(git:*)", "Read", "Write", "Edit", "Grep", "Glob", "Agent", "WebFetch"];
 
@@ -127,54 +116,54 @@ function TagListInput({
         placeholder={placeholder ?? "Type a tool pattern and press Enter to add"}
       />
       {suggestions.length > 0 && (
-        <p className="text-xs text-muted-foreground">
-          Examples: {suggestions.slice(0, 5).join(", ")}
-        </p>
+        <p className="text-xs text-muted-foreground">Examples: {suggestions.slice(0, 5).join(", ")}</p>
       )}
     </div>
   );
 }
 
-export function ClaudeLocalAdvancedFields({
-  isCreate,
-  values,
-  set,
-  config,
-  eff,
-  mark,
-}: AdapterConfigFieldsProps) {
+export function ClaudeLocalAdvancedFields({ isCreate, values, set, config, eff, mark }: AdapterConfigFieldsProps) {
   return (
     <>
       <ToggleField
         label="Enable Chrome"
         hint={help.chrome}
-        checked={
-          isCreate
-            ? values!.chrome
-            : eff("adapterConfig", "chrome", config.chrome === true)
-        }
-        onChange={(v) =>
-          isCreate
-            ? set!({ chrome: v })
-            : mark("adapterConfig", "chrome", v)
-        }
+        checked={isCreate ? values!.chrome : eff("adapterConfig", "chrome", config.chrome === true)}
+        onChange={(v) => (isCreate ? set!({ chrome: v }) : mark("adapterConfig", "chrome", v))}
       />
+      <Field
+        label="Permission mode"
+        hint="Controls how Claude handles permission checks. 'auto' uses AI-based safe-operation classification (recommended). 'default' shows interactive prompts. 'bypassPermissions' skips all checks. 'plan' restricts to read-only planning. When set, this takes precedence over Skip permissions."
+      >
+        <select
+          className={inputClass}
+          value={
+            isCreate
+              ? (values!.permissionMode ?? "auto")
+              : eff("adapterConfig", "permissionMode", String(config.permissionMode ?? "auto"))
+          }
+          onChange={(e) =>
+            isCreate
+              ? set!({ permissionMode: e.target.value })
+              : mark("adapterConfig", "permissionMode", e.target.value)
+          }
+        >
+          <option value="auto">auto — AI-based safe-operation classifier (recommended)</option>
+          <option value="default">default — interactive permission prompts</option>
+          <option value="bypassPermissions">bypassPermissions — skip all checks</option>
+          <option value="plan">plan — read-only planning mode</option>
+        </select>
+      </Field>
       <ToggleField
-        label="Skip permissions"
-        hint={help.dangerouslySkipPermissions}
+        label="Skip permissions (legacy)"
+        hint="Run Claude without permission prompts. Legacy flag — use Permission mode instead for new agents. Ignored when Permission mode is explicitly set."
         checked={
           isCreate
             ? values!.dangerouslySkipPermissions
-            : eff(
-                "adapterConfig",
-                "dangerouslySkipPermissions",
-                config.dangerouslySkipPermissions !== false,
-              )
+            : eff("adapterConfig", "dangerouslySkipPermissions", config.dangerouslySkipPermissions !== false)
         }
         onChange={(v) =>
-          isCreate
-            ? set!({ dangerouslySkipPermissions: v })
-            : mark("adapterConfig", "dangerouslySkipPermissions", v)
+          isCreate ? set!({ dangerouslySkipPermissions: v }) : mark("adapterConfig", "dangerouslySkipPermissions", v)
         }
       />
       <Field label="Max turns per run" hint={help.maxTurnsPerRun}>
@@ -187,11 +176,7 @@ export function ClaudeLocalAdvancedFields({
           />
         ) : (
           <DraftNumberInput
-            value={eff(
-              "adapterConfig",
-              "maxTurnsPerRun",
-              Number(config.maxTurnsPerRun ?? 300),
-            )}
+            value={eff("adapterConfig", "maxTurnsPerRun", Number(config.maxTurnsPerRun ?? 300))}
             onCommit={(v) => mark("adapterConfig", "maxTurnsPerRun", v || 300)}
             immediate
             className={inputClass}
@@ -205,9 +190,7 @@ export function ClaudeLocalAdvancedFields({
         <TagListInput
           value={isCreate ? (values!.allowedTools ?? []) : ((config.allowedTools as string[] | undefined) ?? [])}
           onChange={(v) =>
-            isCreate
-              ? set!({ allowedTools: v })
-              : mark("adapterConfig", "allowedTools", v.length ? v : undefined)
+            isCreate ? set!({ allowedTools: v }) : mark("adapterConfig", "allowedTools", v.length ? v : undefined)
           }
         />
       </Field>
@@ -218,9 +201,7 @@ export function ClaudeLocalAdvancedFields({
         <TagListInput
           value={isCreate ? (values!.disallowedTools ?? []) : ((config.disallowedTools as string[] | undefined) ?? [])}
           onChange={(v) =>
-            isCreate
-              ? set!({ disallowedTools: v })
-              : mark("adapterConfig", "disallowedTools", v.length ? v : undefined)
+            isCreate ? set!({ disallowedTools: v }) : mark("adapterConfig", "disallowedTools", v.length ? v : undefined)
           }
         />
       </Field>

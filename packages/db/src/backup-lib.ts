@@ -1,5 +1,5 @@
-import { existsSync, mkdirSync, readdirSync, statSync, unlinkSync } from "node:fs";
-import { readFile, writeFile } from "node:fs/promises";
+import { createWriteStream, existsSync, mkdirSync, readdirSync, statSync, unlinkSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
 import postgres from "postgres";
 
@@ -53,9 +53,7 @@ const STATEMENT_BREAKPOINT = "-- paperclip statement breakpoint 69f6f3f1-42fd-46
 function sanitizeRestoreErrorMessage(error: unknown): string {
   if (error && typeof error === "object") {
     const record = error as Record<string, unknown>;
-    const firstLine = typeof record.message === "string"
-      ? record.message.split(/\r?\n/, 1)[0]?.trim()
-      : "";
+    const firstLine = typeof record.message === "string" ? record.message.split(/\r?\n/, 1)[0]?.trim() : "";
     const detail = typeof record.detail === "string" ? record.detail.trim() : "";
     const severity = typeof record.severity === "string" ? record.severity.trim() : "";
     const message = firstLine || detail || (error instanceof Error ? error.message : String(error));
@@ -95,6 +93,7 @@ function formatBackupSize(sizeBytes: number): string {
 }
 
 function formatSqlLiteral(value: string): string {
+  // eslint-disable-next-line no-control-regex
   const sanitized = value.replace(/\u0000/g, "");
   let tag = "$paperclip$";
   while (sanitized.includes(tag)) {
@@ -104,11 +103,7 @@ function formatSqlLiteral(value: string): string {
 }
 
 function normalizeTableNameSet(values: string[] | undefined): Set<string> {
-  return new Set(
-    (values ?? [])
-      .map((value) => value.trim())
-      .filter((value) => value.length > 0),
-  );
+  return new Set((values ?? []).map((value) => value.trim()).filter((value) => value.length > 0));
 }
 
 function normalizeNullifyColumnMap(values: Record<string, string[]> | undefined): Map<string, Set<string>> {
@@ -117,11 +112,7 @@ function normalizeNullifyColumnMap(values: Record<string, string[]> | undefined)
   for (const [tableName, columns] of Object.entries(values)) {
     const normalizedTable = tableName.trim();
     if (normalizedTable.length === 0) continue;
-    const normalizedColumns = new Set(
-      columns
-        .map((column) => column.trim())
-        .filter((column) => column.length > 0),
-    );
+    const normalizedColumns = new Set(columns.map((column) => column.trim()).filter((column) => column.length > 0));
     if (normalizedColumns.size > 0) {
       out.set(normalizedTable, normalizedColumns);
     }
@@ -130,7 +121,7 @@ function normalizeNullifyColumnMap(values: Record<string, string[]> | undefined)
 }
 
 function quoteIdentifier(value: string): string {
-  return `"${value.replaceAll("\"", "\"\"")}"`;
+  return `"${value.replaceAll('"', '""')}"`;
 }
 
 function quoteQualifiedName(schemaName: string, objectName: string): string {
@@ -150,11 +141,19 @@ export async function runDatabaseBackup(opts: RunDatabaseBackupOptions): Promise
   const nullifiedColumnsByTable = normalizeNullifyColumnMap(opts.nullifyColumns);
   const sql = postgres(opts.connectionString, { max: 1, connect_timeout: connectTimeout });
 
+  // Create the backup file upfront so we can stream directly to disk instead of
+  // buffering all SQL into a single JS string (which crashes with RangeError when
+  // the database exceeds ~250 MB — V8 string length limit).
+  mkdirSync(opts.backupDir, { recursive: true });
+  const backupFile = resolve(opts.backupDir, `${filenamePrefix}-${timestamp()}.sql`);
+  const fileStream = createWriteStream(backupFile, { encoding: "utf8" });
+
   try {
     await sql`SELECT 1`;
 
-    const lines: string[] = [];
-    const emit = (line: string) => lines.push(line);
+    const emit = (line: string) => {
+      fileStream.write(`${line}\n`);
+    };
     const emitStatement = (statement: string) => {
       emit(statement);
       emit(STATEMENT_BREAKPOINT);
@@ -256,16 +255,18 @@ export async function runDatabaseBackup(opts: RunDatabaseBackupOptions): Promise
     // Get full CREATE TABLE DDL via column info
     for (const { schema_name, tablename } of tables) {
       const qualifiedTableName = quoteQualifiedName(schema_name, tablename);
-      const columns = await sql<{
-        column_name: string;
-        data_type: string;
-        udt_name: string;
-        is_nullable: string;
-        column_default: string | null;
-        character_maximum_length: number | null;
-        numeric_precision: number | null;
-        numeric_scale: number | null;
-      }[]>`
+      const columns = await sql<
+        {
+          column_name: string;
+          data_type: string;
+          udt_name: string;
+          is_nullable: string;
+          column_default: string | null;
+          character_maximum_length: number | null;
+          numeric_precision: number | null;
+          numeric_scale: number | null;
+        }[]
+      >`
         SELECT column_name, data_type, udt_name, is_nullable, column_default,
                character_maximum_length, numeric_precision, numeric_scale
         FROM information_schema.columns
@@ -284,9 +285,7 @@ export async function runDatabaseBackup(opts: RunDatabaseBackupOptions): Promise
         } else if (col.data_type === "ARRAY") {
           typeStr = `${col.udt_name.replace(/^_/, "")}[]`;
         } else if (col.data_type === "character varying") {
-          typeStr = col.character_maximum_length
-            ? `varchar(${col.character_maximum_length})`
-            : "varchar";
+          typeStr = col.character_maximum_length ? `varchar(${col.character_maximum_length})` : "varchar";
         } else if (col.data_type === "numeric" && col.numeric_precision != null) {
           typeStr =
             col.numeric_scale != null
@@ -337,17 +336,19 @@ export async function runDatabaseBackup(opts: RunDatabaseBackupOptions): Promise
     }
 
     // Foreign keys (after all tables created)
-    const allForeignKeys = await sql<{
-      constraint_name: string;
-      source_schema: string;
-      source_table: string;
-      source_columns: string[];
-      target_schema: string;
-      target_table: string;
-      target_columns: string[];
-      update_rule: string;
-      delete_rule: string;
-    }[]>`
+    const allForeignKeys = await sql<
+      {
+        constraint_name: string;
+        source_schema: string;
+        source_table: string;
+        source_columns: string[];
+        target_schema: string;
+        target_table: string;
+        target_columns: string[];
+        update_rule: string;
+        delete_rule: string;
+      }[]
+    >`
       SELECT
         c.conname AS constraint_name,
         srcn.nspname AS source_schema,
@@ -373,8 +374,9 @@ export async function runDatabaseBackup(opts: RunDatabaseBackupOptions): Promise
       ORDER BY srcn.nspname, src.relname, c.conname
     `;
     const fks = allForeignKeys.filter(
-      (fk) => includedTableNames.has(tableKey(fk.source_schema, fk.source_table))
-        && includedTableNames.has(tableKey(fk.target_schema, fk.target_table)),
+      (fk) =>
+        includedTableNames.has(tableKey(fk.source_schema, fk.source_table)) &&
+        includedTableNames.has(tableKey(fk.target_schema, fk.target_table)),
     );
 
     if (fks.length > 0) {
@@ -390,12 +392,14 @@ export async function runDatabaseBackup(opts: RunDatabaseBackupOptions): Promise
     }
 
     // Unique constraints
-    const allUniqueConstraints = await sql<{
-      constraint_name: string;
-      schema_name: string;
-      tablename: string;
-      column_names: string[];
-    }[]>`
+    const allUniqueConstraints = await sql<
+      {
+        constraint_name: string;
+        schema_name: string;
+        tablename: string;
+        column_names: string[];
+      }[]
+    >`
       SELECT c.conname AS constraint_name,
              n.nspname AS schema_name,
              t.relname AS tablename,
@@ -411,13 +415,17 @@ export async function runDatabaseBackup(opts: RunDatabaseBackupOptions): Promise
       GROUP BY c.conname, n.nspname, t.relname
       ORDER BY n.nspname, t.relname, c.conname
     `;
-    const uniques = allUniqueConstraints.filter((entry) => includedTableNames.has(tableKey(entry.schema_name, entry.tablename)));
+    const uniques = allUniqueConstraints.filter((entry) =>
+      includedTableNames.has(tableKey(entry.schema_name, entry.tablename)),
+    );
 
     if (uniques.length > 0) {
       emit("-- Unique constraints");
       for (const u of uniques) {
         const cols = u.column_names.map((c) => `"${c}"`).join(", ");
-        emitStatement(`ALTER TABLE ${quoteQualifiedName(u.schema_name, u.tablename)} ADD CONSTRAINT "${u.constraint_name}" UNIQUE (${cols});`);
+        emitStatement(
+          `ALTER TABLE ${quoteQualifiedName(u.schema_name, u.tablename)} ADD CONSTRAINT "${u.constraint_name}" UNIQUE (${cols});`,
+        );
       }
       emit("");
     }
@@ -490,11 +498,11 @@ export async function runDatabaseBackup(opts: RunDatabaseBackupOptions): Promise
         const val = await sql.unsafe<{ last_value: string; is_called: boolean }[]>(
           `SELECT last_value::text, is_called FROM ${qualifiedSequenceName}`,
         );
-        const skipSequenceValue =
-          seq.owner_table !== null
-            && excludedTableNames.has(seq.owner_table);
+        const skipSequenceValue = seq.owner_table !== null && excludedTableNames.has(seq.owner_table);
         if (val[0] && !skipSequenceValue) {
-          emitStatement(`SELECT setval('${qualifiedSequenceName.replaceAll("'", "''")}', ${val[0].last_value}, ${val[0].is_called ? "true" : "false"});`);
+          emitStatement(
+            `SELECT setval('${qualifiedSequenceName.replaceAll("'", "''")}', ${val[0].last_value}, ${val[0].is_called ? "true" : "false"});`,
+          );
         }
       }
       emit("");
@@ -503,10 +511,11 @@ export async function runDatabaseBackup(opts: RunDatabaseBackupOptions): Promise
     emitStatement("COMMIT;");
     emit("");
 
-    // Write the backup file
-    mkdirSync(opts.backupDir, { recursive: true });
-    const backupFile = resolve(opts.backupDir, `${filenamePrefix}-${timestamp()}.sql`);
-    await writeFile(backupFile, lines.join("\n"), "utf8");
+    // Flush and close the write stream
+    await new Promise<void>((resolve, reject) => {
+      fileStream.on("error", reject);
+      fileStream.end(() => resolve());
+    });
 
     const sizeBytes = statSync(backupFile).size;
     const prunedCount = pruneOldBackups(opts.backupDir, retentionDays, filenamePrefix);
@@ -516,6 +525,15 @@ export async function runDatabaseBackup(opts: RunDatabaseBackupOptions): Promise
       sizeBytes,
       prunedCount,
     };
+  } catch (err) {
+    // Destroy the stream and remove the partial backup file on failure
+    fileStream.destroy();
+    try {
+      unlinkSync(backupFile);
+    } catch {
+      /* ignore */
+    }
+    throw err;
   } finally {
     await sql.end();
   }
@@ -537,14 +555,16 @@ export async function runDatabaseRestore(opts: RunDatabaseRestoreOptions): Promi
       await sql.unsafe(statement).execute();
     }
   } catch (error) {
-    const statementPreview = typeof error === "object" && error !== null && typeof (error as Record<string, unknown>).query === "string"
-      ? String((error as Record<string, unknown>).query)
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .find((line) => line.length > 0 && !line.startsWith("--"))
-      : null;
+    const statementPreview =
+      typeof error === "object" && error !== null && typeof (error as Record<string, unknown>).query === "string"
+        ? String((error as Record<string, unknown>).query)
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .find((line) => line.length > 0 && !line.startsWith("--"))
+        : null;
     throw new Error(
       `Failed to restore ${basename(opts.backupFile)}: ${sanitizeRestoreErrorMessage(error)}${statementPreview ? ` [statement: ${statementPreview.slice(0, 120)}]` : ""}`,
+      { cause: error },
     );
   } finally {
     await sql.end();

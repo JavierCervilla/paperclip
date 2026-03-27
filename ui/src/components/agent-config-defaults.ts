@@ -27,6 +27,7 @@ export const defaultCreateValues: CreateConfigValues = {
   maxTurnsPerRun: 300,
   heartbeatEnabled: false,
   intervalSec: 300,
+  permissionMode: "auto",
   allowedTools: [],
   disallowedTools: [],
 };

@@ -2,12 +2,14 @@ import { ROLE_DEFAULT_PERMISSIONS, type AgentRole, type PermissionKey } from "@p
 
 export type NormalizedAgentPermissions = Record<string, unknown> & {
   canCreateAgents: boolean;
+  canReadSecrets: boolean;
 };
 
 export function defaultPermissionsForRole(role: string): NormalizedAgentPermissions {
   const defaults = getDefaultPermissionKeysForRole(role);
   return {
     canCreateAgents: defaults.includes("agents:create"),
+    canReadSecrets: false,
   };
 }
 
@@ -16,10 +18,7 @@ export function getDefaultPermissionKeysForRole(role: string): readonly Permissi
   return ROLE_DEFAULT_PERMISSIONS[agentRole] ?? ROLE_DEFAULT_PERMISSIONS.general;
 }
 
-export function normalizeAgentPermissions(
-  permissions: unknown,
-  role: string,
-): NormalizedAgentPermissions {
+export function normalizeAgentPermissions(permissions: unknown, role: string): NormalizedAgentPermissions {
   const defaults = defaultPermissionsForRole(role);
   if (typeof permissions !== "object" || permissions === null || Array.isArray(permissions)) {
     return defaults;
@@ -27,9 +26,7 @@ export function normalizeAgentPermissions(
 
   const record = permissions as Record<string, unknown>;
   return {
-    canCreateAgents:
-      typeof record.canCreateAgents === "boolean"
-        ? record.canCreateAgents
-        : defaults.canCreateAgents,
+    canCreateAgents: typeof record.canCreateAgents === "boolean" ? record.canCreateAgents : defaults.canCreateAgents,
+    canReadSecrets: typeof record.canReadSecrets === "boolean" ? record.canReadSecrets : defaults.canReadSecrets,
   };
 }

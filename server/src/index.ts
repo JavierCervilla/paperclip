@@ -1,5 +1,5 @@
 /// <reference path="./types/express.d.ts" />
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
@@ -30,6 +30,31 @@ import { heartbeatService, reconcilePersistedRuntimeServicesOnStartup, routineSe
 import { createStorageServiceFromConfig } from "./storage/index.js";
 import { printStartupBanner } from "./startup-banner.js";
 import { getBoardClaimWarningUrl, initializeBoardClaimChallenge } from "./board-claim.js";
+import { resolvePaperclipConfigPath } from "./paths.js";
+
+/**
+ * Writes the actual listen port back to the config file so that subsequent
+ * restarts (without an ambient PORT env var) use the same port.  This is
+ * particularly important for worktree instances whose config has an explicit
+ * port: if the preferred port was busy at startup and a fallback was used, the
+ * config file must be updated so the next start lands on the same port.
+ *
+ * The write is skipped when no config file exists (e.g. bare Docker deployments
+ * that rely entirely on PORT env vars).
+ */
+function maybePersistWorktreeRuntimePorts(selectedPort: number): void {
+  const configPath = resolvePaperclipConfigPath();
+  if (!existsSync(configPath)) return;
+  try {
+    const raw = JSON.parse(readFileSync(configPath, "utf-8")) as Record<string, unknown>;
+    const server = (raw.server ?? {}) as Record<string, unknown>;
+    if (server.port === selectedPort) return; // already correct, skip write
+    raw.server = { ...server, port: selectedPort };
+    writeFileSync(configPath, JSON.stringify(raw, null, 2) + "\n", "utf-8");
+  } catch (err) {
+    logger.warn({ err, configPath }, "failed to persist runtime listen port to config file");
+  }
+}
 
 type BetterAuthSessionUser = {
   id: string;
@@ -495,6 +520,10 @@ export async function startServer(): Promise<StartedServer> {
     );
   }
 
+  // Persist the actual listen port to the config file so restarts use the same
+  // port even when the ambient PORT env var is absent or differs.
+  maybePersistWorktreeRuntimePorts(listenPort);
+
   const runtimeListenHost = config.host;
   const runtimeApiHost =
     runtimeListenHost === "0.0.0.0" || runtimeListenHost === "::" ? "localhost" : runtimeListenHost;
@@ -531,10 +560,25 @@ export async function startServer(): Promise<StartedServer> {
     });
 
     // Reap orphaned running runs at startup while in-memory execution state is empty,
-    // then resume any persisted queued runs that were waiting on the previous process.
+    // then sweep any issues whose executionRunId points to a dead run — these can
+    // accumulate when the server is killed mid-run and would otherwise block all future
+    // checkouts on those issues indefinitely.
+    // Finally, resume queued runs and wake any agents with in-progress assigned issues
+    // that have no active run (crash recovery for agents that were idle when the server went down).
     void heartbeat
       .reapOrphanedRuns()
+      .then(() => heartbeat.sweepStaleExecutionLocks())
       .then(() => heartbeat.resumeQueuedRuns())
+      .then(() =>
+        heartbeat.recoverInProgressAssignments().then((result) => {
+          if (result.recovered > 0) {
+            logger.warn(
+              { recovered: result.recovered },
+              "crash recovery: enqueued wakeups for in-progress assignments",
+            );
+          }
+        }),
+      )
       .catch((err) => {
         logger.error({ err }, "startup heartbeat recovery failed");
       });
@@ -561,15 +605,27 @@ export async function startServer(): Promise<StartedServer> {
           logger.error({ err }, "routine scheduler tick failed");
         });
 
-      // Periodically reap orphaned runs (5-min staleness threshold) and make sure
-      // persisted queued work is still being driven forward.
+      // Periodically reap orphaned runs (5-min staleness threshold), sweep any stale
+      // execution lock fields left by dead runs, and make sure persisted queued work is
+      // still being driven forward.
       void heartbeat
         .reapOrphanedRuns({ staleThresholdMs: 5 * 60 * 1000 })
+        .then(() => heartbeat.sweepStaleExecutionLocks())
         .then(() => heartbeat.resumeQueuedRuns())
         .catch((err) => {
           logger.error({ err }, "periodic heartbeat recovery failed");
         });
     }, config.heartbeatSchedulerIntervalMs);
+
+    // Periodically prune heavy columns from old completed heartbeat runs to prevent
+    // the heartbeat_runs table from growing unbounded (linked to the backup crash issue).
+    // Run every 6 hours; TTL defaults to 7 days.
+    const heartbeatRunPruneIntervalMs = 6 * 60 * 60 * 1000;
+    setInterval(() => {
+      void heartbeat.pruneHeartbeatRunData({ ttlDays: 7 }).catch((err: unknown) => {
+        logger.error({ err }, "heartbeat_runs TTL pruning failed");
+      });
+    }, heartbeatRunPruneIntervalMs);
   }
 
   if (config.databaseBackupEnabled) {
