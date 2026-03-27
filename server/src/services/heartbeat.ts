@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { execFile as execFileCallback } from "node:child_process";
 import { promisify } from "node:util";
-import { and, asc, desc, eq, gt, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNotNull, lt, or, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import type { BillingType } from "@paperclipai/shared";
 import {
@@ -94,6 +94,67 @@ const SESSIONED_LOCAL_ADAPTERS = new Set([
  */
 const QUOTA_LIMIT_PATTERN = /you(?:'ve|'ve| have) hit your limit/i;
 const RESET_TIME_PATTERN = /resets?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*\(?\s*UTC\s*\)?/i;
+
+/**
+ * Detects transient API rate-limit errors (HTTP 429 / rate_limit_error /
+ * overloaded_error) that should trigger a short exponential-backoff pause
+ * rather than leaving the agent in a permanent error state.
+ */
+const TRANSIENT_RATE_LIMIT_PATTERN =
+  /rate[_\s-]?limit(?:ed|_error)?|overloaded(?:_error)?|too\s+many\s+requests|\b429\b/i;
+
+/** Initial backoff duration in seconds for the first rate-limit hit. */
+const RATE_LIMIT_BACKOFF_BASE_SEC = 60;
+/** Maximum backoff cap in seconds (~15 min). */
+const RATE_LIMIT_BACKOFF_MAX_SEC = 900;
+
+/**
+ * Returns true when the text indicates a transient provider rate-limit (not a
+ * subscription quota limit — those are handled by detectQuotaResetTime).
+ */
+function isTransientRateLimitError(text: string | null | undefined): boolean {
+  if (!text) return false;
+  // Exclude subscription-quota messages — those have their own reset-time flow.
+  if (QUOTA_LIMIT_PATTERN.test(text)) return false;
+  return TRANSIENT_RATE_LIMIT_PATTERN.test(text);
+}
+
+/**
+ * Scans multiple error surfaces for a transient rate-limit signal and returns
+ * a backoff Date if found.  `retryCount` drives exponential back-off capping at
+ * RATE_LIMIT_BACKOFF_MAX_SEC.
+ */
+function detectRateLimitBackoff(
+  adapterResult: { errorMessage?: string | null; resultJson?: unknown },
+  stderrExcerpt?: string | null,
+  retryCount = 0,
+): Date | null {
+  const isRateLimited =
+    isTransientRateLimitError(adapterResult.errorMessage) ||
+    isTransientRateLimitError(stderrExcerpt) ||
+    (() => {
+      if (!adapterResult.resultJson || typeof adapterResult.resultJson !== "object") return false;
+      const rj = adapterResult.resultJson as Record<string, unknown>;
+      if (rj.is_error && typeof rj.result === "string" && isTransientRateLimitError(rj.result)) return true;
+      // Also check errors array from Claude JSON output
+      if (Array.isArray(rj.errors)) {
+        return rj.errors.some(
+          (e) =>
+            (typeof e === "string" && isTransientRateLimitError(e)) ||
+            (typeof e === "object" &&
+              e !== null &&
+              (isTransientRateLimitError(String((e as Record<string, unknown>).type ?? "")) ||
+                isTransientRateLimitError(String((e as Record<string, unknown>).message ?? "")))),
+        );
+      }
+      return false;
+    })();
+
+  if (!isRateLimited) return null;
+
+  const backoffSec = Math.min(RATE_LIMIT_BACKOFF_BASE_SEC * 2 ** retryCount, RATE_LIMIT_BACKOFF_MAX_SEC);
+  return new Date(Date.now() + backoffSec * 1000);
+}
 
 function detectQuotaResetTime(errorText: string | null | undefined): Date | null {
   if (!errorText) return null;
@@ -1187,9 +1248,11 @@ export function heartbeatService(db: Db) {
           `Project workspace has no local cwd configured. Using fallback workspace "${fallbackCwd}" for this run.`,
         );
       }
+      // Use "agent_home" source so adapters can fall back to their configured
+      // cwd when the project workspace paths are not yet available on disk.
       return {
         cwd: fallbackCwd,
-        source: "project_primary" as const,
+        source: "agent_home" as const,
         projectId: resolvedProjectId,
         workspaceId: projectWorkspaceRows[0]?.id ?? null,
         repoUrl: projectWorkspaceRows[0]?.repoUrl ?? null,
@@ -1831,6 +1894,50 @@ export function heartbeatService(db: Db) {
     return { clearedRuntimeStates: clearedRuntime, clearedTaskSessions };
   }
 
+  /**
+   * Nullify heavy columns (`result_json`, `stdout_excerpt`, `stderr_excerpt`,
+   * `context_snapshot`) on completed runs older than `ttlDays` days.
+   * This prevents the heartbeat_runs table from growing unbounded and keeps the
+   * embedded PGlite database small enough for the backup routine.
+   */
+  async function pruneHeartbeatRunData(opts?: { ttlDays?: number }) {
+    const ttlDays = Math.max(1, Math.trunc(opts?.ttlDays ?? 7));
+    const cutoff = new Date(Date.now() - ttlDays * 24 * 60 * 60 * 1000);
+
+    const updated = await db
+      .update(heartbeatRuns)
+      .set({
+        resultJson: null,
+        stdoutExcerpt: null,
+        stderrExcerpt: null,
+        contextSnapshot: null,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          inArray(heartbeatRuns.status, ["done", "failed", "cancelled", "timed_out", "error"]),
+          lt(heartbeatRuns.finishedAt, cutoff),
+          or(
+            isNotNull(heartbeatRuns.resultJson),
+            isNotNull(heartbeatRuns.stdoutExcerpt),
+            isNotNull(heartbeatRuns.stderrExcerpt),
+            isNotNull(heartbeatRuns.contextSnapshot),
+          ),
+        ),
+      )
+      .returning({ id: heartbeatRuns.id })
+      .then((rows) => rows.length);
+
+    if (updated > 0) {
+      logger.info(
+        { prunedRuns: updated, ttlDays, cutoff },
+        "heartbeat_runs TTL pruning: nullified heavy columns on old completed runs",
+      );
+    }
+
+    return { prunedRuns: updated };
+  }
+
   async function resumeQueuedRuns() {
     const queuedRuns = await db
       .select({ agentId: heartbeatRuns.agentId })
@@ -1841,6 +1948,58 @@ export function heartbeatService(db: Db) {
     for (const agentId of agentIds) {
       await startNextQueuedRunForAgent(agentId);
     }
+  }
+
+  // After a server restart, agents that had in-progress assigned issues but no
+  // queued or running run will never wake up on their own — the timer won't fire
+  // until the next interval, and even then the issue context was missing (see
+  // tickTimers fix). This function finds those agents and enqueues a recovery
+  // wakeup immediately so they resume work without waiting for the timer.
+  async function recoverInProgressAssignments() {
+    const inProgressIssues = await db
+      .select({
+        id: issues.id,
+        assigneeAgentId: issues.assigneeAgentId,
+        projectId: issues.projectId,
+      })
+      .from(issues)
+      .where(and(eq(issues.status, "in_progress"), isNotNull(issues.assigneeAgentId)));
+
+    let recovered = 0;
+    for (const issue of inProgressIssues) {
+      if (!issue.assigneeAgentId) continue;
+
+      // Skip if there's already an active or queued run for this agent/issue.
+      const [activeRun] = await db
+        .select({ id: heartbeatRuns.id })
+        .from(heartbeatRuns)
+        .where(
+          and(eq(heartbeatRuns.agentId, issue.assigneeAgentId), inArray(heartbeatRuns.status, ["queued", "running"])),
+        )
+        .limit(1);
+      if (activeRun) continue;
+
+      try {
+        const run = await enqueueWakeup(issue.assigneeAgentId, {
+          source: "timer",
+          triggerDetail: "system",
+          reason: "crash_recovery",
+          requestedByActorType: "system",
+          requestedByActorId: "heartbeat_scheduler",
+          contextSnapshot: {
+            source: "crash_recovery",
+            reason: "crash_recovery",
+            issueId: issue.id,
+            taskId: issue.id,
+            ...(issue.projectId ? { projectId: issue.projectId } : {}),
+          },
+        });
+        if (run) recovered += 1;
+      } catch (err) {
+        logger.warn({ err, issueId: issue.id, agentId: issue.assigneeAgentId }, "crash recovery wakeup skipped");
+      }
+    }
+    return { recovered };
   }
 
   async function updateRuntimeState(
@@ -2703,6 +2862,19 @@ export function heartbeatService(db: Db) {
         }
         await finalizeAgentStatus(agent.id, outcome);
 
+        // Clear rate-limit retry counter on success so the next failure starts fresh backoff
+        if (outcome === "succeeded") {
+          const agentMeta = (agent.metadata as Record<string, unknown> | null) ?? {};
+          if (typeof agentMeta.rateLimitRetryCount === "number" && agentMeta.rateLimitRetryCount > 0) {
+            const cleanMeta = { ...agentMeta };
+            delete cleanMeta.rateLimitRetryCount;
+            await db
+              .update(agents)
+              .set({ metadata: Object.keys(cleanMeta).length > 0 ? cleanMeta : null, updatedAt: new Date() })
+              .where(eq(agents.id, agent.id));
+          }
+        }
+
         // Smart Retry: detect quota-limit errors and pause until reset
         if (outcome === "failed") {
           const quotaResetAt = detectQuotaResetFromRunResult(adapterResult, stderrExcerpt);
@@ -2734,6 +2906,47 @@ export function heartbeatService(db: Db) {
                 quotaResetAt: quotaResetAt.toISOString(),
               },
             });
+          } else {
+            // Smart Retry: detect transient 429/rate-limit errors and apply a short backoff pause
+            const agentMeta = (agent.metadata as Record<string, unknown> | null) ?? {};
+            const rateLimitRetryCount =
+              typeof agentMeta.rateLimitRetryCount === "number" ? agentMeta.rateLimitRetryCount : 0;
+            const rateLimitBackoffAt = detectRateLimitBackoff(adapterResult, stderrExcerpt, rateLimitRetryCount);
+            if (rateLimitBackoffAt) {
+              logger.info(
+                {
+                  agentId: agent.id,
+                  retryAfter: rateLimitBackoffAt.toISOString(),
+                  retryCount: rateLimitRetryCount,
+                  runId,
+                },
+                "transient rate-limit detected — pausing agent with backoff",
+              );
+              await db
+                .update(agents)
+                .set({
+                  status: "paused",
+                  pauseReason: "quota_reset",
+                  pausedAt: new Date(),
+                  metadata: {
+                    ...agentMeta,
+                    quotaResetAt: rateLimitBackoffAt.toISOString(),
+                    rateLimitRetryCount: rateLimitRetryCount + 1,
+                  },
+                  updatedAt: new Date(),
+                })
+                .where(eq(agents.id, agent.id));
+              publishLiveEvent({
+                companyId: agent.companyId,
+                type: "agent.status",
+                payload: {
+                  agentId: agent.id,
+                  status: "paused",
+                  pauseReason: "quota_reset",
+                  quotaResetAt: rateLimitBackoffAt.toISOString(),
+                },
+              });
+            }
           }
         }
       } catch (err) {
@@ -2834,6 +3047,43 @@ export function heartbeatService(db: Db) {
               status: "paused",
               pauseReason: "quota_reset",
               quotaResetAt: quotaResetAtCatch.toISOString(),
+            },
+          });
+        } else if (isTransientRateLimitError(message) || isTransientRateLimitError(stderrExcerpt)) {
+          // Transient rate-limit in the exception path — apply backoff pause
+          const agentMeta = (agent.metadata as Record<string, unknown> | null) ?? {};
+          const rateLimitRetryCount =
+            typeof agentMeta.rateLimitRetryCount === "number" ? agentMeta.rateLimitRetryCount : 0;
+          const rateLimitBackoffAt = new Date(
+            Date.now() +
+              Math.min(RATE_LIMIT_BACKOFF_BASE_SEC * 2 ** rateLimitRetryCount, RATE_LIMIT_BACKOFF_MAX_SEC) * 1000,
+          );
+          logger.info(
+            { agentId: agent.id, retryAfter: rateLimitBackoffAt.toISOString(), retryCount: rateLimitRetryCount, runId },
+            "transient rate-limit detected (catch path) — pausing agent with backoff",
+          );
+          await db
+            .update(agents)
+            .set({
+              status: "paused",
+              pauseReason: "quota_reset",
+              pausedAt: new Date(),
+              metadata: {
+                ...agentMeta,
+                quotaResetAt: rateLimitBackoffAt.toISOString(),
+                rateLimitRetryCount: rateLimitRetryCount + 1,
+              },
+              updatedAt: new Date(),
+            })
+            .where(eq(agents.id, agent.id));
+          publishLiveEvent({
+            companyId: agent.companyId,
+            type: "agent.status",
+            payload: {
+              agentId: agent.id,
+              status: "paused",
+              pauseReason: "quota_reset",
+              quotaResetAt: rateLimitBackoffAt.toISOString(),
             },
           });
         }
@@ -3820,9 +4070,53 @@ export function heartbeatService(db: Db) {
 
     reapOrphanedRuns,
 
+    sweepStaleExecutionLocks: async () => {
+      const TERMINAL_STATUSES = ["succeeded", "failed", "timed_out", "cancelled", "process_lost"];
+
+      // Find issues with an executionRunId that is either missing or terminal.
+      const staleIssues = await db.execute(sql`
+        SELECT i.id, i.identifier, i.execution_run_id
+        FROM issues i
+        WHERE i.execution_run_id IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM heartbeat_runs hr
+            WHERE hr.id = i.execution_run_id
+              AND hr.status NOT IN (${sql.join(
+                TERMINAL_STATUSES.map((s) => sql`${s}`),
+                sql`, `,
+              )})
+          )
+      `);
+
+      if (staleIssues.length === 0) return { cleared: 0 };
+
+      const staleIds = staleIssues.map((r: Record<string, unknown>) => r.id as string);
+
+      await db
+        .update(issues)
+        .set({
+          executionRunId: null,
+          executionAgentNameKey: null,
+          executionLockedAt: null,
+          updatedAt: new Date(),
+        })
+        .where(inArray(issues.id, staleIds));
+
+      logger.info(
+        { count: staleIds.length, issueIds: staleIds },
+        "swept stale execution locks from issues pointing to terminal/missing runs",
+      );
+
+      return { cleared: staleIds.length };
+    },
+
+    pruneHeartbeatRunData,
+
     resetAllAgentSessions,
 
     resumeQueuedRuns,
+
+    recoverInProgressAssignments,
 
     tickTimers: async (now = new Date()) => {
       const allAgents = await db.select().from(agents);
@@ -3906,6 +4200,22 @@ export function heartbeatService(db: Db) {
         const elapsedMs = now.getTime() - baseline;
         if (elapsedMs < policy.intervalSec * 1000) continue;
 
+        // Fetch the agent's currently assigned in-progress issue so workspace
+        // resolution in executeRun can find the correct project workspace.
+        const assignedIssue = await db
+          .select({ id: issues.id, projectId: issues.projectId })
+          .from(issues)
+          .where(
+            and(
+              eq(issues.companyId, agent.companyId),
+              eq(issues.assigneeAgentId, agent.id),
+              eq(issues.status, "in_progress"),
+            ),
+          )
+          .orderBy(desc(issues.updatedAt))
+          .limit(1)
+          .then((rows) => rows[0] ?? null);
+
         const run = await enqueueWakeup(agent.id, {
           source: "timer",
           triggerDetail: "system",
@@ -3916,6 +4226,9 @@ export function heartbeatService(db: Db) {
             source: "scheduler",
             reason: "interval_elapsed",
             now: now.toISOString(),
+            ...(assignedIssue
+              ? { issueId: assignedIssue.id, taskId: assignedIssue.id, projectId: assignedIssue.projectId }
+              : {}),
           },
         });
         if (run) enqueued += 1;

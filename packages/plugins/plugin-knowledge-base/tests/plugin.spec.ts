@@ -27,11 +27,7 @@ describe("knowledge-base plugin", () => {
 
   it("kb-write returns error for missing fields", async () => {
     const harness = await setupHarness();
-    const result = await harness.executeTool(
-      "kb-write",
-      { title: "Only title" },
-      { companyId: COMPANY_ID },
-    );
+    const result = await harness.executeTool("kb-write", { title: "Only title" }, { companyId: COMPANY_ID });
     expect((result.data as { error: string }).error).toBe("missing_fields");
   });
 
@@ -49,11 +45,7 @@ describe("knowledge-base plugin", () => {
       { title: "Searchable entry", description: "findme" },
       { companyId: COMPANY_ID },
     );
-    const result = await harness.executeTool(
-      "kb-read",
-      { query: "findme" },
-      { companyId: COMPANY_ID },
-    );
+    const result = await harness.executeTool("kb-read", { query: "findme" }, { companyId: COMPANY_ID });
     const data = result.data as unknown[];
     expect(data.length).toBeGreaterThan(0);
   });
@@ -70,11 +62,7 @@ describe("knowledge-base plugin", () => {
       { title: "Untagged entry", description: "No tags", tags: [] },
       { companyId: COMPANY_ID },
     );
-    const result = await harness.executeTool(
-      "kb-read",
-      { tags: ["beta"] },
-      { companyId: COMPANY_ID },
-    );
+    const result = await harness.executeTool("kb-read", { tags: ["beta"] }, { companyId: COMPANY_ID });
     const data = result.data as Array<{ title: string }>;
     expect(data.length).toBe(1);
     expect(data[0].title).toBe("Tagged entry");
@@ -127,11 +115,7 @@ describe("knowledge-base plugin", () => {
 
   it("kb-deprecate returns not_found for unknown id", async () => {
     const harness = await setupHarness();
-    const result = await harness.executeTool(
-      "kb-deprecate",
-      { id: "nonexistent-id" },
-      { companyId: COMPANY_ID },
-    );
+    const result = await harness.executeTool("kb-deprecate", { id: "nonexistent-id" }, { companyId: COMPANY_ID });
     expect((result.data as { error: string }).error).toBe("not_found");
   });
 });

@@ -1,11 +1,5 @@
 import { z } from "zod";
-import {
-  AGENT_ADAPTER_TYPES,
-  AGENT_ICON_NAMES,
-  AGENT_ROLES,
-  AGENT_STATUSES,
-  PERMISSION_KEYS,
-} from "../constants.js";
+import { AGENT_ADAPTER_TYPES, AGENT_ICON_NAMES, AGENT_ROLES, AGENT_STATUSES, PERMISSION_KEYS } from "../constants.js";
 import { envConfigSchema } from "./secret.js";
 
 export const agentPermissionsSchema = z.object({
@@ -123,7 +117,10 @@ export type TestAdapterEnvironment = z.infer<typeof testAdapterEnvironmentSchema
 export const agentWorkspaceConfigSchema = z.object({
   defaultProjectWorkspaceId: z.string().uuid().nullable().optional(),
   allowedProjectWorkspaceIds: z.array(z.string().uuid()).nullable().optional(),
-  workspacePreferences: z.record(z.object({ priority: z.number() })).nullable().optional(),
+  workspacePreferences: z
+    .record(z.object({ priority: z.number() }))
+    .nullable()
+    .optional(),
   crossWorkspaceRefs: z.boolean().nullable().optional(),
 });
 

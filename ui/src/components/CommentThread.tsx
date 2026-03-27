@@ -9,6 +9,7 @@ import { MarkdownBody } from "./MarkdownBody";
 import { MarkdownEditor, type MarkdownEditorRef, type MentionOption } from "./MarkdownEditor";
 import { StatusBadge } from "./StatusBadge";
 import { AgentIcon } from "./AgentIconPicker";
+import { QuestionCard } from "./QuestionCard";
 import { formatDateTime } from "../lib/utils";
 import { PluginSlotOutlet } from "@/plugins/slots";
 
@@ -124,12 +125,14 @@ const TimelineList = memo(function TimelineList({
   companyId,
   projectId,
   highlightCommentId,
+  onQuickReply,
 }: {
   timeline: TimelineItem[];
   agentMap?: Map<string, Agent>;
   companyId?: string | null;
   projectId?: string | null;
   highlightCommentId?: string | null;
+  onQuickReply?: (body: string) => Promise<void>;
 }) {
   if (timeline.length === 0) {
     return <p className="text-sm text-muted-foreground">No comments or runs yet.</p>;
@@ -141,17 +144,15 @@ const TimelineList = memo(function TimelineList({
         if (item.kind === "run") {
           const run = item.run;
           return (
-            <div key={`run:${run.runId}`} className="border border-border bg-accent/20 p-3 overflow-hidden min-w-0 rounded-sm">
+            <div
+              key={`run:${run.runId}`}
+              className="border border-border bg-accent/20 p-3 overflow-hidden min-w-0 rounded-sm"
+            >
               <div className="flex items-center justify-between mb-2">
                 <Link to={`/agents/${run.agentId}`} className="hover:underline">
-                  <Identity
-                    name={agentMap?.get(run.agentId)?.name ?? run.agentId.slice(0, 8)}
-                    size="sm"
-                  />
+                  <Identity name={agentMap?.get(run.agentId)?.name ?? run.agentId.slice(0, 8)} size="sm" />
                 </Link>
-                <span className="text-xs text-muted-foreground">
-                  {formatDateTime(run.startedAt ?? run.createdAt)}
-                </span>
+                <span className="text-xs text-muted-foreground">{formatDateTime(run.startedAt ?? run.createdAt)}</span>
               </div>
               <div className="flex items-center gap-2 text-xs">
                 <span className="text-muted-foreground">Run</span>
@@ -213,6 +214,9 @@ const TimelineList = memo(function TimelineList({
               </span>
             </div>
             <MarkdownBody className="text-sm">{comment.body}</MarkdownBody>
+            {comment.questionData && onQuickReply && (
+              <QuestionCard questionData={comment.questionData} onReply={onQuickReply} />
+            )}
             {companyId ? (
               <div className="mt-2 space-y-2">
                 <PluginSlotOutlet
@@ -384,7 +388,7 @@ export function CommentThread({
         const url = await imageUploadHandler(file);
         const safeName = file.name.replace(/[[\]]/g, "\\$&");
         const markdown = `![${safeName}](${url})`;
-        setBody((prev) => prev ? `${prev}\n\n${markdown}` : markdown);
+        setBody((prev) => (prev ? `${prev}\n\n${markdown}` : markdown));
       } else if (onAttachImage) {
         await onAttachImage(file);
       }
@@ -406,6 +410,9 @@ export function CommentThread({
         companyId={companyId}
         projectId={projectId}
         highlightCommentId={highlightCommentId}
+        onQuickReply={async (body) => {
+          await onAdd(body);
+        }}
       />
 
       {liveRunSlot}

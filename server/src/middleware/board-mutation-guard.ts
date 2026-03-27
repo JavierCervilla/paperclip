@@ -1,10 +1,7 @@
 import type { Request, RequestHandler } from "express";
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
-const DEFAULT_DEV_ORIGINS = [
-  "http://localhost:3100",
-  "http://127.0.0.1:3100",
-];
+const DEFAULT_DEV_ORIGINS = ["http://localhost:3100", "http://127.0.0.1:3100"];
 
 function parseOrigin(value: string | undefined) {
   if (!value) return null;
@@ -18,10 +15,18 @@ function parseOrigin(value: string | undefined) {
 
 function trustedOriginsForRequest(req: Request) {
   const origins = new Set(DEFAULT_DEV_ORIGINS.map((value) => value.toLowerCase()));
+
+  // Include both Host and X-Forwarded-Host so mutations work when behind a
+  // reverse proxy that rewrites the host (e.g. Dokploy with a custom port).
+  const hosts: string[] = [];
+  const forwardedHost = req.header("x-forwarded-host")?.split(",")[0]?.trim();
+  if (forwardedHost) hosts.push(forwardedHost);
   const host = req.header("host")?.trim();
-  if (host) {
-    origins.add(`http://${host}`.toLowerCase());
-    origins.add(`https://${host}`.toLowerCase());
+  if (host) hosts.push(host);
+
+  for (const h of hosts) {
+    origins.add(`http://${h}`.toLowerCase());
+    origins.add(`https://${h}`.toLowerCase());
   }
   return origins;
 }

@@ -14,7 +14,9 @@ const executionWorkspaceStrategySchema = z
 
 export const issueExecutionWorkspaceSettingsSchema = z
   .object({
-    mode: z.enum(["inherit", "shared_workspace", "isolated_workspace", "operator_branch", "reuse_existing", "agent_default"]).optional(),
+    mode: z
+      .enum(["inherit", "shared_workspace", "isolated_workspace", "operator_branch", "reuse_existing", "agent_default"])
+      .optional(),
     workspaceStrategy: executionWorkspaceStrategySchema.optional().nullable(),
     workspaceRuntime: z.record(z.unknown()).optional().nullable(),
   })
@@ -42,14 +44,10 @@ export const createIssueSchema = z.object({
   billingCode: z.string().optional().nullable(),
   assigneeAdapterOverrides: issueAssigneeAdapterOverridesSchema.optional().nullable(),
   executionWorkspaceId: z.string().uuid().optional().nullable(),
-  executionWorkspacePreference: z.enum([
-    "inherit",
-    "shared_workspace",
-    "isolated_workspace",
-    "operator_branch",
-    "reuse_existing",
-    "agent_default",
-  ]).optional().nullable(),
+  executionWorkspacePreference: z
+    .enum(["inherit", "shared_workspace", "isolated_workspace", "operator_branch", "reuse_existing", "agent_default"])
+    .optional()
+    .nullable(),
   executionWorkspaceSettings: issueExecutionWorkspaceSettingsSchema.optional().nullable(),
   labelIds: z.array(z.string().uuid()).optional(),
 });
@@ -63,8 +61,25 @@ export const createIssueLabelSchema = z.object({
 
 export type CreateIssueLabel = z.infer<typeof createIssueLabelSchema>;
 
+export const questionOptionSchema = z.object({
+  key: z.string().min(1),
+  label: z.string().min(1),
+  description: z.string().optional(),
+});
+
+export const questionDataSchema = z.object({
+  prompt: z.string().min(1),
+  context: z.string().optional(),
+  options: z.array(questionOptionSchema).optional(),
+  timeoutHours: z.number().int().positive().optional(),
+  fallbackOption: z.string().optional(),
+});
+
+export type QuestionData = z.infer<typeof questionDataSchema>;
+
 export const updateIssueSchema = createIssueSchema.partial().extend({
   comment: z.string().min(1).optional(),
+  questionData: questionDataSchema.optional().nullable(),
   reopen: z.boolean().optional(),
   hiddenAt: z.string().datetime().nullable().optional(),
 });
@@ -81,6 +96,7 @@ export type CheckoutIssue = z.infer<typeof checkoutIssueSchema>;
 
 export const addIssueCommentSchema = z.object({
   body: z.string().min(1),
+  questionData: questionDataSchema.optional().nullable(),
   reopen: z.boolean().optional(),
   interrupt: z.boolean().optional(),
 });

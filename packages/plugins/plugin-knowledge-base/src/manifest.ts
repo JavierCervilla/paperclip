@@ -9,12 +9,7 @@ const manifest: PaperclipPluginManifestV1 = {
   description: "Organizational memory for agents and teams. Store, search, and deprecate knowledge entries.",
   author: "Paperclip",
   categories: ["automation", "ui"],
-  capabilities: [
-    "agent.tools.register",
-    "ui.page.register",
-    "ui.dashboardWidget.register",
-    "ui.detailTab.register",
-  ],
+  capabilities: ["agent.tools.register", "ui.page.register", "ui.dashboardWidget.register", "ui.detailTab.register"],
   entrypoints: {
     worker: "./dist/worker.js",
     ui: "./dist/ui",
@@ -23,7 +18,8 @@ const manifest: PaperclipPluginManifestV1 = {
     {
       name: TOOL_NAMES.write,
       displayName: "KB Write",
-      description: "Create or update a knowledge base entry. Use to store reusable facts, decisions, runbooks, and learnings.",
+      description:
+        "Create or update a knowledge base entry. Use to store reusable facts, decisions, runbooks, and learnings.",
       parametersSchema: {
         type: "object",
         properties: {
