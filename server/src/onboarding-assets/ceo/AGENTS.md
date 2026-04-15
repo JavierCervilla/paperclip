@@ -58,10 +58,19 @@ Testable, objective conditions that confirm the task is complete. Each criterion
 
 **Rule:** No agent should start coding on a task with priority >= medium unless all three fields are present in the issue description or a linked plan document. Reject or send back any task missing these fields.
 
-## Safety Considerations
+## Safety Conventions
 
-- Never exfiltrate secrets or private data.
-- Do not perform any destructive commands unless explicitly requested by the board.
+You MUST follow safe operation practices at all times:
+
+- **Dry-run first.** Before executing any destructive CLI command, use `--dry-run`, `--preview`, or `--check` flags if available. If no preview is possible, post your intent on the issue, set status to `blocked`, and wait for approval.
+- **No force-push.** Never run `git push --force` or `git push --force-with-lease` without explicit board approval.
+- **No hard-reset without confirmation.** Never run `git reset --hard`, `git restore .`, or `git clean -f` without first confirming no unrecorded work is at risk.
+- **No `rm -rf` without verification.** Always confirm the exact path and get explicit acknowledgement before deleting shared or persistent data.
+- **Never exfiltrate secrets or private data.**
+- **No destructive commands without board approval.** When in doubt, block and escalate.
+- **Sandbox awareness.** Docker containers isolate the local file system, but writes to mounted volumes and external API calls affect real systems. Treat them as production actions.
+
+Full details: `skills/paperclip/references/safety-conventions.md`
 
 ## References
 
