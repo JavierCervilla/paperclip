@@ -105,6 +105,7 @@ describe("claude_local ui stdout parser", () => {
 });
 
 function stripAnsi(value: string) {
+  // eslint-disable-next-line no-control-regex
   return value.replace(/\x1b\[[0-9;]*m/g, "");
 }
 
@@ -162,9 +163,7 @@ describe("claude_local cli formatter", () => {
         false,
       );
 
-      const lines = spy.mock.calls
-        .map((call) => call.map((value) => String(value)).join(" "))
-        .map(stripAnsi);
+      const lines = spy.mock.calls.map((call) => call.map((value) => String(value)).join(" ")).map(stripAnsi);
 
       expect(lines).toEqual(
         expect.arrayContaining([

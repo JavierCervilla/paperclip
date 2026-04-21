@@ -6,9 +6,11 @@ import { queryKeys } from "../lib/queryKeys";
 import { formatDateTime } from "../lib/utils";
 import { ExternalLink, Square } from "lucide-react";
 import { Identity } from "./Identity";
+import { RunChatSurface } from "./RunChatSurface";
 import { StatusBadge } from "./StatusBadge";
-import { RunTranscriptView } from "./transcript/RunTranscriptView";
 import { useLiveRunTranscripts } from "./transcript/useLiveRunTranscripts";
+import { BoardInterventionPanel, InterventionButton } from "./BoardInterventionPanel";
+import { RunTodosWidget } from "./RunTodosWidget";
 
 interface LiveRunWidgetProps {
   issueId: string;
@@ -27,6 +29,7 @@ function isRunActive(status: string): boolean {
 export function LiveRunWidget({ issueId, companyId }: LiveRunWidgetProps) {
   const queryClient = useQueryClient();
   const [cancellingRunIds, setCancellingRunIds] = useState(new Set<string>());
+  const [interventionOpen, setInterventionOpen] = useState(false);
 
   const { data: liveRuns } = useQuery({
     queryKey: queryKeys.issues.liveRuns(issueId),
@@ -62,9 +65,7 @@ export function LiveRunWidget({ issueId, companyId }: LiveRunWidgetProps) {
         issueId,
       });
     }
-    return [...deduped.values()].sort(
-      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-    );
+    return [...deduped.values()].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [activeRun, issueId, liveRuns]);
 
   const { transcriptByRun, hasOutputForRun } = useLiveRunTranscripts({ runs, companyId });
@@ -93,7 +94,7 @@ export function LiveRunWidget({ issueId, companyId }: LiveRunWidgetProps) {
           Live Runs
         </div>
         <div className="mt-1 text-xs text-muted-foreground">
-          Streamed with the same transcript UI used on the full run detail page.
+          Uses the shared chat-style run surface from issue activity.
         </div>
       </div>
 
@@ -121,6 +122,7 @@ export function LiveRunWidget({ issueId, companyId }: LiveRunWidgetProps) {
                 </div>
 
                 <div className="flex items-center gap-2">
+                  <InterventionButton onClick={() => setInterventionOpen(true)} />
                   {isActive && (
                     <button
                       onClick={() => handleCancelRun(run.id)}
@@ -141,20 +143,22 @@ export function LiveRunWidget({ issueId, companyId }: LiveRunWidgetProps) {
                 </div>
               </div>
 
+              <RunTodosWidget issueId={issueId} runId={run.id} companyId={companyId} isActive={isActive} />
+
               <div className="max-h-[320px] overflow-y-auto pr-1">
-                <RunTranscriptView
-                  entries={transcript}
-                  density="compact"
-                  limit={8}
-                  streaming={isActive}
-                  collapseStdout
-                  emptyMessage={hasOutputForRun(run.id) ? "Waiting for transcript parsing..." : "Waiting for run output..."}
+                <RunChatSurface
+                  run={run}
+                  transcript={transcript}
+                  hasOutput={hasOutputForRun(run.id)}
+                  companyId={companyId}
                 />
               </div>
             </section>
           );
         })}
       </div>
+
+      <BoardInterventionPanel issueId={issueId} open={interventionOpen} onOpenChange={setInterventionOpen} />
     </div>
   );
 }

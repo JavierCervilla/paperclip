@@ -1,20 +1,13 @@
-import {
-  type AnyPgColumn,
-  pgTable,
-  uuid,
-  text,
-  integer,
-  timestamp,
-  jsonb,
-  index,
-} from "drizzle-orm/pg-core";
+import { type AnyPgColumn, pgTable, uuid, text, integer, timestamp, jsonb, index } from "drizzle-orm/pg-core";
 import { companies } from "./companies.js";
 
 export const agents = pgTable(
   "agents",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    companyId: uuid("company_id").notNull().references(() => companies.id),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id),
     name: text("name").notNull(),
     role: text("role").notNull().default("general"),
     title: text("title"),
@@ -31,6 +24,7 @@ export const agents = pgTable(
     pausedAt: timestamp("paused_at", { withTimezone: true }),
     permissions: jsonb("permissions").$type<Record<string, unknown>>().notNull().default({}),
     lastHeartbeatAt: timestamp("last_heartbeat_at", { withTimezone: true }),
+    workspaceConfig: jsonb("workspace_config").$type<Record<string, unknown>>().notNull().default({}),
     metadata: jsonb("metadata").$type<Record<string, unknown>>(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

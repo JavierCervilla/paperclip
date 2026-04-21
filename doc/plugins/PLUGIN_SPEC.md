@@ -28,6 +28,9 @@ Current limitations to keep in mind:
 - The repo example plugins under `packages/plugins/examples/` are development conveniences. They work from a source checkout and should not be assumed to exist in a generic published build unless they are explicitly shipped with that build.
 - Dynamic plugin install is not yet cloud-ready for horizontally scaled or ephemeral deployments. There is no shared artifact store, install coordination, or cross-node distribution layer yet.
 - The current runtime does not yet ship a real host-provided plugin UI component kit, and it does not support plugin asset uploads/reads. Treat those as future-scope ideas in this spec, not current implementation promises.
+- Scoped plugin API routes are JSON-only and must be declared in `apiRoutes`.
+  They mount under `/api/plugins/:pluginId/api/*`; plugins cannot shadow core
+  API routes.
 
 In practice, that means the current implementation is a good fit for local development and self-hosted persistent deployments, but not yet for multi-instance cloud plugin distribution.
 
@@ -624,7 +627,46 @@ Required SDK clients:
 
 Plugins that need filesystem, git, terminal, or process operations handle those directly using standard Node APIs or libraries. The host provides project workspace metadata through `ctx.projects` so plugins can resolve workspace paths, but the host does not proxy low-level OS operations.
 
-## 14.1 Example SDK Shape
+## 14.1 Issue Orchestration APIs
+
+Trusted orchestration plugins can create and update Paperclip issues through `ctx.issues` instead of importing server internals. The public issue contract includes parent/project/goal links, board or agent assignees, blocker IDs, labels, billing code, request depth, execution workspace inheritance, and plugin origin metadata.
+
+Origin rules:
+
+- Built-in core issues keep built-in origins such as `manual` and `routine_execution`.
+- Plugin-managed issues use `plugin:<pluginKey>` or a sub-kind such as `plugin:<pluginKey>:feature`.
+- The host derives the default plugin origin from the installed plugin key and rejects attempts to set `plugin:<otherPluginKey>` origins.
+- `originId` is plugin-defined and should be stable for idempotent generated work.
+
+Relation and read helpers:
+
+- `ctx.issues.relations.get(issueId, companyId)`
+- `ctx.issues.relations.setBlockedBy(issueId, blockerIssueIds, companyId)`
+- `ctx.issues.relations.addBlockers(issueId, blockerIssueIds, companyId)`
+- `ctx.issues.relations.removeBlockers(issueId, blockerIssueIds, companyId)`
+- `ctx.issues.getSubtree(issueId, companyId, options)`
+- `ctx.issues.summaries.getOrchestration({ issueId, companyId, includeSubtree, billingCode })`
+
+Governance helpers:
+
+- `ctx.issues.assertCheckoutOwner({ issueId, companyId, actorAgentId, actorRunId })` lets plugin actions preserve agent-run checkout ownership.
+- `ctx.issues.requestWakeup(issueId, companyId, options)` requests assignment wakeups through host heartbeat semantics, including terminal-status, blocker, assignee, and budget hard-stop checks.
+- `ctx.issues.requestWakeups(issueIds, companyId, options)` applies the same host-owned wakeup semantics to a batch and may use an idempotency key prefix for stable coordinator retries.
+
+Plugin-originated issue, relation, document, comment, and wakeup mutations must write activity entries with `actorType: "plugin"` and details fields for `sourcePluginId`, `sourcePluginKey`, `initiatingActorType`, `initiatingActorId`, and `initiatingRunId` when a user or agent run initiated the plugin work.
+
+Scoped API routes:
+
+- `apiRoutes[]` declares `routeKey`, `method`, plugin-local `path`, `auth`,
+  `capability`, optional checkout policy, and company resolution.
+- The host enforces auth, company access, `api.routes.register`, route matching,
+  and checkout policy before worker dispatch.
+- The worker implements `onApiRequest(input)` and returns a JSON response shape
+  `{ status?, headers?, body? }`.
+- Only safe request headers are forwarded; auth/cookie headers are never passed
+  to the worker.
+
+## 14.2 Example SDK Shape
 
 ```ts
 /** Top-level helper for defining a plugin with type checking */
@@ -662,7 +704,11 @@ export interface PluginContext {
     register(key: string, handler: (params: Record<string, unknown>) => Promise<unknown>): void;
   };
   tools: {
-    register(name: string, input: PluginToolDeclaration, fn: (params: unknown, runCtx: ToolRunContext) => Promise<ToolResult>): void;
+    register(
+      name: string,
+      input: PluginToolDeclaration,
+      fn: (params: unknown, runCtx: ToolRunContext) => Promise<ToolResult>,
+    ): void;
   };
   logger: {
     info(message: string, meta?: Record<string, unknown>): void;
@@ -696,16 +742,24 @@ The host enforces capabilities in the SDK layer and refuses calls outside the gr
 - `project.workspaces.read`
 - `issues.read`
 - `issue.comments.read`
+- `issue.documents.read`
+- `issue.relations.read`
+- `issue.subtree.read`
 - `agents.read`
 - `goals.read`
 - `activity.read`
 - `costs.read`
+- `issues.orchestration.read`
 
 ### Data Write
 
 - `issues.create`
 - `issues.update`
 - `issue.comments.create`
+- `issue.documents.write`
+- `issue.relations.write`
+- `issues.checkout`
+- `issues.wakeup`
 - `assets.write`
 - `assets.read`
 - `activity.log.write`
@@ -772,6 +826,13 @@ Minimum event set:
 - `issue.created`
 - `issue.updated`
 - `issue.comment.created`
+- `issue.document.created`
+- `issue.document.updated`
+- `issue.document.deleted`
+- `issue.relations.updated`
+- `issue.checked_out`
+- `issue.released`
+- `issue.assignment_wakeup_requested`
 - `agent.created`
 - `agent.updated`
 - `agent.status_changed`
@@ -781,6 +842,8 @@ Minimum event set:
 - `agent.run.cancelled`
 - `approval.created`
 - `approval.decided`
+- `budget.incident.opened`
+- `budget.incident.resolved`
 - `cost_event.created`
 - `activity.logged`
 
@@ -884,7 +947,7 @@ export function DashboardWidget({ context }: PluginWidgetProps) {
   return (
     <div>
       <MetricCard label="Synced Issues" value={data.syncedCount} trend={data.trend} />
-      {data.mappings.map(m => (
+      {data.mappings.map((m) => (
         <StatusBadge key={m.id} label={m.label} status={m.status} />
       ))}
       <button onClick={() => resync({ companyId: context.companyId })}>Resync Now</button>
@@ -991,18 +1054,18 @@ Plugins may add sidebar links to:
 
 The host SDK ships shared components that plugins can import to quickly build UIs that match the host's look and feel. These are convenience building blocks, not a requirement.
 
-| Component | What it renders | Typical use |
-|---|---|---|
-| `MetricCard` | Single number with label, optional trend/sparkline | KPIs, counts, rates |
-| `StatusBadge` | Inline status indicator (ok/warning/error/info) | Sync health, connection status |
-| `DataTable` | Rows and columns with optional sorting and pagination | Issue lists, job history, process lists |
-| `TimeseriesChart` | Line or bar chart with timestamped data points | Revenue trends, sync volume, error rates |
-| `MarkdownBlock` | Rendered markdown text | Descriptions, help text, notes |
-| `KeyValueList` | Label/value pairs in a definition-list layout | Entity metadata, config summary |
-| `ActionBar` | Row of buttons wired to `usePluginAction` | Resync, create branch, restart process |
-| `LogView` | Scrollable log output with timestamps | Webhook deliveries, job output, process logs |
-| `JsonTree` | Collapsible JSON tree for debugging | Raw API responses, plugin state inspection |
-| `Spinner` | Loading indicator | Data fetch states |
+| Component         | What it renders                                       | Typical use                                  |
+| ----------------- | ----------------------------------------------------- | -------------------------------------------- |
+| `MetricCard`      | Single number with label, optional trend/sparkline    | KPIs, counts, rates                          |
+| `StatusBadge`     | Inline status indicator (ok/warning/error/info)       | Sync health, connection status               |
+| `DataTable`       | Rows and columns with optional sorting and pagination | Issue lists, job history, process lists      |
+| `TimeseriesChart` | Line or bar chart with timestamped data points        | Revenue trends, sync volume, error rates     |
+| `MarkdownBlock`   | Rendered markdown text                                | Descriptions, help text, notes               |
+| `KeyValueList`    | Label/value pairs in a definition-list layout         | Entity metadata, config summary              |
+| `ActionBar`       | Row of buttons wired to `usePluginAction`             | Resync, create branch, restart process       |
+| `LogView`         | Scrollable log output with timestamps                 | Webhook deliveries, job output, process logs |
+| `JsonTree`        | Collapsible JSON tree for debugging                   | Raw API responses, plugin state inspection   |
+| `Spinner`         | Loading indicator                                     | Data fetch states                            |
 
 Plugins may also use entirely custom components. The shared components exist to reduce boilerplate and keep visual consistency, not to limit what plugins can render.
 
@@ -1238,6 +1301,8 @@ Plugin-originated mutations should write:
 
 - `actor_type = plugin`
 - `actor_id = <plugin-id>`
+- details include `sourcePluginId` and `sourcePluginKey`
+- details include `initiatingActorType`, `initiatingActorId`, and `initiatingRunId` when a user or agent run triggered the plugin work
 
 ## 21.5 Plugin Migrations
 
@@ -1469,7 +1534,13 @@ await register(harness.ctx);
 await harness.emit("issue.created", { issueId: "iss-1", projectId: "proj-1" });
 
 // Verify state was written
-const state = await harness.state.get({ pluginId: manifest.id, scopeKind: "issue", scopeId: "iss-1", namespace: "sync", stateKey: "external-id" });
+const state = await harness.state.get({
+  pluginId: manifest.id,
+  scopeKind: "issue",
+  scopeId: "iss-1",
+  namespace: "sync",
+  stateKey: "external-id",
+});
 expect(state).toBeDefined();
 
 // Simulate a UI data request
@@ -1553,10 +1624,10 @@ Versioning rules:
 The host should publish a compatibility matrix:
 
 | Host Version | Supported API Versions | SDK Range |
-|---|---|---|
-| 1.0 | 1 | 1.x |
-| 2.0 | 1, 2 | 1.x, 2.x |
-| 3.0 | 2, 3 | 2.x, 3.x |
+| ------------ | ---------------------- | --------- |
+| 1.0          | 1                      | 1.x       |
+| 2.0          | 1, 2                   | 1.x, 2.x  |
+| 3.0          | 2, 3                   | 2.x, 3.x  |
 
 This matrix is published in the host docs and queryable via `GET /api/plugins/compatibility`.
 

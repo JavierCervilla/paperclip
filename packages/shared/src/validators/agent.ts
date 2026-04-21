@@ -1,11 +1,12 @@
 import { z } from "zod";
 import {
-  AGENT_ADAPTER_TYPES,
   AGENT_ICON_NAMES,
   AGENT_ROLES,
   AGENT_STATUSES,
   INBOX_MINE_ISSUE_STATUS_FILTER,
+  PERMISSION_KEYS,
 } from "../constants.js";
+import { agentAdapterTypeSchema } from "../adapter-type.js";
 import { envConfigSchema } from "./secret.js";
 
 export const agentPermissionsSchema = z.object({
@@ -52,11 +53,12 @@ export const createAgentSchema = z.object({
   reportsTo: z.string().uuid().optional().nullable(),
   capabilities: z.string().optional().nullable(),
   desiredSkills: z.array(z.string().min(1)).optional(),
-  adapterType: z.enum(AGENT_ADAPTER_TYPES).optional().default("process"),
+  adapterType: agentAdapterTypeSchema,
   adapterConfig: adapterConfigSchema.optional().default({}),
   runtimeConfig: z.record(z.unknown()).optional().default({}),
   budgetMonthlyCents: z.number().int().nonnegative().optional().default(0),
   permissions: agentPermissionsSchema.optional(),
+  workspaceConfig: z.record(z.unknown()).optional().default({}),
   metadata: z.record(z.unknown()).optional().nullable(),
 });
 
@@ -74,9 +76,9 @@ export const updateAgentSchema = createAgentSchema
   .partial()
   .extend({
     permissions: z.never().optional(),
-    replaceAdapterConfig: z.boolean().optional(),
     status: z.enum(AGENT_STATUSES).optional(),
     spentMonthlyCents: z.number().int().nonnegative().optional(),
+    replaceAdapterConfig: z.boolean().optional(),
   });
 
 export type UpdateAgent = z.infer<typeof updateAgentSchema>;
@@ -127,9 +129,28 @@ export const testAdapterEnvironmentSchema = z.object({
 
 export type TestAdapterEnvironment = z.infer<typeof testAdapterEnvironmentSchema>;
 
+export const agentWorkspaceConfigSchema = z.object({
+  defaultProjectWorkspaceId: z.string().uuid().nullable().optional(),
+  allowedProjectWorkspaceIds: z.array(z.string().uuid()).nullable().optional(),
+  workspacePreferences: z
+    .record(z.object({ priority: z.number() }))
+    .nullable()
+    .optional(),
+  crossWorkspaceRefs: z.boolean().nullable().optional(),
+});
+
+export type AgentWorkspaceConfigInput = z.infer<typeof agentWorkspaceConfigSchema>;
+
+export const updateAgentWorkspaceConfigSchema = agentWorkspaceConfigSchema;
+
+export type UpdateAgentWorkspaceConfig = z.infer<typeof updateAgentWorkspaceConfigSchema>;
+
+const permissionKeyEnum = z.enum(PERMISSION_KEYS as unknown as [string, ...string[]]);
+
 export const updateAgentPermissionsSchema = z.object({
   canCreateAgents: z.boolean(),
   canAssignTasks: z.boolean(),
+  grants: z.record(permissionKeyEnum, z.boolean()).optional(),
 });
 
 export type UpdateAgentPermissions = z.infer<typeof updateAgentPermissionsSchema>;

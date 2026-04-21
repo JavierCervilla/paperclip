@@ -1,8 +1,4 @@
-export type ExecutionWorkspaceStrategyType =
-  | "project_primary"
-  | "git_worktree"
-  | "adapter_managed"
-  | "cloud_sandbox";
+export type ExecutionWorkspaceStrategyType = "project_primary" | "git_worktree" | "adapter_managed" | "cloud_sandbox";
 
 export type ProjectExecutionWorkspaceDefaultMode =
   | "shared_workspace"
@@ -18,23 +14,11 @@ export type ExecutionWorkspaceMode =
   | "reuse_existing"
   | "agent_default";
 
-export type ExecutionWorkspaceProviderType =
-  | "local_fs"
-  | "git_worktree"
-  | "adapter_managed"
-  | "cloud_sandbox";
+export type ExecutionWorkspaceProviderType = "local_fs" | "git_worktree" | "adapter_managed" | "cloud_sandbox";
 
-export type ExecutionWorkspaceStatus =
-  | "active"
-  | "idle"
-  | "in_review"
-  | "archived"
-  | "cleanup_failed";
+export type ExecutionWorkspaceStatus = "active" | "idle" | "in_review" | "archived" | "cleanup_failed";
 
-export type ExecutionWorkspaceCloseReadinessState =
-  | "ready"
-  | "ready_with_warnings"
-  | "blocked";
+export type ExecutionWorkspaceCloseReadinessState = "ready" | "ready_with_warnings" | "blocked";
 
 export type ExecutionWorkspaceCloseActionKind =
   | "archive_record"
@@ -45,7 +29,28 @@ export type ExecutionWorkspaceCloseActionKind =
   | "git_branch_delete"
   | "remove_local_directory";
 
-export type WorkspaceRuntimeDesiredState = "running" | "stopped";
+export type WorkspaceRuntimeDesiredState = "running" | "stopped" | "manual";
+export type WorkspaceRuntimeServiceStateMap = Record<string, WorkspaceRuntimeDesiredState>;
+export type WorkspaceCommandKind = "service" | "job";
+
+export interface WorkspaceCommandSource {
+  type: "paperclip";
+  key: "commands" | "services" | "jobs";
+  index: number;
+}
+
+export interface WorkspaceCommandDefinition {
+  id: string;
+  name: string;
+  kind: WorkspaceCommandKind;
+  command: string | null;
+  cwd: string | null;
+  lifecycle: "shared" | "ephemeral" | null;
+  serviceIndex: number | null;
+  disabledReason: string | null;
+  rawConfig: Record<string, unknown>;
+  source: WorkspaceCommandSource;
+}
 
 export interface ExecutionWorkspaceStrategy {
   type: ExecutionWorkspaceStrategyType;
@@ -62,11 +67,19 @@ export interface ExecutionWorkspaceConfig {
   cleanupCommand: string | null;
   workspaceRuntime: Record<string, unknown> | null;
   desiredState: WorkspaceRuntimeDesiredState | null;
+  serviceStates?: WorkspaceRuntimeServiceStateMap | null;
 }
 
 export interface ProjectWorkspaceRuntimeConfig {
   workspaceRuntime: Record<string, unknown> | null;
   desiredState: WorkspaceRuntimeDesiredState | null;
+  serviceStates?: WorkspaceRuntimeServiceStateMap | null;
+}
+
+export interface WorkspaceRuntimeControlTarget {
+  workspaceCommandId?: string | null;
+  runtimeServiceId?: string | null;
+  serviceIndex?: number | null;
 }
 
 export interface ExecutionWorkspaceCloseAction {
@@ -132,13 +145,26 @@ export interface IssueExecutionWorkspaceSettings {
   workspaceRuntime?: Record<string, unknown> | null;
 }
 
+export interface ExecutionWorkspaceSummary {
+  id: string;
+  name: string;
+  mode:
+    | Exclude<ExecutionWorkspaceMode, "inherit" | "reuse_existing" | "agent_default">
+    | "adapter_managed"
+    | "cloud_sandbox";
+  projectWorkspaceId: string | null;
+}
+
 export interface ExecutionWorkspace {
   id: string;
   companyId: string;
   projectId: string;
   projectWorkspaceId: string | null;
   sourceIssueId: string | null;
-  mode: Exclude<ExecutionWorkspaceMode, "inherit" | "reuse_existing" | "agent_default"> | "adapter_managed" | "cloud_sandbox";
+  mode:
+    | Exclude<ExecutionWorkspaceMode, "inherit" | "reuse_existing" | "agent_default">
+    | "adapter_managed"
+    | "cloud_sandbox";
   strategyType: ExecutionWorkspaceStrategyType;
   name: string;
   status: ExecutionWorkspaceStatus;
@@ -187,6 +213,7 @@ export interface WorkspaceRuntimeService {
   stoppedAt: Date | null;
   stopPolicy: Record<string, unknown> | null;
   healthStatus: "unknown" | "healthy" | "unhealthy";
+  configIndex?: number | null;
   createdAt: Date;
   updatedAt: Date;
 }

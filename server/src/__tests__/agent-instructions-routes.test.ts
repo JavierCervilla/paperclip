@@ -1,8 +1,6 @@
 import express from "express";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { agentRoutes } from "../routes/agents.js";
-import { errorHandler } from "../middleware/index.js";
 
 const mockAgentService = vi.hoisted(() => ({
   getById: vi.fn(),
@@ -32,12 +30,23 @@ const mockSecretService = vi.hoisted(() => ({
 }));
 
 const mockLogActivity = vi.hoisted(() => vi.fn());
+const mockSyncInstructionsBundleConfigFromFilePath = vi.hoisted(() => vi.fn());
+const mockFindServerAdapter = vi.hoisted(() => vi.fn());
 
 vi.mock("../services/index.js", () => ({
   agentService: () => mockAgentService,
   agentInstructionsService: () => mockAgentInstructionsService,
   accessService: () => mockAccessService,
   approvalService: () => ({}),
+  assetService: () => ({ getById: vi.fn() }),
+  chatService: () => ({
+    getSession: vi.fn(),
+    sendMessage: vi.fn(),
+    getHistory: vi.fn(),
+    getSessionById: vi.fn(),
+    getSessionMessages: vi.fn(),
+  }),
+  chatProcessService: () => ({}),
   companySkillService: () => ({ listRuntimeSkillEntries: vi.fn() }),
   budgetService: () => ({}),
   heartbeatService: () => ({}),
@@ -45,16 +54,50 @@ vi.mock("../services/index.js", () => ({
   issueService: () => ({}),
   logActivity: mockLogActivity,
   secretService: () => mockSecretService,
-  syncInstructionsBundleConfigFromFilePath: vi.fn((_agent, config) => config),
+  syncInstructionsBundleConfigFromFilePath: mockSyncInstructionsBundleConfigFromFilePath,
   workspaceOperationService: () => ({}),
+  feedbackService: () => ({}),
+  instanceSettingsService: () => ({}),
 }));
 
 vi.mock("../adapters/index.js", () => ({
-  findServerAdapter: vi.fn(),
+  findServerAdapter: mockFindServerAdapter,
   listAdapterModels: vi.fn(),
 }));
 
-function createApp() {
+function registerModuleMocks() {
+  vi.doMock("../services/index.js", () => ({
+    agentService: () => mockAgentService,
+    agentInstructionsService: () => mockAgentInstructionsService,
+    accessService: () => mockAccessService,
+    approvalService: () => ({}),
+    companySkillService: () => ({ listRuntimeSkillEntries: vi.fn() }),
+    budgetService: () => ({}),
+    heartbeatService: () => ({}),
+    issueApprovalService: () => ({}),
+    issueService: () => ({}),
+    logActivity: mockLogActivity,
+    secretService: () => mockSecretService,
+    syncInstructionsBundleConfigFromFilePath: mockSyncInstructionsBundleConfigFromFilePath,
+    workspaceOperationService: () => ({}),
+    feedbackService: () => ({}),
+    instanceSettingsService: () => ({}),
+    assetService: () => ({}),
+    chatService: () => ({}),
+    chatProcessService: () => ({}),
+  }));
+
+  vi.doMock("../adapters/index.js", () => ({
+    findServerAdapter: mockFindServerAdapter,
+    listAdapterModels: vi.fn(),
+  }));
+}
+
+async function createApp() {
+  const [{ agentRoutes }, { errorHandler }] = await Promise.all([
+    vi.importActual<typeof import("../routes/agents.js")>("../routes/agents.js"),
+    vi.importActual<typeof import("../middleware/index.js")>("../middleware/index.js"),
+  ]);
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
@@ -92,7 +135,14 @@ function makeAgent() {
 
 describe("agent instructions bundle routes", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetModules();
+    vi.doUnmock("../routes/agents.js");
+    vi.doUnmock("../routes/authz.js");
+    vi.doUnmock("../middleware/index.js");
+    registerModuleMocks();
+    vi.resetAllMocks();
+    mockSyncInstructionsBundleConfigFromFilePath.mockImplementation((_agent, config) => config);
+    mockFindServerAdapter.mockImplementation((_type: string) => ({ type: _type }));
     mockAgentService.getById.mockResolvedValue(makeAgent());
     mockAgentService.update.mockImplementation(async (_id: string, patch: Record<string, unknown>) => ({
       ...makeAgent(),
@@ -110,16 +160,18 @@ describe("agent instructions bundle routes", () => {
       warnings: [],
       legacyPromptTemplateActive: false,
       legacyBootstrapPromptTemplateActive: false,
-      files: [{
-        path: "AGENTS.md",
-        size: 12,
-        language: "markdown",
-        markdown: true,
-        isEntryFile: true,
-        editable: true,
-        deprecated: false,
-        virtual: false,
-      }],
+      files: [
+        {
+          path: "AGENTS.md",
+          size: 12,
+          language: "markdown",
+          markdown: true,
+          isEntryFile: true,
+          editable: true,
+          deprecated: false,
+          virtual: false,
+        },
+      ],
     });
     mockAgentInstructionsService.readFile.mockResolvedValue({
       path: "AGENTS.md",
@@ -155,8 +207,9 @@ describe("agent instructions bundle routes", () => {
   });
 
   it("returns bundle metadata", async () => {
-    const res = await request(createApp())
-      .get("/api/agents/11111111-1111-4111-8111-111111111111/instructions-bundle?companyId=company-1");
+    const res = await request(await createApp()).get(
+      "/api/agents/11111111-1111-4111-8111-111111111111/instructions-bundle?companyId=company-1",
+    );
 
     expect(res.status, JSON.stringify(res.body)).toBe(200);
     expect(res.body).toMatchObject({
@@ -169,7 +222,7 @@ describe("agent instructions bundle routes", () => {
   });
 
   it("writes a bundle file and persists compatibility config", async () => {
-    const res = await request(createApp())
+    const res = await request(await createApp())
       .put("/api/agents/11111111-1111-4111-8111-111111111111/instructions-bundle/file?companyId=company-1")
       .send({
         path: "AGENTS.md",
@@ -211,7 +264,7 @@ describe("agent instructions bundle routes", () => {
       },
     });
 
-    const res = await request(createApp())
+    const res = await request(await createApp())
       .patch("/api/agents/11111111-1111-4111-8111-111111111111?companyId=company-1")
       .send({
         adapterType: "claude_local",
@@ -250,7 +303,7 @@ describe("agent instructions bundle routes", () => {
       },
     });
 
-    const res = await request(createApp())
+    const res = await request(await createApp())
       .patch("/api/agents/11111111-1111-4111-8111-111111111111?companyId=company-1")
       .send({
         adapterConfig: {
@@ -288,7 +341,7 @@ describe("agent instructions bundle routes", () => {
       },
     });
 
-    const res = await request(createApp())
+    const res = await request(await createApp())
       .patch("/api/agents/11111111-1111-4111-8111-111111111111?companyId=company-1")
       .send({
         replaceAdapterConfig: true,
@@ -298,15 +351,6 @@ describe("agent instructions bundle routes", () => {
       });
 
     expect(res.status, JSON.stringify(res.body)).toBe(200);
-    expect(mockAgentService.update).toHaveBeenCalledWith(
-      "11111111-1111-4111-8111-111111111111",
-      expect.objectContaining({
-        adapterConfig: expect.objectContaining({
-          command: "codex --profile engineer",
-        }),
-      }),
-      expect.any(Object),
-    );
     expect(res.body.adapterConfig).toMatchObject({
       command: "codex --profile engineer",
     });

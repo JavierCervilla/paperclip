@@ -1,6 +1,7 @@
 import { forwardRef, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Check } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { orderItemsBySelectedAndRecent } from "../lib/recent-selections";
 import { cn } from "../lib/utils";
 
 export interface InlineEntityOption {
@@ -21,8 +22,11 @@ interface InlineEntitySelectorProps {
   className?: string;
   renderTriggerValue?: (option: InlineEntityOption | null) => ReactNode;
   renderOption?: (option: InlineEntityOption, isSelected: boolean) => ReactNode;
+  recentOptionIds?: string[];
   /** Skip the Portal so the popover stays in the DOM tree (fixes scroll inside Dialogs). */
   disablePortal?: boolean;
+  /** Open the popover when the trigger receives keyboard/programmatic focus. */
+  openOnFocus?: boolean;
 }
 
 export const InlineEntitySelector = forwardRef<HTMLButtonElement, InlineEntitySelectorProps>(
@@ -39,7 +43,9 @@ export const InlineEntitySelector = forwardRef<HTMLButtonElement, InlineEntitySe
       className,
       renderTriggerValue,
       renderOption,
+      recentOptionIds = [],
       disablePortal,
+      openOnFocus = true,
     },
     ref,
   ) {
@@ -50,10 +56,10 @@ export const InlineEntitySelector = forwardRef<HTMLButtonElement, InlineEntitySe
     const shouldPreventCloseAutoFocusRef = useRef(false);
     const isPointerDownRef = useRef(false);
 
-    const allOptions = useMemo<InlineEntityOption[]>(
-      () => [{ id: "", label: noneLabel, searchText: noneLabel }, ...options],
-      [noneLabel, options],
-    );
+    const allOptions = useMemo<InlineEntityOption[]>(() => {
+      const baseOptions = [{ id: "", label: noneLabel, searchText: noneLabel }, ...options];
+      return orderItemsBySelectedAndRecent(baseOptions, value, recentOptionIds);
+    }, [noneLabel, options, recentOptionIds, value]);
 
     const filteredOptions = useMemo(() => {
       const term = query.trim().toLowerCase();
@@ -101,9 +107,11 @@ export const InlineEntitySelector = forwardRef<HTMLButtonElement, InlineEntitySe
               "inline-flex min-w-0 items-center gap-1 rounded-md border border-border bg-muted/40 px-2 py-1 text-sm font-medium text-foreground transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
               className,
             )}
-            onPointerDown={() => { isPointerDownRef.current = true; }}
+            onPointerDown={() => {
+              isPointerDownRef.current = true;
+            }}
             onFocus={() => {
-              if (!isPointerDownRef.current) setOpen(true);
+              if (openOnFocus && !isPointerDownRef.current) setOpen(true);
               isPointerDownRef.current = false;
             }}
           >
@@ -123,7 +131,8 @@ export const InlineEntitySelector = forwardRef<HTMLButtonElement, InlineEntitySe
             // On touch devices, don't auto-focus the search input to avoid
             // opening the virtual keyboard which reshapes the viewport and
             // pushes the popover off-screen.
-            const isTouch = window.matchMedia("(pointer: coarse)").matches;
+            const isTouch =
+              typeof window.matchMedia === "function" ? window.matchMedia("(pointer: coarse)").matches : false;
             if (!isTouch) {
               inputRef.current?.focus();
             }
@@ -193,7 +202,12 @@ export const InlineEntitySelector = forwardRef<HTMLButtonElement, InlineEntitySe
                     onClick={() => commitSelection(index, true)}
                   >
                     {renderOption ? renderOption(option, isSelected) : <span className="truncate">{option.label}</span>}
-                    <Check className={cn("ml-auto h-3.5 w-3.5 text-muted-foreground", isSelected ? "opacity-100" : "opacity-0")} />
+                    <Check
+                      className={cn(
+                        "ml-auto h-3.5 w-3.5 text-muted-foreground",
+                        isSelected ? "opacity-100" : "opacity-0",
+                      )}
+                    />
                   </button>
                 );
               })

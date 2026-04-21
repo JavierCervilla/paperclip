@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import { fileURLToPath } from "node:url";
+import { createCapturedOutputBuffer, parseJsonResponseWithLimit } from "./dev-runner-output.mjs";
 import { shouldTrackDevServerPath } from "./dev-runner-paths.mjs";
 
 const mode = process.argv[2] === "watch" ? "watch" : "dev";
@@ -15,6 +17,8 @@ const gracefulShutdownTimeoutMs = 10_000;
 const changedPathSampleLimit = 5;
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const devServerStatusFilePath = path.join(repoRoot, ".paperclip", "dev-server-status.json");
+const devServerStatusToken = mode === "dev" ? randomUUID() : null;
+const devServerStatusTokenHeader = "x-paperclip-dev-server-status-token";
 
 const watchedDirectories = [
   "cli",
@@ -36,24 +40,11 @@ const watchedFiles = [
   "vitest.config.ts",
 ].map((relativePath) => path.join(repoRoot, relativePath));
 
-const ignoredDirectoryNames = new Set([
-  ".git",
-  ".turbo",
-  ".vite",
-  "coverage",
-  "dist",
-  "node_modules",
-  "ui-dist",
-]);
+const ignoredDirectoryNames = new Set([".git", ".turbo", ".vite", "coverage", "dist", "node_modules", "ui-dist"]);
 
-const ignoredRelativePaths = new Set([
-  ".paperclip/dev-server-status.json",
-]);
+const ignoredRelativePaths = new Set([".paperclip/dev-server-status.json"]);
 
-const tailscaleAuthFlagNames = new Set([
-  "--tailscale-auth",
-  "--authenticated-private",
-]);
+const tailscaleAuthFlagNames = new Set(["--tailscale-auth", "--authenticated-private"]);
 
 let tailscaleAuth = false;
 const forwardedArgs = [];
@@ -80,9 +71,11 @@ const env = {
 
 if (mode === "dev") {
   env.PAPERCLIP_DEV_SERVER_STATUS_FILE = devServerStatusFilePath;
+  env.PAPERCLIP_DEV_SERVER_STATUS_TOKEN = devServerStatusToken ?? "";
 }
 
 if (mode === "watch") {
+  delete env.PAPERCLIP_DEV_SERVER_STATUS_TOKEN;
   env.PAPERCLIP_MIGRATION_PROMPT ??= "never";
   env.PAPERCLIP_MIGRATION_AUTO_APPLY ??= "true";
 }
@@ -228,14 +221,18 @@ function writeDevServerStatus() {
   const changedPaths = [...dirtyPaths].sort();
   writeFileSync(
     devServerStatusFilePath,
-    `${JSON.stringify({
-      dirty: changedPaths.length > 0 || pendingMigrations.length > 0,
-      lastChangedAt,
-      changedPathCount: changedPaths.length,
-      changedPathsSample: changedPaths.slice(0, changedPathSampleLimit),
-      pendingMigrations,
-      lastRestartAt,
-    }, null, 2)}\n`,
+    `${JSON.stringify(
+      {
+        dirty: changedPaths.length > 0 || pendingMigrations.length > 0,
+        lastChangedAt,
+        changedPathCount: changedPaths.length,
+        changedPathsSample: changedPaths.slice(0, changedPathSampleLimit),
+        pendingMigrations,
+        lastRestartAt,
+      },
+      null,
+      2,
+    )}\n`,
     "utf8",
   );
 }
@@ -250,40 +247,42 @@ async function runPnpm(args, options = {}) {
     const spawned = spawn(pnpmBin, args, {
       stdio: options.stdio ?? ["ignore", "pipe", "pipe"],
       env: options.env ?? process.env,
+      cwd: options.cwd,
       shell: process.platform === "win32",
     });
 
-    let stdoutBuffer = "";
-    let stderrBuffer = "";
+    const stdoutBuffer = createCapturedOutputBuffer();
+    const stderrBuffer = createCapturedOutputBuffer();
 
     if (spawned.stdout) {
       spawned.stdout.on("data", (chunk) => {
-        stdoutBuffer += String(chunk);
+        stdoutBuffer.append(chunk);
       });
     }
     if (spawned.stderr) {
       spawned.stderr.on("data", (chunk) => {
-        stderrBuffer += String(chunk);
+        stderrBuffer.append(chunk);
       });
     }
 
     spawned.on("error", reject);
     spawned.on("exit", (code, signal) => {
+      const stdout = stdoutBuffer.finish();
+      const stderr = stderrBuffer.finish();
       resolve({
         code: code ?? 0,
         signal,
-        stdout: stdoutBuffer,
-        stderr: stderrBuffer,
+        stdout: stdout.text,
+        stderr: stderr.text,
       });
     });
   });
 }
 
 async function getMigrationStatusPayload() {
-  const status = await runPnpm(
-    ["--filter", "@paperclipai/db", "exec", "tsx", "src/migration-status.ts", "--json"],
-    { env },
-  );
+  const status = await runPnpm(["--filter", "@paperclipai/db", "exec", "tsx", "src/migration-status.ts", "--json"], {
+    env,
+  });
   if (status.code !== 0) {
     process.stderr.write(
       status.stderr ||
@@ -297,9 +296,7 @@ async function getMigrationStatusPayload() {
     return JSON.parse(status.stdout.trim());
   } catch (error) {
     process.stderr.write(
-      status.stderr ||
-        status.stdout ||
-        "[paperclip] migration-status returned invalid JSON payload\n",
+      status.stderr || status.stdout || "[paperclip] migration-status returned invalid JSON payload\n",
     );
     throw toError(error, "Unable to parse migration-status JSON output");
   }
@@ -379,10 +376,7 @@ async function maybePreflightMigrations(options = {}) {
 
 async function buildPluginSdk() {
   console.log("[paperclip] building plugin sdk...");
-  const result = await runPnpm(
-    ["--filter", "@paperclipai/plugin-sdk", "build"],
-    { stdio: "inherit" },
-  );
+  const result = await runPnpm(["--filter", "@paperclipai/plugin-sdk", "build"], { stdio: "inherit" });
   if (result.signal) {
     exitForSignal(result.signal);
     return;
@@ -422,11 +416,13 @@ async function scanForBackendChanges() {
 
 async function getDevHealthPayload() {
   const serverPort = env.PORT ?? process.env.PORT ?? "3100";
-  const response = await fetch(`http://127.0.0.1:${serverPort}/api/health`);
+  const response = await fetch(`http://127.0.0.1:${serverPort}/api/health`, {
+    headers: devServerStatusToken ? { [devServerStatusTokenHeader]: devServerStatusToken } : undefined,
+  });
   if (!response.ok) {
     throw new Error(`Health request failed (${response.status})`);
   }
-  return await response.json();
+  return await parseJsonResponseWithLimit(response);
 }
 
 async function waitForChildExit() {
@@ -456,11 +452,11 @@ async function startServerChild() {
   await buildPluginSdk();
 
   const serverScript = mode === "watch" ? "dev:watch" : "dev";
-  child = spawn(
-    pnpmBin,
-    ["--filter", "@paperclipai/server", serverScript, ...forwardedArgs],
-    { stdio: "inherit", env, shell: process.platform === "win32" },
-  );
+  child = spawn(pnpmBin, ["--filter", "@paperclipai/server", serverScript, ...forwardedArgs], {
+    stdio: "inherit",
+    env,
+    shell: process.platform === "win32",
+  });
 
   childExitPromise = new Promise((resolve, reject) => {
     child.on("error", reject);

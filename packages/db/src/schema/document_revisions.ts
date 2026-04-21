@@ -2,13 +2,18 @@ import { pgTable, uuid, text, integer, timestamp, index, uniqueIndex } from "dri
 import { companies } from "./companies.js";
 import { agents } from "./agents.js";
 import { documents } from "./documents.js";
+import { heartbeatRuns } from "./heartbeat_runs.js";
 
 export const documentRevisions = pgTable(
   "document_revisions",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    companyId: uuid("company_id").notNull().references(() => companies.id),
-    documentId: uuid("document_id").notNull().references(() => documents.id, { onDelete: "cascade" }),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id),
+    documentId: uuid("document_id")
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
     revisionNumber: integer("revision_number").notNull(),
     title: text("title"),
     format: text("format").notNull().default("markdown"),
@@ -16,6 +21,7 @@ export const documentRevisions = pgTable(
     changeSummary: text("change_summary"),
     createdByAgentId: uuid("created_by_agent_id").references(() => agents.id, { onDelete: "set null" }),
     createdByUserId: text("created_by_user_id"),
+    createdByRunId: uuid("created_by_run_id").references(() => heartbeatRuns.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({

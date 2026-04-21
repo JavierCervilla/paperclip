@@ -50,4 +50,20 @@ describe("errorHandler", () => {
     expect(res.err).toBe(err);
     expect(res.__errorContext?.error?.message).toBe("db exploded");
   });
+
+  it("returns 500 for SyntaxError (entity.parse.failed not specially handled)", () => {
+    const req = makeReq();
+    const res = makeRes() as any;
+    const next = vi.fn() as unknown as NextFunction;
+    const err = Object.assign(new SyntaxError("Unexpected token x in JSON at position 0"), {
+      status: 400,
+      type: "entity.parse.failed",
+    });
+
+    errorHandler(err, req, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(res.json).toHaveBeenCalledWith({ error: "Internal server error" });
+    expect(res.err).toBe(err);
+  });
 });

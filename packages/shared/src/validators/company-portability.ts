@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { routineVariableSchema } from "./routine.js";
 
 export const portabilityIncludeSchema = z
   .object({
@@ -14,6 +15,7 @@ export const portabilityEnvInputSchema = z.object({
   key: z.string().min(1),
   description: z.string().nullable(),
   agentSlug: z.string().min(1).nullable(),
+  projectSlug: z.string().min(1).nullable(),
   kind: z.enum(["secret", "plain"]),
   requirement: z.enum(["required", "optional"]),
   defaultValue: z.string().nullable(),
@@ -36,6 +38,10 @@ export const portabilityCompanyManifestEntrySchema = z.object({
   brandColor: z.string().nullable(),
   logoPath: z.string().nullable(),
   requireBoardApprovalForNewAgents: z.boolean(),
+  feedbackDataSharingEnabled: z.boolean().default(false),
+  feedbackDataSharingConsentAt: z.string().datetime().nullable().default(null),
+  feedbackDataSharingConsentByUserId: z.string().nullable().default(null),
+  feedbackDataSharingTermsVersion: z.string().nullable().default(null),
 });
 
 export const portabilitySidebarOrderSchema = z.object({
@@ -73,10 +79,14 @@ export const portabilitySkillManifestEntrySchema = z.object({
   trustLevel: z.string().nullable(),
   compatibility: z.string().nullable(),
   metadata: z.record(z.unknown()).nullable(),
-  fileInventory: z.array(z.object({
-    path: z.string().min(1),
-    kind: z.string().min(1),
-  })).default([]),
+  fileInventory: z
+    .array(
+      z.object({
+        path: z.string().min(1),
+        kind: z.string().min(1),
+      }),
+    )
+    .default([]),
 });
 
 export const portabilityProjectManifestEntrySchema = z.object({
@@ -90,19 +100,23 @@ export const portabilityProjectManifestEntrySchema = z.object({
   color: z.string().nullable(),
   status: z.string().nullable(),
   executionWorkspacePolicy: z.record(z.unknown()).nullable(),
-  workspaces: z.array(z.object({
-    key: z.string().min(1),
-    name: z.string().min(1),
-    sourceType: z.string().nullable(),
-    repoUrl: z.string().nullable(),
-    repoRef: z.string().nullable(),
-    defaultRef: z.string().nullable(),
-    visibility: z.string().nullable(),
-    setupCommand: z.string().nullable(),
-    cleanupCommand: z.string().nullable(),
-    metadata: z.record(z.unknown()).nullable(),
-    isPrimary: z.boolean(),
-  })).default([]),
+  workspaces: z
+    .array(
+      z.object({
+        key: z.string().min(1),
+        name: z.string().min(1),
+        sourceType: z.string().nullable(),
+        repoUrl: z.string().nullable(),
+        repoRef: z.string().nullable(),
+        defaultRef: z.string().nullable(),
+        visibility: z.string().nullable(),
+        setupCommand: z.string().nullable(),
+        cleanupCommand: z.string().nullable(),
+        metadata: z.record(z.unknown()).nullable(),
+        isPrimary: z.boolean(),
+      }),
+    )
+    .default([]),
   metadata: z.record(z.unknown()).nullable(),
 });
 
@@ -119,6 +133,7 @@ export const portabilityIssueRoutineTriggerManifestEntrySchema = z.object({
 export const portabilityIssueRoutineManifestEntrySchema = z.object({
   concurrencyPolicy: z.string().nullable(),
   catchUpPolicy: z.string().nullable(),
+  variables: z.array(routineVariableSchema).nullable().optional(),
   triggers: z.array(portabilityIssueRoutineTriggerManifestEntrySchema).default([]),
 });
 
@@ -191,10 +206,7 @@ export const portabilityTargetSchema = z.discriminatedUnion("mode", [
   }),
 ]);
 
-export const portabilityAgentSelectionSchema = z.union([
-  z.literal("all"),
-  z.array(z.string().min(1)),
-]);
+export const portabilityAgentSelectionSchema = z.union([z.literal("all"), z.array(z.string().min(1))]);
 
 export const portabilityCollisionStrategySchema = z.enum(["rename", "skip", "replace"]);
 

@@ -62,16 +62,18 @@ pnpm dev
 ## 5. Core Engineering Rules
 
 1. Keep changes company-scoped.
-Every domain entity should be scoped to a company and company boundaries must be enforced in routes/services.
+   Every domain entity should be scoped to a company and company boundaries must be enforced in routes/services.
 
 2. Keep contracts synchronized.
-If you change schema/API behavior, update all impacted layers:
+   If you change schema/API behavior, update all impacted layers:
+
 - `packages/db` schema and exports
 - `packages/shared` types/constants/validators
 - `server` routes/services
 - `ui` API clients and pages
 
 3. Preserve control-plane invariants.
+
 - Single-assignee task model
 - Atomic issue checkout semantics
 - Approval gates for governed actions
@@ -79,12 +81,37 @@ If you change schema/API behavior, update all impacted layers:
 - Activity logging for mutating actions
 
 4. Do not replace strategic docs wholesale unless asked.
-Prefer additive updates. Keep `doc/SPEC.md` and `doc/SPEC-implementation.md` aligned.
+   Prefer additive updates. Keep `doc/SPEC.md` and `doc/SPEC-implementation.md` aligned.
 
-5. Keep plan docs dated and centralized.
-New plan documents belong in `doc/plans/` and should use `YYYY-MM-DD-slug.md` filenames.
+5. Keep repo plan docs dated and centralized.
+   When you are creating a plan file in the repository itself, new plan documents belong in `doc/plans/` and should use `YYYY-MM-DD-slug.md` filenames. This does not replace Paperclip issue planning: if a Paperclip issue asks for a plan, update the issue `plan` document per the `paperclip` skill instead of creating a repo markdown file.
 
-## 6. Database Change Workflow
+## 6. Code Execution Standards
+
+Adapted from [andrej-karpathy-skills](https://github.com/forrestchang/andrej-karpathy-skills). These govern how agents approach writing code.
+
+### Think Before Coding
+
+State assumptions explicitly before implementing. If multiple valid approaches exist, name them and pick one with justification. If critical ambiguity exists, set status to `blocked` and comment — do not silently guess. Document non-obvious decisions in the plan document.
+
+### Simplicity First
+
+Write the minimum code that solves the problem. No features beyond what was asked. No abstractions for single-use code. No speculative flexibility or configurability. If you wrote 200 lines and it could be 50, rewrite it.
+
+### Surgical Changes
+
+Touch only what the task requires. Do not "improve" adjacent code, comments, or formatting. Match existing style. Remove imports/variables/functions that your changes made unused, but do not remove pre-existing dead code unless asked. Every changed line should trace directly to the task.
+
+### Goal-Driven Execution
+
+Transform vague tasks into verifiable goals before starting:
+
+- "Add validation" → "Write tests for invalid inputs, then make them pass"
+- "Fix the bug" → "Write a test that reproduces it, then make it pass"
+
+For multi-step work, state a brief plan with a verification check per step. This aligns with the task spec done criteria (section 5) and the verifier workflow.
+
+## 7. Database Change Workflow
 
 When changing data model:
 
@@ -103,10 +130,26 @@ pnpm -r typecheck
 ```
 
 Notes:
+
 - `packages/db/drizzle.config.ts` reads compiled schema from `dist/schema/*.js`
 - `pnpm db:generate` compiles `packages/db` first
 
-## 7. Verification Before Hand-off
+## 8. Verification Before Hand-off
+
+Default local/agent test path:
+
+```sh
+pnpm test
+```
+
+This is the cheap default and only runs the Vitest suite. Browser suites stay opt-in:
+
+```sh
+pnpm test:e2e
+pnpm test:release-smoke
+```
+
+Run the browser suites only when your change touches them or when you are explicitly verifying CI/release flows.
 
 Run this full check before claiming done:
 
@@ -118,7 +161,7 @@ pnpm build
 
 If anything cannot be run, explicitly report what was not run and why.
 
-## 8. API and Auth Expectations
+## 9. API and Auth Expectations
 
 - Base path: `/api`
 - Board access is treated as full-control operator context
@@ -132,13 +175,24 @@ When adding endpoints:
 - write activity log entries for mutations
 - return consistent HTTP errors (`400/401/403/404/409/422/500`)
 
-## 9. UI Expectations
+## 10. UI Expectations
 
 - Keep routes and nav aligned with available API surface
 - Use company selection context for company-scoped pages
 - Surface failures clearly; do not silently ignore API errors
 
-## 10. Definition of Done
+## 10. Pull Request Requirements
+
+When creating a pull request (via `gh pr create` or any other method), you **must** read and fill in every section of [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md). Do not craft ad-hoc PR bodies — use the template as the structure for your PR description. Required sections:
+
+- **Thinking Path** — trace reasoning from project context to this change (see `CONTRIBUTING.md` for examples)
+- **What Changed** — bullet list of concrete changes
+- **Verification** — how a reviewer can confirm it works
+- **Risks** — what could go wrong
+- **Model Used** — the AI model that produced or assisted with the change (provider, exact model ID, context window, capabilities). Write "None — human-authored" if no AI was used.
+- **Checklist** — all items checked
+
+## 11. Definition of Done
 
 A change is done when all are true:
 
@@ -146,3 +200,45 @@ A change is done when all are true:
 2. Typecheck, tests, and build pass
 3. Contracts are synced across db/shared/server/ui
 4. Docs updated when behavior or commands change
+5. PR description follows the [PR template](.github/PULL_REQUEST_TEMPLATE.md) with all sections filled in (including Model Used)
+
+## 11. Fork-Specific: HenkDz/paperclip
+
+This is a fork of `paperclipai/paperclip` with QoL patches and an **external-only** Hermes adapter story on branch `feat/externalize-hermes-adapter` ([tree](https://github.com/HenkDz/paperclip/tree/feat/externalize-hermes-adapter)).
+
+### Branch Strategy
+
+- `feat/externalize-hermes-adapter` → core has **no** `hermes-paperclip-adapter` dependency and **no** built-in `hermes_local` registration. Install Hermes via the Adapter Plugin manager (`@henkey/hermes-paperclip-adapter` or a `file:` path).
+- Older fork branches may still document built-in Hermes; treat this file as authoritative for the externalize branch.
+
+### Hermes (plugin only)
+
+- Register through **Board → Adapter manager** (same as Droid). Type remains `hermes_local` once the package is loaded.
+- UI uses generic **config-schema** + **ui-parser.js** from the package — no Hermes imports in `server/` or `ui/` source.
+- Optional: `file:` entry in `~/.paperclip/adapter-plugins.json` for local dev of the adapter repo.
+
+### Local Dev
+
+- Fork runs on port 3101+ (auto-detects if 3100 is taken by upstream instance)
+- `npx vite build` hangs on NTFS — use `node node_modules/vite/bin/vite.js build` instead
+- Server startup from NTFS takes 30-60s — don't assume failure immediately
+- Kill ALL paperclip processes before starting: `pkill -f "paperclip"; pkill -f "tsx.*index.ts"`
+- Vite cache survives `rm -rf dist` — delete both: `rm -rf ui/dist ui/node_modules/.vite`
+
+### Fork QoL Patches (not in upstream)
+
+These are local modifications in the fork's UI. If re-copying source, these must be re-applied:
+
+1. **stderr_group** — amber accordion for MCP init noise in `RunTranscriptView.tsx`
+2. **tool_group** — accordion for consecutive non-terminal tools (write, read, search, browser)
+3. **Dashboard excerpt** — `LatestRunCard` strips markdown, shows first 3 lines/280 chars
+
+### Plugin System
+
+PR #2218 (`feat/external-adapter-phase1`) adds external adapter support. See root `AGENTS.md` for full details.
+
+- Adapters can be loaded as external plugins via `~/.paperclip/adapter-plugins.json`
+- The plugin-loader should have ZERO hardcoded adapter imports — pure dynamic loading
+- `createServerAdapter()` must include ALL optional fields (especially `detectModel`)
+- Built-in UI adapters can shadow external plugin parsers — remove built-in when fully externalizing
+- Reference external adapters: Hermes (`@henkey/hermes-paperclip-adapter` or `file:`) and Droid (npm)

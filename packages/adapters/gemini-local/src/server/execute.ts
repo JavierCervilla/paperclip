@@ -22,6 +22,9 @@ import {
   removeMaintainerOnlySkillSymlinks,
   parseObject,
   renderTemplate,
+  renderPaperclipWakePrompt,
+  stringifyPaperclipWakePayload,
+  DEFAULT_PAPERCLIP_AGENT_PROMPT_TEMPLATE,
   runChildProcess,
 } from "@paperclipai/adapter-utils/server-utils";
 import { DEFAULT_GEMINI_LOCAL_MODEL } from "../index.js";
@@ -108,10 +111,7 @@ async function ensureGeminiSkillsInjected(
     selectedEntries.map((entry) => entry.runtimeName),
   );
   for (const skillName of removedSkills) {
-    await onLog(
-      "stderr",
-      `[paperclip] Removed maintainer-only Gemini skill "${skillName}" from ${skillsHome}\n`,
-    );
+    await onLog("stderr", `[paperclip] Removed maintainer-only Gemini skill "${skillName}" from ${skillsHome}\n`);
   }
 
   for (const entry of selectedEntries) {
@@ -138,7 +138,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
 
   const promptTemplate = asString(
     config.promptTemplate,
-    "You are agent {{agent.id}} ({{agent.name}}). Continue your Paperclip work.",
+    DEFAULT_PAPERCLIP_AGENT_PROMPT_TEMPLATE,
   );
   const command = asString(config.command, "gemini");
   const model = asString(config.model, DEFAULT_GEMINI_LOCAL_MODEL).trim();
@@ -153,8 +153,8 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const agentHome = asString(workspaceContext.agentHome, "");
   const workspaceHints = Array.isArray(context.paperclipWorkspaces)
     ? context.paperclipWorkspaces.filter(
-      (value): value is Record<string, unknown> => typeof value === "object" && value !== null,
-    )
+        (value): value is Record<string, unknown> => typeof value === "object" && value !== null,
+      )
     : [];
   const configuredCwd = asString(config.cwd, "");
   const useConfiguredInsteadOfAgentHome = workspaceSource === "agent_home" && configuredCwd.length > 0;
@@ -175,17 +175,15 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     (typeof context.issueId === "string" && context.issueId.trim().length > 0 && context.issueId.trim()) ||
     null;
   const wakeReason =
-    typeof context.wakeReason === "string" && context.wakeReason.trim().length > 0
-      ? context.wakeReason.trim()
-      : null;
+    typeof context.wakeReason === "string" && context.wakeReason.trim().length > 0 ? context.wakeReason.trim() : null;
   const wakeCommentId =
-    (typeof context.wakeCommentId === "string" && context.wakeCommentId.trim().length > 0 && context.wakeCommentId.trim()) ||
+    (typeof context.wakeCommentId === "string" &&
+      context.wakeCommentId.trim().length > 0 &&
+      context.wakeCommentId.trim()) ||
     (typeof context.commentId === "string" && context.commentId.trim().length > 0 && context.commentId.trim()) ||
     null;
   const approvalId =
-    typeof context.approvalId === "string" && context.approvalId.trim().length > 0
-      ? context.approvalId.trim()
-      : null;
+    typeof context.approvalId === "string" && context.approvalId.trim().length > 0 ? context.approvalId.trim() : null;
   const approvalStatus =
     typeof context.approvalStatus === "string" && context.approvalStatus.trim().length > 0
       ? context.approvalStatus.trim()
@@ -193,12 +191,14 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const linkedIssueIds = Array.isArray(context.issueIds)
     ? context.issueIds.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
     : [];
+  const wakePayloadJson = stringifyPaperclipWakePayload(context.paperclipWake);
   if (wakeTaskId) env.PAPERCLIP_TASK_ID = wakeTaskId;
   if (wakeReason) env.PAPERCLIP_WAKE_REASON = wakeReason;
   if (wakeCommentId) env.PAPERCLIP_WAKE_COMMENT_ID = wakeCommentId;
   if (approvalId) env.PAPERCLIP_APPROVAL_ID = approvalId;
   if (approvalStatus) env.PAPERCLIP_APPROVAL_STATUS = approvalStatus;
   if (linkedIssueIds.length > 0) env.PAPERCLIP_LINKED_ISSUE_IDS = linkedIssueIds.join(",");
+  if (wakePayloadJson) env.PAPERCLIP_WAKE_PAYLOAD_JSON = wakePayloadJson;
   if (effectiveWorkspaceCwd) env.PAPERCLIP_WORKSPACE_CWD = effectiveWorkspaceCwd;
   if (workspaceSource) env.PAPERCLIP_WORKSPACE_SOURCE = workspaceSource;
   if (workspaceId) env.PAPERCLIP_WORKSPACE_ID = workspaceId;
@@ -295,17 +295,20 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     run: { id: runId, source: "on_demand" },
     context,
   };
-  const renderedPrompt = renderTemplate(promptTemplate, templateData);
   const renderedBootstrapPrompt =
     !sessionId && bootstrapPromptTemplate.trim().length > 0
       ? renderTemplate(bootstrapPromptTemplate, templateData).trim()
       : "";
+  const wakePrompt = renderPaperclipWakePrompt(context.paperclipWake, { resumedSession: Boolean(sessionId) });
+  const shouldUseResumeDeltaPrompt = Boolean(sessionId) && wakePrompt.length > 0;
+  const renderedPrompt = shouldUseResumeDeltaPrompt ? "" : renderTemplate(promptTemplate, templateData);
   const sessionHandoffNote = asString(context.paperclipSessionHandoffMarkdown, "").trim();
   const paperclipEnvNote = renderPaperclipEnvNote(env);
   const apiAccessNote = renderApiAccessNote(env);
   const prompt = joinPromptSections([
     instructionsPrefix,
     renderedBootstrapPrompt,
+    wakePrompt,
     sessionHandoffNote,
     paperclipEnvNote,
     apiAccessNote,
@@ -315,6 +318,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     promptChars: prompt.length,
     instructionsChars: instructionsPrefix.length,
     bootstrapPromptChars: renderedBootstrapPrompt.length,
+    wakePromptChars: wakePrompt.length,
     sessionHandoffChars: sessionHandoffNote.length,
     runtimeNoteChars: paperclipEnvNote.length + apiAccessNote.length,
     heartbeatPromptChars: renderedPrompt.length,
@@ -343,9 +347,9 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         command: resolvedCommand,
         cwd,
         commandNotes,
-        commandArgs: args.map((value, index) => (
-          index === args.length - 1 ? `<prompt ${prompt.length} chars>` : value
-        )),
+        commandArgs: args.map((value, index) =>
+          index === args.length - 1 ? `<prompt ${prompt.length} chars>` : value,
+        ),
         env: loggedEnv,
         prompt,
         promptMetrics,
@@ -402,27 +406,23 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
 
     // On retry, don't fall back to old session ID — the old session was stale
     const canFallbackToRuntimeSession = !isRetry;
-    const resolvedSessionId = attempt.parsed.sessionId
-      ?? (canFallbackToRuntimeSession ? (runtimeSessionId ?? runtime.sessionId ?? null) : null);
+    const resolvedSessionId =
+      attempt.parsed.sessionId ??
+      (canFallbackToRuntimeSession ? (runtimeSessionId ?? runtime.sessionId ?? null) : null);
     const resolvedSessionParams = resolvedSessionId
       ? ({
-        sessionId: resolvedSessionId,
-        cwd,
-        ...(workspaceId ? { workspaceId } : {}),
-        ...(workspaceRepoUrl ? { repoUrl: workspaceRepoUrl } : {}),
-        ...(workspaceRepoRef ? { repoRef: workspaceRepoRef } : {}),
-      } as Record<string, unknown>)
+          sessionId: resolvedSessionId,
+          cwd,
+          ...(workspaceId ? { workspaceId } : {}),
+          ...(workspaceRepoUrl ? { repoUrl: workspaceRepoUrl } : {}),
+          ...(workspaceRepoRef ? { repoRef: workspaceRepoRef } : {}),
+        } as Record<string, unknown>)
       : null;
     const parsedError = typeof attempt.parsed.errorMessage === "string" ? attempt.parsed.errorMessage.trim() : "";
     const stderrLine = firstNonEmptyLine(attempt.proc.stderr);
-    const structuredFailure = attempt.parsed.resultEvent
-      ? describeGeminiFailure(attempt.parsed.resultEvent)
-      : null;
+    const structuredFailure = attempt.parsed.resultEvent ? describeGeminiFailure(attempt.parsed.resultEvent) : null;
     const fallbackErrorMessage =
-      parsedError ||
-      structuredFailure ||
-      stderrLine ||
-      `Gemini exited with code ${attempt.proc.exitCode ?? -1}`;
+      parsedError || structuredFailure || stderrLine || `Gemini exited with code ${attempt.proc.exitCode ?? -1}`;
 
     return {
       exitCode: attempt.proc.exitCode,

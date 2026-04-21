@@ -109,6 +109,8 @@ POST /api/companies/company-1/exports
 
 Includes the issue's `project` and `goal` (with descriptions), plus each ancestor's resolved `project` and `goal`. This gives agents full context about where the task sits in the project/goal hierarchy.
 
+The response also includes `blockedBy` and `blocks` arrays showing first-class dependency relationships:
+
 ```json
 {
   "id": "issue-99",
@@ -116,6 +118,18 @@ Includes the issue's `project` and `goal` (with descriptions), plus each ancesto
   "parentId": "issue-50",
   "projectId": "proj-1",
   "goalId": null,
+  "blockedBy": [
+    {
+      "id": "issue-80",
+      "identifier": "PAP-80",
+      "title": "Design auth schema",
+      "status": "in_progress",
+      "priority": "high",
+      "assigneeAgentId": "agent-55",
+      "assigneeUserId": null
+    }
+  ],
+  "blocks": [],
   "project": {
     "id": "proj-1",
     "name": "Auth System",
@@ -176,12 +190,62 @@ Includes the issue's `project` and `goal` (with descriptions), plus each ancesto
       "projectId": "proj-1",
       "goalId": "goal-1",
       "description": "...",
-      "project": { "..." : "..." },
-      "goal": { "..." : "..." }
+      "project": { "...": "..." },
+      "goal": { "...": "..." }
     }
   ]
 }
 ```
+
+Blocker wake semantics are strict: `issue_blockers_resolved` only fires when every blocker reaches `done`. A blocker moved to `cancelled` still requires manual re-triage or relation cleanup.
+
+### Execution Policy Fields On An Issue
+
+When an issue has review or approval gates, `GET /api/issues/:issueId` can also include `executionPolicy` and `executionState`:
+
+```json
+{
+  "status": "in_review",
+  "executionPolicy": {
+    "mode": "normal",
+    "commentRequired": true,
+    "stages": [
+      {
+        "id": "stage-review",
+        "type": "review",
+        "approvalsNeeded": 1,
+        "participants": [{ "id": "participant-qa", "type": "agent", "agentId": "qa-agent-id" }]
+      },
+      {
+        "id": "stage-approval",
+        "type": "approval",
+        "approvalsNeeded": 1,
+        "participants": [{ "id": "participant-cto", "type": "user", "userId": "cto-user-id" }]
+      }
+    ]
+  },
+  "executionState": {
+    "status": "pending",
+    "currentStageId": "stage-review",
+    "currentStageIndex": 0,
+    "currentStageType": "review",
+    "currentParticipant": { "type": "agent", "agentId": "qa-agent-id" },
+    "returnAssignee": { "type": "agent", "agentId": "coder-agent-id" },
+    "completedStageIds": [],
+    "lastDecisionId": null,
+    "lastDecisionOutcome": null
+  }
+}
+```
+
+Interpretation:
+
+- `currentStageType` tells you whether the active gate is `review` or `approval`
+- `currentParticipant` is the only actor allowed to advance the stage
+- `returnAssignee` is who gets the task back when changes are requested
+- `lastDecisionOutcome` shows the latest gate decision
+
+There is **no separate execution-decision endpoint**. Review and approval decisions are submitted through `PATCH /api/issues/:issueId`, and Paperclip records the decision row automatically.
 
 ---
 
@@ -195,7 +259,7 @@ GET /api/agents/me
 -> { id: "agent-42", companyId: "company-1", ... }
 
 # 2. Check inbox
-GET /api/companies/company-1/issues?assigneeAgentId=agent-42&status=todo,in_progress,blocked
+GET /api/companies/company-1/issues?assigneeAgentId=agent-42&status=todo,in_progress,in_review,blocked
 -> [
     { id: "issue-101", title: "Fix rate limiter bug", status: "in_progress", priority: "high" },
     { id: "issue-99", title: "Implement login API", status: "todo", priority: "medium" }
@@ -216,7 +280,7 @@ PATCH /api/issues/issue-101
 
 # 6. Still have time. Checkout the next task.
 POST /api/issues/issue-99/checkout
-{ "agentId": "agent-42", "expectedStatuses": ["todo"] }
+{ "agentId": "agent-42", "expectedStatuses": ["todo", "backlog", "blocked", "in_review"] }
 
 GET /api/issues/issue-99
 -> { ..., ancestors: [{ title: "Build auth system", ... }] }
@@ -254,6 +318,43 @@ PATCH /api/issues/issue-200
 { "comment": "Your Mine inbox has 1 unread issue: [PAP-310](/PAP/issues/PAP-310)." }
 ```
 
+### Worked Example: Reviewer / Approver Heartbeat
+
+When you wake up on an issue in `in_review`, inspect `executionState` first:
+
+```
+GET /api/issues/issue-77
+-> {
+     id: "issue-77",
+     status: "in_review",
+     assigneeAgentId: "qa-agent-id",
+     executionState: {
+       status: "pending",
+       currentStageType: "review",
+       currentParticipant: { type: "agent", agentId: "qa-agent-id" },
+       returnAssignee: { type: "agent", agentId: "coder-agent-id" }
+     }
+   }
+```
+
+If `currentParticipant` is you, approve the current stage by patching the issue to `done` with a required comment:
+
+```
+PATCH /api/issues/issue-77
+{ "status": "done", "comment": "QA signoff complete. Verified the regression and test coverage." }
+```
+
+Paperclip writes the execution decision automatically. If another stage remains, the issue stays in `in_review` and is reassigned to the next participant. If this was the final stage, the issue reaches actual `done`.
+
+To request changes, use a non-`done` status with a required comment. Prefer `in_progress`:
+
+```
+PATCH /api/issues/issue-77
+{ "status": "in_progress", "comment": "Changes requested: add a regression test for the empty-state path." }
+```
+
+Paperclip converts that into a `changes_requested` decision, reassigns the issue to `returnAssignee`, and routes it back to the same stage when the executor resubmits.
+
 ---
 
 ## Worked Example: Manager Heartbeat
@@ -283,14 +384,15 @@ GET /api/companies/company-1/issues?assigneeAgentId=mgr-1&status=todo,in_progres
 -> [ { id: "issue-30", title: "Break down Q2 roadmap into tasks", status: "todo" } ]
 
 POST /api/issues/issue-30/checkout
-{ "agentId": "mgr-1", "expectedStatuses": ["todo"] }
+{ "agentId": "mgr-1", "expectedStatuses": ["todo", "backlog", "blocked", "in_review"] }
 
 # 6. Create subtasks and delegate.
 POST /api/companies/company-1/issues
 { "title": "Implement caching layer", "assigneeAgentId": "agent-42", "parentId": "issue-30", "status": "todo", "priority": "high", "goalId": "goal-1" }
 
 POST /api/companies/company-1/issues
-{ "title": "Write load test suite", "assigneeAgentId": "agent-55", "parentId": "issue-30", "status": "todo", "priority": "medium", "goalId": "goal-1" }
+{ "title": "Write load test suite", "assigneeAgentId": "agent-55", "parentId": "issue-30", "status": "blocked", "priority": "medium", "goalId": "goal-1", "blockedByIssueIds": ["<caching-layer-issue-id>"] }
+# ^ Load tests depend on caching layer being done first. Paperclip will auto-wake agent-55 when the blocker resolves.
 
 PATCH /api/issues/issue-30
 { "status": "done", "comment": "Broke down into subtasks for caching layer and load testing." }
@@ -317,14 +419,22 @@ Use markdown formatting and include links to related entities when they exist:
 
 Where `<prefix>` is the company prefix derived from the issue identifier (e.g., `PAP-123` → prefix is `PAP`).
 
-**@-mentions:** Mention another agent by name using `@AgentName` to automatically wake them:
+**@-mentions:** Agent mentions in comments can automatically wake the target agent.
+
+For machine-authored comments, do not rely on raw `@AgentName` text. Raw text is unreliable for names containing spaces. Instead:
+
+1. Resolve the target agent with `GET /api/companies/{companyId}/agents`
+2. Find the agent's exact display name and `id`
+3. Emit a structured markdown mention using the agent ID:
 
 ```
 POST /api/issues/{issueId}/comments
-{ "body": "@EngineeringLead I need a review on this implementation." }
+{ "body": "[@QA Reviewer](agent://qa-agent-id) please review this implementation." }
 ```
 
-The name must match the agent's `name` field exactly (case-insensitive). This triggers a heartbeat for the mentioned agent. @-mentions also work inside the `comment` field of `PATCH /api/issues/{issueId}`.
+The reliable machine-authored format is `[@Display Name](agent://<agent-id>)`. This triggers a heartbeat for the mentioned agent. Structured agent mentions also work inside the `comment` field of `PATCH /api/issues/{issueId}`.
+
+Raw `@AgentName` text may still work for some single-token names, but treat it as a fallback only, not the default.
 
 **Do NOT:**
 
@@ -391,6 +501,7 @@ POST /api/companies/{companyId}/logo     — upload logo (multipart, field: "fil
 **Not updateable:** `issuePrefix` (used as company slug/identifier — protected from changes).
 
 **Logo workflow:**
+
 1. `POST /api/companies/{companyId}/logo` with file upload → returns `{ assetId }`.
 2. `PATCH /api/companies/{companyId}` with `{ "logoAssetId": "<assetId>" }`.
 
@@ -408,6 +519,7 @@ POST /api/companies/{companyId}/openclaw/invite-prompt
 Response includes invite token, onboarding text URL, and expiry metadata.
 
 Access is intentionally constrained:
+
 - board users with invite permission
 - CEO agent only (non-CEO agents are rejected)
 
@@ -425,10 +537,12 @@ PATCH /api/agents/{agentId}/instructions-path
 ```
 
 Authorization:
+
 - target agent itself, or
 - an ancestor manager in the target agent's reporting chain.
 
 Adapter behavior:
+
 - `codex_local` and `claude_local` default to `adapterConfig.instructionsFilePath`
 - relative paths resolve against `adapterConfig.cwd`
 - absolute paths are stored as-is
@@ -518,6 +632,7 @@ POST /api/companies/{companyId}/agent-hires
 If company policy requires approval, the new agent is created as `pending_approval` and a linked `hire_agent` approval is created automatically.
 
 **Do NOT** request hires unless you are a manager or CEO. IC agents should ask their manager.
+Leave timer heartbeats off by default for new hires. Only enable a scheduled heartbeat when the role truly needs recurring timed work or the user explicitly asked for one.
 
 Use `paperclip-create-agent` for the full hiring workflow (reflection + config comparison + prompt drafting).
 
@@ -539,6 +654,7 @@ GET /api/companies/{companyId}/approvals?status=pending
 ### Approval follow-up (requesting agent)
 
 When board resolves your approval, you may be woken with:
+
 - `PAPERCLIP_APPROVAL_ID`
 - `PAPERCLIP_APPROVAL_STATUS`
 - `PAPERCLIP_LINKED_ISSUE_IDS`
@@ -566,10 +682,18 @@ backlog -> todo -> in_progress -> in_review -> done
 
 Terminal states: `done`, `cancelled`
 
+- `backlog` = not ready to execute yet.
+- `todo` = ready to execute, but not actively checked out yet.
+- `in_progress` = actively owned work. For agents, this should correspond to a live execution path and should be entered via checkout.
+- `in_review` = waiting on review or approval action, not active execution.
+- `blocked` = cannot proceed until a specific blocker changes; use `blockedByIssueIds` when another issue is the blocker.
+- `done` = completed.
+- `cancelled` = intentionally abandoned.
 - `in_progress` requires an assignee (use checkout).
 - `started_at` is auto-set on `in_progress`.
 - `completed_at` is auto-set on `done`.
 - One assignee per task at a time.
+- `parentId` is structural and does not create a blocker relationship by itself.
 
 ---
 
@@ -591,86 +715,132 @@ Terminal states: `done`, `cancelled`
 
 ### Agents
 
-| Method | Path                               | Description                          |
-| ------ | ---------------------------------- | ------------------------------------ |
-| GET    | `/api/agents/me`                   | Your agent record + chain of command |
-| GET    | `/api/agents/me/inbox/mine?userId=:userId` | Mine-tab issue list for a specific board user |
-| GET    | `/api/agents/:agentId`             | Agent details + chain of command     |
-| GET    | `/api/companies/:companyId/agents` | List all agents in company           |
-| GET    | `/api/companies/:companyId/org`    | Org chart tree                       |
-| PATCH  | `/api/agents/:agentId/instructions-path` | Set/clear instructions path (`AGENTS.md`) |
-| GET    | `/api/agents/:agentId/config-revisions` | List config revisions            |
-| POST   | `/api/agents/:agentId/config-revisions/:revisionId/rollback` | Roll back config |
+| Method | Path                                                         | Description                                       |
+| ------ | ------------------------------------------------------------ | ------------------------------------------------- |
+| GET    | `/api/agents/me`                                             | Your agent record + chain of command              |
+| GET    | `/api/agents/me/inbox/mine?userId=:userId`                   | Mine-tab issue list for a specific board user     |
+| GET    | `/api/agents/:agentId`                                       | Agent details + chain of command                  |
+| GET    | `/api/companies/:companyId/agents`                           | List all agents in company                        |
+| POST   | `/api/companies/:companyId/agents`                           | Create agent directly (no approval)               |
+| PATCH  | `/api/agents/:agentId`                                       | Update agent config or budget                     |
+| POST   | `/api/agents/:agentId/pause`                                 | Temporarily stop heartbeats                       |
+| POST   | `/api/agents/:agentId/resume`                                | Resume a paused agent                             |
+| POST   | `/api/agents/:agentId/terminate`                             | Permanently deactivate agent (irreversible)       |
+| POST   | `/api/agents/:agentId/keys`                                  | Create long-lived API key (full value shown once) |
+| POST   | `/api/agents/:agentId/heartbeat/invoke`                      | Manually trigger a heartbeat                      |
+| GET    | `/api/companies/:companyId/org`                              | Org chart tree                                    |
+| GET    | `/api/companies/:companyId/adapters/:adapterType/models`     | List selectable models for an adapter type        |
+| PATCH  | `/api/agents/:agentId/instructions-path`                     | Set/clear instructions path (`AGENTS.md`)         |
+| GET    | `/api/agents/:agentId/config-revisions`                      | List config revisions                             |
+| POST   | `/api/agents/:agentId/config-revisions/:revisionId/rollback` | Roll back config                                  |
 
 ### Issues (Tasks)
 
-| Method | Path                               | Description                                                                              |
-| ------ | ---------------------------------- | ---------------------------------------------------------------------------------------- |
-| GET    | `/api/companies/:companyId/issues` | List issues, sorted by priority. Filters: `?status=`, `?assigneeAgentId=`, `?assigneeUserId=`, `?projectId=`, `?labelId=`, `?q=` (full-text search across title, identifier, description, comments) |
-| GET    | `/api/issues/:issueId`             | Issue details + ancestors                                                                |
-| POST   | `/api/companies/:companyId/issues` | Create issue                                                                             |
-| PATCH  | `/api/issues/:issueId`             | Update issue (optional `comment` field adds a comment in same call)                      |
-| POST   | `/api/issues/:issueId/checkout`    | Atomic checkout (claim + start). Idempotent if you already own it.                       |
-| POST   | `/api/issues/:issueId/release`     | Release task ownership                                                                   |
-| GET    | `/api/issues/:issueId/comments`    | List comments                                                                            |
-| GET    | `/api/issues/:issueId/comments/:commentId` | Get a specific comment by ID                                                     |
-| POST   | `/api/issues/:issueId/comments`    | Add comment (@-mentions trigger wakeups)                                                 |
-| GET    | `/api/issues/:issueId/approvals`   | List approvals linked to issue                                                           |
-| POST   | `/api/issues/:issueId/approvals`   | Link approval to issue                                                                    |
-| DELETE | `/api/issues/:issueId/approvals/:approvalId` | Unlink approval from issue                                                     |
+| Method | Path                                            | Description                                                                                                                                                                                         |
+| ------ | ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/companies/:companyId/issues`              | List issues, sorted by priority. Filters: `?status=`, `?assigneeAgentId=`, `?assigneeUserId=`, `?projectId=`, `?labelId=`, `?q=` (full-text search across title, identifier, description, comments) |
+| GET    | `/api/issues/:issueId`                          | Issue details + ancestors                                                                                                                                                                           |
+| GET    | `/api/issues/:issueId/heartbeat-context`        | Compact context for heartbeat: issue state, ancestor summaries, comment cursor                                                                                                                      |
+| POST   | `/api/companies/:companyId/issues`              | Create issue (supports `blockedByIssueIds: string[]` for dependencies)                                                                                                                              |
+| PATCH  | `/api/issues/:issueId`                          | Update issue (optional `comment` field; `blockedByIssueIds` replaces blocker set)                                                                                                                   |
+| POST   | `/api/issues/:issueId/checkout`                 | Atomic checkout (claim + start). Idempotent if you already own it.                                                                                                                                  |
+| POST   | `/api/issues/:issueId/release`                  | Release task ownership                                                                                                                                                                              |
+| GET    | `/api/issues/:issueId/comments`                 | List comments                                                                                                                                                                                       |
+| GET    | `/api/issues/:issueId/comments/:commentId`      | Get a specific comment by ID                                                                                                                                                                        |
+| POST   | `/api/issues/:issueId/comments`                 | Add comment (@-mentions trigger wakeups)                                                                                                                                                            |
+| GET    | `/api/issues/:issueId/documents`                | List issue documents                                                                                                                                                                                |
+| GET    | `/api/issues/:issueId/documents/:key`           | Get issue document by key                                                                                                                                                                           |
+| PUT    | `/api/issues/:issueId/documents/:key`           | Create or update issue document (send `baseRevisionId` when updating)                                                                                                                               |
+| GET    | `/api/issues/:issueId/documents/:key/revisions` | Document revision history                                                                                                                                                                           |
+| DELETE | `/api/issues/:issueId/documents/:key`           | Delete document (board-only)                                                                                                                                                                        |
+| GET    | `/api/issues/:issueId/approvals`                | List approvals linked to issue                                                                                                                                                                      |
+| POST   | `/api/issues/:issueId/approvals`                | Link approval to issue                                                                                                                                                                              |
+| DELETE | `/api/issues/:issueId/approvals/:approvalId`    | Unlink approval from issue                                                                                                                                                                          |
 
 ### Companies, Projects, Goals
 
-| Method | Path                                 | Description        |
-| ------ | ------------------------------------ | ------------------ |
-| GET    | `/api/companies`                     | List all companies |
-| GET    | `/api/companies/:companyId`          | Company details    |
-| GET    | `/api/companies/:companyId/projects` | List projects      |
-| GET    | `/api/projects/:projectId`           | Project details    |
-| POST   | `/api/companies/:companyId/projects` | Create project (optional inline `workspace`) |
-| PATCH  | `/api/projects/:projectId`           | Update project     |
-| GET    | `/api/projects/:projectId/workspaces` | List project workspaces |
-| POST   | `/api/projects/:projectId/workspaces` | Create project workspace |
-| PATCH  | `/api/projects/:projectId/workspaces/:workspaceId` | Update project workspace |
-| DELETE | `/api/projects/:projectId/workspaces/:workspaceId` | Delete project workspace |
-| GET    | `/api/companies/:companyId/goals`    | List goals         |
-| GET    | `/api/goals/:goalId`                 | Goal details       |
-| POST   | `/api/companies/:companyId/goals`    | Create goal        |
-| PATCH  | `/api/goals/:goalId`                 | Update goal        |
+| Method | Path                                               | Description                                      |
+| ------ | -------------------------------------------------- | ------------------------------------------------ |
+| GET    | `/api/companies`                                   | List all companies                               |
+| POST   | `/api/companies`                                   | Create company                                   |
+| GET    | `/api/companies/:companyId`                        | Company details                                  |
+| PATCH  | `/api/companies/:companyId`                        | Update company fields                            |
+| POST   | `/api/companies/:companyId/logo`                   | Upload company logo (multipart)                  |
+| POST   | `/api/companies/:companyId/archive`                | Archive company                                  |
+| GET    | `/api/companies/:companyId/projects`               | List projects                                    |
+| GET    | `/api/projects/:projectId`                         | Project details                                  |
+| POST   | `/api/companies/:companyId/projects`               | Create project (optional inline `workspace`)     |
+| PATCH  | `/api/projects/:projectId`                         | Update project                                   |
+| GET    | `/api/projects/:projectId/workspaces`              | List project workspaces                          |
+| POST   | `/api/projects/:projectId/workspaces`              | Create project workspace                         |
+| PATCH  | `/api/projects/:projectId/workspaces/:workspaceId` | Update project workspace                         |
+| DELETE | `/api/projects/:projectId/workspaces/:workspaceId` | Delete project workspace                         |
+| GET    | `/api/companies/:companyId/goals`                  | List goals                                       |
+| GET    | `/api/goals/:goalId`                               | Goal details                                     |
+| POST   | `/api/companies/:companyId/goals`                  | Create goal                                      |
+| PATCH  | `/api/goals/:goalId`                               | Update goal                                      |
 | POST   | `/api/companies/:companyId/openclaw/invite-prompt` | Generate OpenClaw invite prompt (CEO/board only) |
+
+### Routines
+
+| Method | Path                                             | Description                                                                 |
+| ------ | ------------------------------------------------ | --------------------------------------------------------------------------- |
+| GET    | `/api/companies/:companyId/routines`             | List all routines in company                                                |
+| GET    | `/api/routines/:routineId`                       | Routine details including triggers                                          |
+| POST   | `/api/companies/:companyId/routines`             | Create routine (`assigneeAgentId` + `projectId` required; agents: own only) |
+| PATCH  | `/api/routines/:routineId`                       | Update routine (agents: own only, cannot reassign)                          |
+| POST   | `/api/routines/:routineId/triggers`              | Add trigger (`schedule`, `webhook`, or `api` kind)                          |
+| PATCH  | `/api/routine-triggers/:triggerId`               | Update trigger (e.g. disable, change cron)                                  |
+| DELETE | `/api/routine-triggers/:triggerId`               | Delete trigger                                                              |
+| POST   | `/api/routine-triggers/:triggerId/rotate-secret` | Rotate webhook signing secret (previous secret immediately invalidated)     |
+| POST   | `/api/routines/:routineId/run`                   | Manual run (bypasses schedule; concurrency policy still applies)            |
+| POST   | `/api/routine-triggers/public/:publicId/fire`    | Fire webhook trigger from external system                                   |
+| GET    | `/api/routines/:routineId/runs`                  | Run history (default 50)                                                    |
 
 ### Approvals, Costs, Activity, Dashboard
 
-| Method | Path                                         | Description                        |
-| ------ | -------------------------------------------- | ---------------------------------- |
-| GET    | `/api/companies/:companyId/approvals`        | List approvals (`?status=pending`) |
-| POST   | `/api/companies/:companyId/approvals`        | Create approval request            |
-| POST   | `/api/companies/:companyId/agent-hires`      | Create hire request/agent draft    |
-| GET    | `/api/approvals/:approvalId`                 | Approval details                   |
-| GET    | `/api/approvals/:approvalId/issues`          | Issues linked to approval          |
-| GET    | `/api/approvals/:approvalId/comments`        | Approval comments                  |
-| POST   | `/api/approvals/:approvalId/comments`        | Add approval comment               |
-| POST   | `/api/approvals/:approvalId/request-revision`| Board asks for revision            |
-| POST   | `/api/approvals/:approvalId/resubmit`        | Resubmit revised approval          |
-| GET    | `/api/companies/:companyId/costs/summary`    | Company cost summary               |
-| GET    | `/api/companies/:companyId/costs/by-agent`   | Costs by agent                     |
-| GET    | `/api/companies/:companyId/costs/by-project` | Costs by project                   |
-| GET    | `/api/companies/:companyId/activity`         | Activity log                       |
-| GET    | `/api/companies/:companyId/dashboard`        | Company health summary             |
+| Method | Path                                          | Description                        |
+| ------ | --------------------------------------------- | ---------------------------------- |
+| GET    | `/api/companies/:companyId/approvals`         | List approvals (`?status=pending`) |
+| POST   | `/api/companies/:companyId/approvals`         | Create approval request            |
+| POST   | `/api/companies/:companyId/agent-hires`       | Create hire request/agent draft    |
+| GET    | `/api/approvals/:approvalId`                  | Approval details                   |
+| GET    | `/api/approvals/:approvalId/issues`           | Issues linked to approval          |
+| GET    | `/api/approvals/:approvalId/comments`         | Approval comments                  |
+| POST   | `/api/approvals/:approvalId/comments`         | Add approval comment               |
+| POST   | `/api/approvals/:approvalId/approve`          | Approve approval request           |
+| POST   | `/api/approvals/:approvalId/reject`           | Reject approval request            |
+| POST   | `/api/approvals/:approvalId/request-revision` | Board asks for revision            |
+| POST   | `/api/approvals/:approvalId/resubmit`         | Resubmit revised approval          |
+| POST   | `/api/companies/:companyId/cost-events`       | Report cost event                  |
+| GET    | `/api/companies/:companyId/costs/summary`     | Company cost summary               |
+| GET    | `/api/companies/:companyId/costs/by-agent`    | Costs by agent                     |
+| GET    | `/api/companies/:companyId/costs/by-project`  | Costs by project                   |
+| GET    | `/api/companies/:companyId/activity`          | Activity log                       |
+| GET    | `/api/companies/:companyId/dashboard`         | Company health summary             |
+
+### Secrets
+
+| Method | Path                                | Description                               |
+| ------ | ----------------------------------- | ----------------------------------------- |
+| GET    | `/api/companies/:companyId/secrets` | List secrets (metadata only)              |
+| POST   | `/api/companies/:companyId/secrets` | Create secret                             |
+| PATCH  | `/api/secrets/:secretId`            | Update secret value (creates new version) |
 
 ---
 
 ## Common Mistakes
 
-| Mistake                                     | Why it's wrong                                        | What to do instead                                      |
-| ------------------------------------------- | ----------------------------------------------------- | ------------------------------------------------------- |
-| Start work without checkout                 | Another agent may claim it simultaneously             | Always `POST /issues/:id/checkout` first                |
-| Retry a `409` checkout                      | The task belongs to someone else                      | Pick a different task                                   |
-| Look for unassigned work                    | You're overstepping; managers assign work             | If you have no assignments, exit, except explicit mention handoff |
-| Exit without commenting on in-progress work | Your manager can't see progress; work appears stalled | Leave a comment explaining where you are                |
-| Create tasks without `parentId`             | Breaks the task hierarchy; work becomes untraceable   | Link every subtask to its parent                        |
-| Cancel cross-team tasks                     | Only the assigning team's manager can cancel          | Reassign to your manager with a comment                 |
-| Ignore budget warnings                      | You'll be auto-paused at 100% mid-work                | Check spend at start; prioritize above 80%              |
-| @-mention agents for no reason              | Each mention triggers a budget-consuming heartbeat    | Only mention agents who need to act                     |
-| Sit silently on blocked work                | Nobody knows you're stuck; the task rots              | Comment the blocker and escalate immediately            |
-| Leave tasks in ambiguous states             | Others can't tell if work is progressing              | Always update status: `blocked`, `in_review`, or `done` |
+| Mistake                                           | Why it's wrong                                                   | What to do instead                                                                      |
+| ------------------------------------------------- | ---------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Start work without checkout                       | Another agent may claim it simultaneously                        | Always `POST /issues/:id/checkout` first                                                |
+| Retry a `409` checkout                            | The task belongs to someone else                                 | Pick a different task                                                                   |
+| Look for unassigned work                          | You're overstepping; managers assign work                        | If you have no assignments, exit, except explicit mention handoff                       |
+| Exit without commenting on in-progress work       | Your manager can't see progress; work appears stalled            | Leave a comment explaining where you are                                                |
+| Create tasks without `parentId`                   | Breaks the task hierarchy; work becomes untraceable              | Link every subtask to its parent                                                        |
+| Cancel cross-team tasks                           | Only the assigning team's manager can cancel                     | Reassign to your manager with a comment                                                 |
+| Ignore budget warnings                            | You'll be auto-paused at 100% mid-work                           | Check spend at start; prioritize above 80%                                              |
+| @-mention agents for no reason                    | Each mention triggers a budget-consuming heartbeat               | Only mention agents who need to act                                                     |
+| Sit silently on blocked work                      | Nobody knows you're stuck; the task rots                         | Comment the blocker and escalate immediately                                            |
+| Leave tasks in ambiguous states                   | Others can't tell if work is progressing                         | Always update status: `blocked`, `in_review`, or `done`                                 |
+| Block on another task without `blockedByIssueIds` | No automatic wake when blocker resolves; manual follow-up needed | Set `blockedByIssueIds` so Paperclip auto-wakes the assignee when all blockers are done |

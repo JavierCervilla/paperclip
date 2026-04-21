@@ -94,6 +94,16 @@ Set `DATABASE_URL` in your `.env`:
 DATABASE_URL=postgres://postgres.[PROJECT-REF]:[PASSWORD]@aws-0-[REGION].pooler.supabase.com:6543/postgres
 ```
 
+For hosted deployments that use a pooled runtime URL, set
+`DATABASE_MIGRATION_URL` to the direct connection URL. Paperclip uses it for
+startup schema checks/migrations and plugin namespace migrations, while the app
+continues to use `DATABASE_URL` for runtime queries:
+
+```sh
+DATABASE_URL=postgres://postgres.[PROJECT-REF]:[PASSWORD]@aws-0-[REGION].pooler.supabase.com:6543/postgres
+DATABASE_MIGRATION_URL=postgres://postgres.[PROJECT-REF]:[PASSWORD]@aws-0-[REGION].pooler.supabase.com:5432/postgres
+```
+
 If using connection pooling (port 6543), the `postgres` client must disable prepared statements. Update `packages/db/src/client.ts`:
 
 ```ts
@@ -123,11 +133,11 @@ See [Supabase pricing](https://supabase.com/pricing) for current details.
 
 The database mode is controlled by `DATABASE_URL`:
 
-| `DATABASE_URL` | Mode |
-|---|---|
-| Not set | Embedded PostgreSQL (`~/.paperclip/instances/default/db/`) |
-| `postgres://...localhost...` | Local Docker PostgreSQL |
-| `postgres://...supabase.com...` | Hosted Supabase |
+| `DATABASE_URL`                  | Mode                                                       |
+| ------------------------------- | ---------------------------------------------------------- |
+| Not set                         | Embedded PostgreSQL (`~/.paperclip/instances/default/db/`) |
+| `postgres://...localhost...`    | Local Docker PostgreSQL                                    |
+| `postgres://...supabase.com...` | Hosted Supabase                                            |
 
 Your Drizzle schema (`packages/db/src/schema/`) stays the same regardless of mode.
 

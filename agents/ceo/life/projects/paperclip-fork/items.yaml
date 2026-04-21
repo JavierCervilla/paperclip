@@ -1,0 +1,24 @@
+facts:
+  - id: fork-001
+    date: "2026-03-19"
+    category: infrastructure
+    content: "This repo is a fork of paperclipai/paperclip. master syncs from upstream weekly."
+    status: active
+
+  - id: fork-002
+    date: "2026-03-19"
+    category: infrastructure
+    content: "Dokploy has two environments: preview (branch: preview) and production (branch: deploy/dokploy). Auto-deploys on push."
+    status: active
+
+  - id: fork-003
+    date: "2026-03-19"
+    category: infrastructure
+    content: "No npm releases in this fork. npm canary/stable releases are upstream-only."
+    status: active
+
+  - id: fork-004
+    date: "2026-03-19"
+    category: infrastructure
+    content: "No CI workflows exist yet for preview or deploy/dokploy branches. Only PR checks against master."
+    status: active

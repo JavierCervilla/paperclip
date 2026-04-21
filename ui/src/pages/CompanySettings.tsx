@@ -1,8 +1,10 @@
-import { ChangeEvent, useEffect, useState } from "react";
+import { type ChangeEvent, useEffect, useState } from "react";
+import { Link } from "@/lib/router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { DEFAULT_FEEDBACK_DATA_SHARING_TERMS_VERSION } from "@paperclipai/shared";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
-import { useToast } from "../context/ToastContext";
+import { useToastActions } from "../context/ToastContext";
 import { companiesApi } from "../api/companies";
 import { accessApi } from "../api/access";
 import { assetsApi } from "../api/assets";
@@ -10,11 +12,7 @@ import { queryKeys } from "../lib/queryKeys";
 import { Button } from "@/components/ui/button";
 import { Settings, Check, Download, Upload } from "lucide-react";
 import { CompanyPatternIcon } from "../components/CompanyPatternIcon";
-import {
-  Field,
-  ToggleField,
-  HintIcon
-} from "../components/agent-config-primitives";
+import { Field, ToggleField, HintIcon } from "../components/agent-config-primitives";
 
 type AgentSnippetInput = {
   onboardingTextUrl: string;
@@ -22,15 +20,12 @@ type AgentSnippetInput = {
   testResolutionUrl?: string | null;
 };
 
+const FEEDBACK_TERMS_URL = import.meta.env.VITE_FEEDBACK_TERMS_URL?.trim() || "https://paperclip.ing/tos";
+
 export function CompanySettings() {
-  const {
-    companies,
-    selectedCompany,
-    selectedCompanyId,
-    setSelectedCompanyId
-  } = useCompany();
+  const { companies, selectedCompany, selectedCompanyId, setSelectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
-  const { pushToast } = useToast();
+  const { pushToast } = useToastActions();
   const queryClient = useQueryClient();
   // General settings local state
   const [companyName, setCompanyName] = useState("");
@@ -60,39 +55,52 @@ export function CompanySettings() {
       brandColor !== (selectedCompany.brandColor ?? ""));
 
   const generalMutation = useMutation({
-    mutationFn: (data: {
-      name: string;
-      description: string | null;
-      brandColor: string | null;
-    }) => companiesApi.update(selectedCompanyId!, data),
+    mutationFn: (data: { name: string; description: string | null; brandColor: string | null }) =>
+      companiesApi.update(selectedCompanyId!, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
-    }
+    },
   });
 
   const settingsMutation = useMutation({
     mutationFn: (requireApproval: boolean) =>
       companiesApi.update(selectedCompanyId!, {
-        requireBoardApprovalForNewAgents: requireApproval
+        requireBoardApprovalForNewAgents: requireApproval,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
-    }
+    },
+  });
+
+  const feedbackSharingMutation = useMutation({
+    mutationFn: (enabled: boolean) =>
+      companiesApi.update(selectedCompanyId!, {
+        feedbackDataSharingEnabled: enabled,
+      }),
+    onSuccess: (_company, enabled) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
+      pushToast({
+        title: enabled ? "Feedback sharing enabled" : "Feedback sharing disabled",
+        tone: "success",
+      });
+    },
+    onError: (err) => {
+      pushToast({
+        title: "Failed to update feedback sharing",
+        body: err instanceof Error ? err.message : "Unknown error",
+        tone: "error",
+      });
+    },
   });
 
   const inviteMutation = useMutation({
-    mutationFn: () =>
-      accessApi.createOpenClawInvitePrompt(selectedCompanyId!),
+    mutationFn: () => accessApi.createOpenClawInvitePrompt(selectedCompanyId!),
     onSuccess: async (invite) => {
       setInviteError(null);
       const base = window.location.origin.replace(/\/+$/, "");
       const onboardingTextLink =
-        invite.onboardingTextUrl ??
-        invite.onboardingTextPath ??
-        `/api/invites/${invite.token}/onboarding.txt`;
-      const absoluteUrl = onboardingTextLink.startsWith("http")
-        ? onboardingTextLink
-        : `${base}${onboardingTextLink}`;
+        invite.onboardingTextUrl ?? invite.onboardingTextPath ?? `/api/invites/${invite.token}/onboarding.txt`;
+      const absoluteUrl = onboardingTextLink.startsWith("http") ? onboardingTextLink : `${base}${onboardingTextLink}`;
       setSnippetCopied(false);
       setSnippetCopyDelightId(0);
       let snippet: string;
@@ -100,17 +108,14 @@ export function CompanySettings() {
         const manifest = await accessApi.getInviteOnboarding(invite.token);
         snippet = buildAgentSnippet({
           onboardingTextUrl: absoluteUrl,
-          connectionCandidates:
-            manifest.onboarding.connectivity?.connectionCandidates ?? null,
-          testResolutionUrl:
-            manifest.onboarding.connectivity?.testResolutionEndpoint?.url ??
-            null
+          connectionCandidates: manifest.onboarding.connectivity?.connectionCandidates ?? null,
+          testResolutionUrl: manifest.onboarding.connectivity?.testResolutionEndpoint?.url ?? null,
         });
       } catch {
         snippet = buildAgentSnippet({
           onboardingTextUrl: absoluteUrl,
           connectionCandidates: null,
-          testResolutionUrl: null
+          testResolutionUrl: null,
         });
       }
       setInviteSnippet(snippet);
@@ -123,14 +128,12 @@ export function CompanySettings() {
         /* clipboard may not be available */
       }
       queryClient.invalidateQueries({
-        queryKey: queryKeys.sidebarBadges(selectedCompanyId!)
+        queryKey: queryKeys.sidebarBadges(selectedCompanyId!),
       });
     },
     onError: (err) => {
-      setInviteError(
-        err instanceof Error ? err.message : "Failed to create invite"
-      );
-    }
+      setInviteError(err instanceof Error ? err.message : "Failed to create invite");
+    },
   });
 
   const syncLogoState = (nextLogoUrl: string | null) => {
@@ -146,7 +149,7 @@ export function CompanySettings() {
     onSuccess: (company) => {
       syncLogoState(company.logoUrl);
       setLogoUploadError(null);
-    }
+    },
   });
 
   const clearLogoMutation = useMutation({
@@ -154,7 +157,7 @@ export function CompanySettings() {
     onSuccess: (company) => {
       setLogoUploadError(null);
       syncLogoState(company.logoUrl);
-    }
+    },
   });
 
   function handleLogoFileChange(event: ChangeEvent<HTMLInputElement>) {
@@ -177,31 +180,23 @@ export function CompanySettings() {
   }, [selectedCompanyId]);
 
   const archiveMutation = useMutation({
-    mutationFn: ({
-      companyId,
-      nextCompanyId
-    }: {
-      companyId: string;
-      nextCompanyId: string | null;
-    }) => companiesApi.archive(companyId).then(() => ({ nextCompanyId })),
+    mutationFn: ({ companyId, nextCompanyId }: { companyId: string; nextCompanyId: string | null }) =>
+      companiesApi.archive(companyId).then(() => ({ nextCompanyId })),
     onSuccess: async ({ nextCompanyId }) => {
       if (nextCompanyId) {
         setSelectedCompanyId(nextCompanyId);
       }
       await queryClient.invalidateQueries({
-        queryKey: queryKeys.companies.all
+        queryKey: queryKeys.companies.all,
       });
       await queryClient.invalidateQueries({
-        queryKey: queryKeys.companies.stats
+        queryKey: queryKeys.companies.stats,
       });
-    }
+    },
   });
 
   useEffect(() => {
-    setBreadcrumbs([
-      { label: selectedCompany?.name ?? "Company", href: "/dashboard" },
-      { label: "Settings" }
-    ]);
+    setBreadcrumbs([{ label: selectedCompany?.name ?? "Company", href: "/dashboard" }, { label: "Settings" }]);
   }, [setBreadcrumbs, selectedCompany?.name]);
 
   if (!selectedCompany) {
@@ -216,7 +211,7 @@ export function CompanySettings() {
     generalMutation.mutate({
       name: companyName.trim(),
       description: description.trim() || null,
-      brandColor: brandColor || null
+      brandColor: brandColor || null,
     });
   }
 
@@ -229,9 +224,7 @@ export function CompanySettings() {
 
       {/* General */}
       <div className="space-y-4">
-        <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-          General
-        </div>
+        <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">General</div>
         <div className="space-y-3 rounded-md border border-border px-4 py-4">
           <Field label="Company name" hint="The display name for your company.">
             <input
@@ -241,10 +234,7 @@ export function CompanySettings() {
               onChange={(e) => setCompanyName(e.target.value)}
             />
           </Field>
-          <Field
-            label="Description"
-            hint="Optional description shown in the company profile."
-          >
+          <Field label="Description" hint="Optional description shown in the company profile.">
             <input
               className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none"
               type="text"
@@ -258,9 +248,7 @@ export function CompanySettings() {
 
       {/* Appearance */}
       <div className="space-y-4">
-        <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-          Appearance
-        </div>
+        <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Appearance</div>
         <div className="space-y-3 rounded-md border border-border px-4 py-4">
           <div className="flex items-start gap-4">
             <div className="shrink-0">
@@ -272,10 +260,7 @@ export function CompanySettings() {
               />
             </div>
             <div className="flex-1 space-y-3">
-              <Field
-                label="Logo"
-                hint="Upload a PNG, JPEG, WEBP, GIF, or SVG logo image."
-              >
+              <Field label="Logo" hint="Upload a PNG, JPEG, WEBP, GIF, or SVG logo image.">
                 <div className="space-y-2">
                   <input
                     type="file"
@@ -304,9 +289,7 @@ export function CompanySettings() {
                     </span>
                   )}
                   {clearLogoMutation.isError && (
-                    <span className="text-xs text-destructive">
-                      {clearLogoMutation.error.message}
-                    </span>
+                    <span className="text-xs text-destructive">{clearLogoMutation.error.message}</span>
                   )}
                   {logoUploadMutation.isPending && (
                     <span className="text-xs text-muted-foreground">Uploading logo...</span>
@@ -356,21 +339,13 @@ export function CompanySettings() {
       {/* Save button for General + Appearance */}
       {generalDirty && (
         <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            onClick={handleSaveGeneral}
-            disabled={generalMutation.isPending || !companyName.trim()}
-          >
+          <Button size="sm" onClick={handleSaveGeneral} disabled={generalMutation.isPending || !companyName.trim()}>
             {generalMutation.isPending ? "Saving..." : "Save changes"}
           </Button>
-          {generalMutation.isSuccess && (
-            <span className="text-xs text-muted-foreground">Saved</span>
-          )}
+          {generalMutation.isSuccess && <span className="text-xs text-muted-foreground">Saved</span>}
           {generalMutation.isError && (
             <span className="text-xs text-destructive">
-              {generalMutation.error instanceof Error
-                  ? generalMutation.error.message
-                  : "Failed to save"}
+              {generalMutation.error instanceof Error ? generalMutation.error.message : "Failed to save"}
             </span>
           )}
         </div>
@@ -378,9 +353,7 @@ export function CompanySettings() {
 
       {/* Hiring */}
       <div className="space-y-4" data-testid="company-settings-team-section">
-        <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-          Hiring
-        </div>
+        <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Hiring</div>
         <div className="rounded-md border border-border px-4 py-3">
           <ToggleField
             label="Require board approval for new hires"
@@ -392,16 +365,54 @@ export function CompanySettings() {
         </div>
       </div>
 
+      <div className="space-y-4">
+        <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Feedback Sharing</div>
+        <div className="space-y-3 rounded-md border border-border px-4 py-4">
+          <ToggleField
+            label="Allow sharing voted AI outputs with Paperclip Labs"
+            hint="Only AI-generated outputs you explicitly vote on are eligible for feedback sharing."
+            checked={!!selectedCompany.feedbackDataSharingEnabled}
+            onChange={(enabled) => feedbackSharingMutation.mutate(enabled)}
+          />
+          <p className="text-sm text-muted-foreground">
+            Votes are always saved locally. This setting controls whether voted AI outputs may also be marked for
+            sharing with Paperclip Labs.
+          </p>
+          <div className="space-y-1 text-xs text-muted-foreground">
+            <div>
+              Terms version:{" "}
+              {selectedCompany.feedbackDataSharingTermsVersion ?? DEFAULT_FEEDBACK_DATA_SHARING_TERMS_VERSION}
+            </div>
+            {selectedCompany.feedbackDataSharingConsentAt ? (
+              <div>
+                Enabled {new Date(selectedCompany.feedbackDataSharingConsentAt).toLocaleString()}
+                {selectedCompany.feedbackDataSharingConsentByUserId
+                  ? ` by ${selectedCompany.feedbackDataSharingConsentByUserId}`
+                  : ""}
+              </div>
+            ) : (
+              <div>Sharing is currently disabled.</div>
+            )}
+            {FEEDBACK_TERMS_URL ? (
+              <a
+                href={FEEDBACK_TERMS_URL}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex text-foreground underline underline-offset-4"
+              >
+                Read our terms of service
+              </a>
+            ) : null}
+          </div>
+        </div>
+      </div>
+
       {/* Invites */}
       <div className="space-y-4" data-testid="company-settings-invites-section">
-        <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-          Invites
-        </div>
+        <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Invites</div>
         <div className="space-y-3 rounded-md border border-border px-4 py-4">
           <div className="flex items-center gap-1.5">
-            <span className="text-xs text-muted-foreground">
-              Generate an OpenClaw agent invite snippet.
-            </span>
+            <span className="text-xs text-muted-foreground">Generate an OpenClaw agent invite snippet.</span>
             <HintIcon text="Creates a short-lived OpenClaw agent invite and renders a copy-ready prompt." />
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -411,23 +422,17 @@ export function CompanySettings() {
               onClick={() => inviteMutation.mutate()}
               disabled={inviteMutation.isPending}
             >
-              {inviteMutation.isPending
-                ? "Generating..."
-                : "Generate OpenClaw Invite Prompt"}
+              {inviteMutation.isPending ? "Generating..." : "Generate OpenClaw Invite Prompt"}
             </Button>
           </div>
-          {inviteError && (
-            <p className="text-sm text-destructive">{inviteError}</p>
-          )}
+          {inviteError && <p className="text-sm text-destructive">{inviteError}</p>}
           {inviteSnippet && (
             <div
               className="rounded-md border border-border bg-muted/30 p-2"
               data-testid="company-settings-invites-snippet"
             >
               <div className="flex items-center justify-between gap-2">
-                <div className="text-xs text-muted-foreground">
-                  OpenClaw Invite Prompt
-                </div>
+                <div className="text-xs text-muted-foreground">OpenClaw Invite Prompt</div>
                 {snippetCopied && (
                   <span
                     key={snippetCopyDelightId}
@@ -472,26 +477,27 @@ export function CompanySettings() {
 
       {/* Import / Export */}
       <div className="space-y-4">
-        <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-          Company Packages
-        </div>
+        <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Company Packages</div>
         <div className="rounded-md border border-border px-4 py-4">
           <p className="text-sm text-muted-foreground">
             Import and export have moved to dedicated pages accessible from the{" "}
-            <a href="/org" className="underline hover:text-foreground">Org Chart</a> header.
+            <a href="/org" className="underline hover:text-foreground">
+              Org Chart
+            </a>{" "}
+            header.
           </p>
           <div className="mt-3 flex items-center gap-2">
             <Button size="sm" variant="outline" asChild>
-              <a href="/company/export">
+              <Link to="/company/export">
                 <Download className="mr-1.5 h-3.5 w-3.5" />
                 Export
-              </a>
+              </Link>
             </Button>
             <Button size="sm" variant="outline" asChild>
-              <a href="/company/import">
+              <Link to="/company/import">
                 <Upload className="mr-1.5 h-3.5 w-3.5" />
                 Import
-              </a>
+              </Link>
             </Button>
           </div>
         </div>
@@ -499,51 +505,40 @@ export function CompanySettings() {
 
       {/* Danger Zone */}
       <div className="space-y-4">
-        <div className="text-xs font-medium text-destructive uppercase tracking-wide">
-          Danger Zone
-        </div>
+        <div className="text-xs font-medium text-destructive uppercase tracking-wide">Danger Zone</div>
         <div className="space-y-3 rounded-md border border-destructive/40 bg-destructive/5 px-4 py-4">
           <p className="text-sm text-muted-foreground">
-            Archive this company to hide it from the sidebar. This persists in
-            the database.
+            Archive this company to hide it from the sidebar. This persists in the database.
           </p>
           <div className="flex items-center gap-2">
             <Button
               size="sm"
               variant="destructive"
-              disabled={
-                archiveMutation.isPending ||
-                selectedCompany.status === "archived"
-              }
+              disabled={archiveMutation.isPending || selectedCompany.status === "archived"}
               onClick={() => {
                 if (!selectedCompanyId) return;
                 const confirmed = window.confirm(
-                  `Archive company "${selectedCompany.name}"? It will be hidden from the sidebar.`
+                  `Archive company "${selectedCompany.name}"? It will be hidden from the sidebar.`,
                 );
                 if (!confirmed) return;
                 const nextCompanyId =
-                  companies.find(
-                    (company) =>
-                      company.id !== selectedCompanyId &&
-                      company.status !== "archived"
-                  )?.id ?? null;
+                  companies.find((company) => company.id !== selectedCompanyId && company.status !== "archived")?.id ??
+                  null;
                 archiveMutation.mutate({
                   companyId: selectedCompanyId,
-                  nextCompanyId
+                  nextCompanyId,
                 });
               }}
             >
               {archiveMutation.isPending
                 ? "Archiving..."
                 : selectedCompany.status === "archived"
-                ? "Already archived"
-                : "Archive company"}
+                  ? "Already archived"
+                  : "Archive company"}
             </Button>
             {archiveMutation.isError && (
               <span className="text-xs text-destructive">
-                {archiveMutation.error instanceof Error
-                  ? archiveMutation.error.message
-                  : "Failed to archive company"}
+                {archiveMutation.error instanceof Error ? archiveMutation.error.message : "Failed to archive company"}
               </span>
             )}
           </div>
@@ -558,9 +553,7 @@ function buildAgentSnippet(input: AgentSnippetInput) {
   const resolutionTestUrl = buildResolutionTestUrl(input);
 
   const candidateList =
-    candidateUrls.length > 0
-      ? candidateUrls.map((u) => `- ${u}`).join("\n")
-      : "- (No candidate URLs available yet.)";
+    candidateUrls.length > 0 ? candidateUrls.map((u) => `- ${u}`).join("\n") : "- (No candidate URLs available yet.)";
 
   const connectivityBlock =
     candidateUrls.length === 0
@@ -615,9 +608,7 @@ Then after you've connected to Paperclip (exchanged keys etc.) you MUST review a
 }
 
 function buildCandidateOnboardingUrls(input: AgentSnippetInput): string[] {
-  const candidates = (input.connectionCandidates ?? [])
-    .map((candidate) => candidate.trim())
-    .filter(Boolean);
+  const candidates = (input.connectionCandidates ?? []).map((candidate) => candidate.trim()).filter(Boolean);
   const urls = new Set<string>();
   let onboardingUrl: URL | null = null;
 
@@ -657,10 +648,7 @@ function buildResolutionTestUrl(input: AgentSnippetInput): string | null {
 
   try {
     const onboardingUrl = new URL(input.onboardingTextUrl);
-    const testPath = onboardingUrl.pathname.replace(
-      /\/onboarding\.txt$/,
-      "/test-resolution"
-    );
+    const testPath = onboardingUrl.pathname.replace(/\/onboarding\.txt$/, "/test-resolution");
     return `${onboardingUrl.origin}${testPath}`;
   } catch {
     return null;

@@ -26,10 +26,20 @@ vi.mock("../services/index.js", () => ({
   budgetService: () => ({
     upsertPolicy: vi.fn(),
   }),
+  heartbeatService: () => ({}),
   agentService: () => ({
     getById: vi.fn(),
   }),
+  feedbackService: () => ({
+    listIssueVotesForUser: vi.fn(),
+    listFeedbackTraces: vi.fn(),
+    getFeedbackTraceById: vi.fn(),
+    saveIssueVote: vi.fn(),
+  }),
   logActivity: vi.fn(),
+  instanceSettingsService: () => ({}),
+  assetService: () => ({}),
+  chatService: () => ({}),
 }));
 
 describe("company routes malformed issue path guard", () => {

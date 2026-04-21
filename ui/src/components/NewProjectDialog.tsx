@@ -2,35 +2,18 @@ import { useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useDialog } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
+import { accessApi } from "../api/access";
 import { projectsApi } from "../api/projects";
 import { agentsApi } from "../api/agents";
 import { goalsApi } from "../api/goals";
 import { assetsApi } from "../api/assets";
+import { buildMarkdownMentionOptions } from "../lib/company-members";
 import { queryKeys } from "../lib/queryKeys";
-import {
-  Dialog,
-  DialogContent,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import {
-  Maximize2,
-  Minimize2,
-  Target,
-  Calendar,
-  Plus,
-  X,
-  HelpCircle,
-} from "lucide-react";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Maximize2, Minimize2, Target, Calendar, Plus, X, HelpCircle } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { PROJECT_COLORS } from "@paperclipai/shared";
 import { cn } from "../lib/utils";
 import { MarkdownEditor, type MarkdownEditorRef, type MentionOption } from "./MarkdownEditor";
@@ -75,26 +58,21 @@ export function NewProjectDialog() {
     enabled: !!selectedCompanyId && newProjectOpen,
   });
 
+  const { data: companyMembers } = useQuery({
+    queryKey: queryKeys.access.companyUserDirectory(selectedCompanyId!),
+    queryFn: () => accessApi.listUserDirectory(selectedCompanyId!),
+    enabled: !!selectedCompanyId && newProjectOpen,
+  });
+
   const mentionOptions = useMemo<MentionOption[]>(() => {
-    const options: MentionOption[] = [];
-    const activeAgents = [...(agents ?? [])]
-      .filter((agent) => agent.status !== "terminated")
-      .sort((a, b) => a.name.localeCompare(b.name));
-    for (const agent of activeAgents) {
-      options.push({
-        id: `agent:${agent.id}`,
-        name: agent.name,
-        kind: "agent",
-        agentId: agent.id,
-        agentIcon: agent.icon,
-      });
-    }
-    return options;
-  }, [agents]);
+    return buildMarkdownMentionOptions({
+      agents,
+      members: companyMembers?.users,
+    });
+  }, [agents, companyMembers?.users]);
 
   const createProject = useMutation({
-    mutationFn: (data: Record<string, unknown>) =>
-      projectsApi.create(selectedCompanyId!, data),
+    mutationFn: (data: Record<string, unknown>) => projectsApi.create(selectedCompanyId!, data),
   });
 
   const uploadDescriptionImage = useMutation({
@@ -118,11 +96,10 @@ export function NewProjectDialog() {
 
   const isAbsolutePath = (value: string) => value.startsWith("/") || /^[A-Za-z]:[\\/]/.test(value);
 
-  const isGitHubRepoUrl = (value: string) => {
+  const looksLikeRepoUrl = (value: string) => {
     try {
       const parsed = new URL(value);
-      const host = parsed.hostname.toLowerCase();
-      if (host !== "github.com" && host !== "www.github.com") return false;
+      if (parsed.protocol !== "https:") return false;
       const segments = parsed.pathname.split("/").filter(Boolean);
       return segments.length >= 2;
     } catch {
@@ -156,8 +133,8 @@ export function NewProjectDialog() {
       setWorkspaceError("Local folder must be a full absolute path.");
       return;
     }
-    if (repoUrl && !isGitHubRepoUrl(repoUrl)) {
-      setWorkspaceError("Repo must use a valid GitHub repo URL.");
+    if (repoUrl && !looksLikeRepoUrl(repoUrl)) {
+      setWorkspaceError("Repo must use a valid GitHub or GitHub Enterprise repo URL.");
       return;
     }
 
@@ -175,9 +152,7 @@ export function NewProjectDialog() {
 
       if (localPath || repoUrl) {
         const workspacePayload: Record<string, unknown> = {
-          name: localPath
-            ? deriveWorkspaceNameFromPath(localPath)
-            : deriveWorkspaceNameFromRepo(repoUrl),
+          name: localPath ? deriveWorkspaceNameFromPath(localPath) : deriveWorkspaceNameFromRepo(repoUrl),
           ...(localPath ? { cwd: localPath } : {}),
           ...(repoUrl ? { repoUrl } : {}),
         };
@@ -242,7 +217,10 @@ export function NewProjectDialog() {
               variant="ghost"
               size="icon-xs"
               className="text-muted-foreground"
-              onClick={() => { reset(); closeNewProject(); }}
+              onClick={() => {
+                reset();
+                closeNewProject();
+              }}
             >
               <span className="text-lg leading-none">&times;</span>
             </Button>
@@ -300,7 +278,10 @@ export function NewProjectDialog() {
             <input
               className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs outline-none"
               value={workspaceRepoUrl}
-              onChange={(e) => { setWorkspaceRepoUrl(e.target.value); setWorkspaceError(null); }}
+              onChange={(e) => {
+                setWorkspaceRepoUrl(e.target.value);
+                setWorkspaceError(null);
+              }}
               placeholder="https://github.com/org/repo"
             />
           </div>
@@ -322,16 +303,17 @@ export function NewProjectDialog() {
               <input
                 className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs font-mono outline-none"
                 value={workspaceLocalPath}
-                onChange={(e) => { setWorkspaceLocalPath(e.target.value); setWorkspaceError(null); }}
+                onChange={(e) => {
+                  setWorkspaceLocalPath(e.target.value);
+                  setWorkspaceError(null);
+                }}
                 placeholder="/absolute/path/to/workspace"
               />
               <ChoosePathButton />
             </div>
           </div>
 
-          {workspaceError && (
-            <p className="text-xs text-destructive">{workspaceError}</p>
-          )}
+          {workspaceError && <p className="text-xs text-destructive">{workspaceError}</p>}
         </div>
 
         {/* Property chips */}
@@ -349,9 +331,12 @@ export function NewProjectDialog() {
                   key={s.value}
                   className={cn(
                     "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
-                    s.value === status && "bg-accent"
+                    s.value === status && "bg-accent",
                   )}
-                  onClick={() => { setStatus(s.value); setStatusOpen(false); }}
+                  onClick={() => {
+                    setStatus(s.value);
+                    setStatusOpen(false);
+                  }}
                 >
                   {s.label}
                 </button>
@@ -383,7 +368,11 @@ export function NewProjectDialog() {
                 className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors disabled:opacity-60"
                 disabled={selectedGoals.length > 0 && availableGoals.length === 0}
               >
-                {selectedGoals.length > 0 ? <Plus className="h-3 w-3 text-muted-foreground" /> : <Target className="h-3 w-3 text-muted-foreground" />}
+                {selectedGoals.length > 0 ? (
+                  <Plus className="h-3 w-3 text-muted-foreground" />
+                ) : (
+                  <Target className="h-3 w-3 text-muted-foreground" />
+                )}
                 {selectedGoals.length > 0 ? "+ Goal" : "Goal"}
               </button>
             </PopoverTrigger>
@@ -409,9 +398,7 @@ export function NewProjectDialog() {
                 </button>
               ))}
               {selectedGoals.length > 0 && availableGoals.length === 0 && (
-                <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                  All goals already selected.
-                </div>
+                <div className="px-2 py-1.5 text-xs text-muted-foreground">All goals already selected.</div>
               )}
             </PopoverContent>
           </Popover>
@@ -431,16 +418,8 @@ export function NewProjectDialog() {
 
         {/* Footer */}
         <div className="flex items-center justify-between px-4 py-2.5 border-t border-border">
-          {createProject.isError ? (
-            <p className="text-xs text-destructive">Failed to create project.</p>
-          ) : (
-            <span />
-          )}
-          <Button
-            size="sm"
-            disabled={!name.trim() || createProject.isPending}
-            onClick={handleSubmit}
-          >
+          {createProject.isError ? <p className="text-xs text-destructive">Failed to create project.</p> : <span />}
+          <Button size="sm" disabled={!name.trim() || createProject.isPending} onClick={handleSubmit}>
             {createProject.isPending ? "Creating…" : "Create project"}
           </Button>
         </div>

@@ -55,7 +55,7 @@ describe("resolveCompanyImportApiPath", () => {
         dryRun: true,
         targetMode: "existing_company",
         companyId: " ",
-      })
+      }),
     ).toThrow(/require a companyId/i);
   });
 });
@@ -87,7 +87,7 @@ describe("resolveCompanyImportApplyConfirmationMode", () => {
         yes: false,
         interactive: false,
         json: false,
-      })
+      }),
     ).toThrow(/non-interactive terminal requires --yes/i);
   });
 
@@ -97,7 +97,7 @@ describe("resolveCompanyImportApplyConfirmationMode", () => {
         yes: false,
         interactive: false,
         json: true,
-      })
+      }),
     ).toThrow(/with --json requires --yes/i);
   });
 });
@@ -129,7 +129,13 @@ describe("renderCompanyImportPreview", () => {
         agentPlans: [
           { slug: "ceo", action: "create", plannedName: "CEO", existingAgentId: null, reason: null },
           { slug: "cto", action: "update", plannedName: "CTO", existingAgentId: "agent-2", reason: "replace strategy" },
-          { slug: "eng-1", action: "skip", plannedName: "Engineer 1", existingAgentId: "agent-3", reason: "skip strategy" },
+          {
+            slug: "eng-1",
+            action: "skip",
+            plannedName: "Engineer 1",
+            existingAgentId: "agent-3",
+            reason: "skip strategy",
+          },
           { slug: "eng-2", action: "create", plannedName: "Engineer 2", existingAgentId: null, reason: null },
           { slug: "eng-3", action: "create", plannedName: "Engineer 3", existingAgentId: null, reason: null },
           { slug: "eng-4", action: "create", plannedName: "Engineer 4", existingAgentId: null, reason: null },
@@ -138,9 +144,7 @@ describe("renderCompanyImportPreview", () => {
         projectPlans: [
           { slug: "alpha", action: "create", plannedName: "Alpha", existingProjectId: null, reason: null },
         ],
-        issuePlans: [
-          { slug: "kickoff", action: "create", plannedTitle: "Kickoff", reason: null },
-        ],
+        issuePlans: [{ slug: "kickoff", action: "create", plannedTitle: "Kickoff", reason: null }],
       },
       manifest: {
         schemaVersion: 1,
@@ -163,6 +167,10 @@ describe("renderCompanyImportPreview", () => {
           brandColor: null,
           logoPath: null,
           requireBoardApprovalForNewAgents: false,
+          feedbackDataSharingEnabled: false,
+          feedbackDataSharingConsentAt: null,
+          feedbackDataSharingConsentByUserId: null,
+          feedbackDataSharingTermsVersion: null,
         },
         sidebar: {
           agents: ["ceo"],
@@ -216,6 +224,7 @@ describe("renderCompanyImportPreview", () => {
             status: null,
             executionWorkspacePolicy: null,
             workspaces: [],
+            env: null,
             metadata: null,
           },
         ],
@@ -246,6 +255,7 @@ describe("renderCompanyImportPreview", () => {
             key: "OPENAI_API_KEY",
             description: null,
             agentSlug: "ceo",
+            projectSlug: null,
             kind: "secret",
             requirement: "required",
             defaultValue: null,
@@ -261,6 +271,7 @@ describe("renderCompanyImportPreview", () => {
           key: "OPENAI_API_KEY",
           description: null,
           agentSlug: "ceo",
+          projectSlug: null,
           kind: "secret",
           requirement: "required",
           defaultValue: null,
@@ -371,6 +382,10 @@ describe("import selection catalog", () => {
           brandColor: null,
           logoPath: "images/company-logo.png",
           requireBoardApprovalForNewAgents: false,
+          feedbackDataSharingEnabled: false,
+          feedbackDataSharingConsentAt: null,
+          feedbackDataSharingConsentByUserId: null,
+          feedbackDataSharingTermsVersion: null,
         },
         sidebar: {
           agents: ["ceo"],
@@ -424,6 +439,7 @@ describe("import selection catalog", () => {
             status: null,
             executionWorkspacePolicy: null,
             workspaces: [],
+            env: null,
             metadata: null,
           },
         ],

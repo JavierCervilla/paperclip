@@ -1,13 +1,7 @@
-import { useState, useMemo } from "react";
-import {
-  type LucideIcon,
-} from "lucide-react";
+import { createElement, useState, useMemo } from "react";
+import { type LucideIcon } from "lucide-react";
 import { AGENT_ICON_NAMES, type AgentIconName } from "@paperclipai/shared";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { AGENT_ICONS, getAgentIcon } from "../lib/agent-icons";
@@ -20,8 +14,7 @@ interface AgentIconProps {
 }
 
 export function AgentIcon({ icon, className }: AgentIconProps) {
-  const Icon = getAgentIcon(icon);
-  return <Icon className={className} />;
+  return createElement(getAgentIcon(icon), { className });
 }
 
 interface AgentIconPickerProps {
@@ -63,7 +56,7 @@ export function AgentIconPicker({ value, onChange, children }: AgentIconPickerPr
               }}
               className={cn(
                 "flex items-center justify-center h-8 w-8 rounded hover:bg-accent transition-colors",
-                (value ?? DEFAULT_ICON) === name && "bg-accent ring-1 ring-primary"
+                (value ?? DEFAULT_ICON) === name && "bg-accent ring-1 ring-primary",
               )}
               title={name}
             >

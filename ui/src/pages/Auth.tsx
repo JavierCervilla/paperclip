@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "@/lib/router";
 import { authApi } from "../api/auth";
 import { queryKeys } from "../lib/queryKeys";
+import { getRememberedInvitePath } from "../lib/invite-memory";
 import { Button } from "@/components/ui/button";
 import { AsciiArtAnimation } from "@/components/AsciiArtAnimation";
 import { Sparkles } from "lucide-react";
@@ -19,7 +20,10 @@ export function AuthPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  const nextPath = useMemo(() => searchParams.get("next") || "/", [searchParams]);
+  const nextPath = useMemo(
+    () => searchParams.get("next") || getRememberedInvitePath() || "/",
+    [searchParams],
+  );
   const { data: session, isLoading: isSessionLoading } = useQuery({
     queryKey: queryKeys.auth.session,
     queryFn: () => authApi.getSession(),
@@ -103,7 +107,9 @@ export function AuthPage() {
           >
             {mode === "sign_up" && (
               <div>
-                <label htmlFor="name" className="text-xs text-muted-foreground mb-1 block">Name</label>
+                <label htmlFor="name" className="text-xs text-muted-foreground mb-1 block">
+                  Name
+                </label>
                 <input
                   id="name"
                   name="name"
@@ -116,7 +122,9 @@ export function AuthPage() {
               </div>
             )}
             <div>
-              <label htmlFor="email" className="text-xs text-muted-foreground mb-1 block">Email</label>
+              <label htmlFor="email" className="text-xs text-muted-foreground mb-1 block">
+                Email
+              </label>
               <input
                 id="email"
                 name="email"
@@ -129,7 +137,9 @@ export function AuthPage() {
               />
             </div>
             <div>
-              <label htmlFor="password" className="text-xs text-muted-foreground mb-1 block">Password</label>
+              <label htmlFor="password" className="text-xs text-muted-foreground mb-1 block">
+                Password
+              </label>
               <input
                 id="password"
                 name="password"
@@ -147,11 +157,7 @@ export function AuthPage() {
               aria-disabled={!canSubmit || mutation.isPending}
               className={`w-full ${!canSubmit && !mutation.isPending ? "opacity-50" : ""}`}
             >
-              {mutation.isPending
-                ? "Working…"
-                : mode === "sign_in"
-                  ? "Sign In"
-                  : "Create Account"}
+              {mutation.isPending ? "Working…" : mode === "sign_in" ? "Sign In" : "Create Account"}
             </Button>
           </form>
 

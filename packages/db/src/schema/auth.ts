@@ -1,4 +1,5 @@
 import { pgTable, text, timestamp, boolean } from "drizzle-orm/pg-core";
+import { relations } from "drizzle-orm";
 
 export const authUsers = pgTable("user", {
   id: text("id").primaryKey(),
@@ -18,14 +19,18 @@ export const authSessions = pgTable("session", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
   ipAddress: text("ip_address"),
   userAgent: text("user_agent"),
-  userId: text("user_id").notNull().references(() => authUsers.id, { onDelete: "cascade" }),
+  userId: text("user_id")
+    .notNull()
+    .references(() => authUsers.id, { onDelete: "cascade" }),
 });
 
 export const authAccounts = pgTable("account", {
   id: text("id").primaryKey(),
   accountId: text("account_id").notNull(),
   providerId: text("provider_id").notNull(),
-  userId: text("user_id").notNull().references(() => authUsers.id, { onDelete: "cascade" }),
+  userId: text("user_id")
+    .notNull()
+    .references(() => authUsers.id, { onDelete: "cascade" }),
   accessToken: text("access_token"),
   refreshToken: text("refresh_token"),
   idToken: text("id_token"),
@@ -36,6 +41,19 @@ export const authAccounts = pgTable("account", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
 });
+
+export const authUsersRelations = relations(authUsers, ({ many }) => ({
+  account: many(authAccounts),
+  session: many(authSessions),
+}));
+
+export const authAccountsRelations = relations(authAccounts, ({ one }) => ({
+  user: one(authUsers, { fields: [authAccounts.userId], references: [authUsers.id] }),
+}));
+
+export const authSessionsRelations = relations(authSessions, ({ one }) => ({
+  user: one(authUsers, { fields: [authSessions.userId], references: [authUsers.id] }),
+}));
 
 export const authVerifications = pgTable("verification", {
   id: text("id").primaryKey(),

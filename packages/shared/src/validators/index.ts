@@ -25,6 +25,19 @@ export {
   type UpdateCompanyBranding,
 } from "./company.js";
 export {
+  feedbackDataSharingPreferenceSchema,
+  feedbackTargetTypeSchema,
+  feedbackTraceStatusSchema,
+  feedbackVoteValueSchema,
+  upsertIssueFeedbackVoteSchema,
+  type UpsertIssueFeedbackVote,
+} from "./feedback.js";
+export {
+  sidebarOrderPreferenceSchema,
+  upsertSidebarOrderPreferenceSchema,
+  type UpsertSidebarOrderPreference,
+} from "./sidebar-preferences.js";
+export {
   companySkillSourceTypeSchema,
   companySkillTrustLevelSchema,
   companySkillCompatibilitySchema,
@@ -103,6 +116,10 @@ export {
   type ResetAgentSession,
   type TestAdapterEnvironment,
   type UpdateAgentPermissions,
+  agentWorkspaceConfigSchema,
+  updateAgentWorkspaceConfigSchema,
+  type AgentWorkspaceConfigInput,
+  type UpdateAgentWorkspaceConfig,
 } from "./agent.js";
 
 export {
@@ -121,11 +138,16 @@ export {
 
 export {
   createIssueSchema,
+  createChildIssueSchema,
   createIssueLabelSchema,
   updateIssueSchema,
+  issueExecutionPolicySchema,
+  issueExecutionStateSchema,
   issueExecutionWorkspaceSettingsSchema,
   checkoutIssueSchema,
   addIssueCommentSchema,
+  questionDataSchema,
+  questionOptionSchema,
   linkIssueApprovalSchema,
   createIssueAttachmentMetadataSchema,
   issueDocumentFormatSchema,
@@ -133,11 +155,13 @@ export {
   upsertIssueDocumentSchema,
   restoreIssueDocumentRevisionSchema,
   type CreateIssue,
+  type CreateChildIssue,
   type CreateIssueLabel,
   type UpdateIssue,
   type IssueExecutionWorkspaceSettings,
   type CheckoutIssue,
   type AddIssueComment,
+  type QuestionData,
   type LinkIssueApproval,
   type CreateIssueAttachmentMetadata,
   type IssueDocumentFormat,
@@ -168,12 +192,7 @@ export {
   type UpdateExecutionWorkspace,
 } from "./execution-workspace.js";
 
-export {
-  createGoalSchema,
-  updateGoalSchema,
-  type CreateGoal,
-  type UpdateGoal,
-} from "./goal.js";
+export { createGoalSchema, updateGoalSchema, type CreateGoal, type UpdateGoal } from "./goal.js";
 
 export {
   createApprovalSchema,
@@ -206,6 +225,7 @@ export {
   updateRoutineSchema,
   createRoutineTriggerSchema,
   updateRoutineTriggerSchema,
+  routineVariableSchema,
   runRoutineSchema,
   rotateRoutineTriggerSecretSchema,
   type CreateRoutine,
@@ -216,43 +236,48 @@ export {
   type RotateRoutineTriggerSecret,
 } from "./routine.js";
 
-export {
-  createCostEventSchema,
-  updateBudgetSchema,
-  type CreateCostEvent,
-  type UpdateBudget,
-} from "./cost.js";
+export { createCostEventSchema, updateBudgetSchema, type CreateCostEvent, type UpdateBudget } from "./cost.js";
 
-export {
-  createFinanceEventSchema,
-  type CreateFinanceEvent,
-} from "./finance.js";
+export { createFinanceEventSchema, type CreateFinanceEvent } from "./finance.js";
 
-export {
-  createAssetImageMetadataSchema,
-  type CreateAssetImageMetadata,
-} from "./asset.js";
+export { createAssetImageMetadataSchema, type CreateAssetImageMetadata } from "./asset.js";
 
 export {
   createCompanyInviteSchema,
   createOpenClawInvitePromptSchema,
   acceptInviteSchema,
+  listCompanyInvitesQuerySchema,
   listJoinRequestsQuerySchema,
   claimJoinRequestApiKeySchema,
   boardCliAuthAccessLevelSchema,
   createCliAuthChallengeSchema,
   resolveCliAuthChallengeSchema,
+  currentUserProfileSchema,
+  authSessionSchema,
+  updateCurrentUserProfileSchema,
+  updateCompanyMemberSchema,
+  updateCompanyMemberWithPermissionsSchema,
+  archiveCompanyMemberSchema,
   updateMemberPermissionsSchema,
+  searchAdminUsersQuerySchema,
   updateUserCompanyAccessSchema,
   type CreateCompanyInvite,
   type CreateOpenClawInvitePrompt,
   type AcceptInvite,
+  type ListCompanyInvitesQuery,
   type ListJoinRequestsQuery,
   type ClaimJoinRequestApiKey,
   type BoardCliAuthAccessLevel,
   type CreateCliAuthChallenge,
   type ResolveCliAuthChallenge,
+  type CurrentUserProfile,
+  type AuthSession,
+  type UpdateCurrentUserProfile,
+  type UpdateCompanyMember,
+  type UpdateCompanyMemberWithPermissions,
+  type ArchiveCompanyMember,
   type UpdateMemberPermissions,
+  type SearchAdminUsersQuery,
   type UpdateUserCompanyAccess,
 } from "./access.js";
 
@@ -265,6 +290,8 @@ export {
   pluginLauncherActionDeclarationSchema,
   pluginLauncherRenderDeclarationSchema,
   pluginLauncherDeclarationSchema,
+  pluginDatabaseDeclarationSchema,
+  pluginApiRouteDeclarationSchema,
   pluginManifestV1Schema,
   installPluginSchema,
   upsertPluginConfigSchema,
@@ -281,6 +308,8 @@ export {
   type PluginLauncherActionDeclarationInput,
   type PluginLauncherRenderDeclarationInput,
   type PluginLauncherDeclarationInput,
+  type PluginDatabaseDeclarationInput,
+  type PluginApiRouteDeclarationInput,
   type PluginManifestV1Input,
   type InstallPlugin,
   type UpsertPluginConfig,
@@ -291,3 +320,5 @@ export {
   type SetPluginState,
   type ListPluginState,
 } from "./plugin.js";
+
+export { createWebhookSchema, updateWebhookSchema, type CreateWebhook, type UpdateWebhook } from "./webhook.js";

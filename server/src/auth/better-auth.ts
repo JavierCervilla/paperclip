@@ -4,13 +4,9 @@ import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { toNodeHandler } from "better-auth/node";
 import type { Db } from "@paperclipai/db";
-import {
-  authAccounts,
-  authSessions,
-  authUsers,
-  authVerifications,
-} from "@paperclipai/db";
+import { authAccounts, authSessions, authUsers, authVerifications } from "@paperclipai/db";
 import type { Config } from "../config.js";
+import { resolvePaperclipInstanceId } from "../home-paths.js";
 
 export type BetterAuthSessionUser = {
   id: string;
@@ -24,6 +20,24 @@ export type BetterAuthSessionResult = {
 };
 
 type BetterAuthInstance = ReturnType<typeof betterAuth>;
+
+const AUTH_COOKIE_PREFIX_FALLBACK = "default";
+const AUTH_COOKIE_PREFIX_INVALID_SEGMENTS_RE = /[^a-zA-Z0-9_-]+/g;
+
+export function deriveAuthCookiePrefix(instanceId = resolvePaperclipInstanceId()): string {
+  const scopedInstanceId = instanceId
+    .trim()
+    .replace(AUTH_COOKIE_PREFIX_INVALID_SEGMENTS_RE, "-")
+    .replace(/^-+|-+$/g, "") || AUTH_COOKIE_PREFIX_FALLBACK;
+  return `paperclip-${scopedInstanceId}`;
+}
+
+export function buildBetterAuthAdvancedOptions(input: { disableSecureCookies: boolean }) {
+  return {
+    cookiePrefix: deriveAuthCookiePrefix(),
+    ...(input.disableSecureCookies ? { useSecureCookies: false } : {}),
+  };
+}
 
 function headersFromNodeHeaders(rawHeaders: IncomingHttpHeaders): Headers {
   const headers = new Headers();
@@ -67,7 +81,13 @@ export function deriveAuthTrustedOrigins(config: Config): string[] {
 
 export function createBetterAuthInstance(db: Db, config: Config, trustedOrigins?: string[]): BetterAuthInstance {
   const baseUrl = config.authBaseUrlMode === "explicit" ? config.authPublicBaseUrl : undefined;
-  const secret = process.env.BETTER_AUTH_SECRET ?? process.env.PAPERCLIP_AGENT_JWT_SECRET ?? "paperclip-dev-secret";
+  const secret = process.env.BETTER_AUTH_SECRET ?? process.env.PAPERCLIP_AGENT_JWT_SECRET;
+  if (!secret) {
+    throw new Error(
+      "BETTER_AUTH_SECRET (or PAPERCLIP_AGENT_JWT_SECRET) must be set. " +
+        "For local development, set BETTER_AUTH_SECRET=paperclip-dev-secret in your .env file.",
+    );
+  }
   const effectiveTrustedOrigins = trustedOrigins ?? deriveAuthTrustedOrigins(config);
 
   const publicUrl = process.env.PAPERCLIP_PUBLIC_URL ?? baseUrl;
@@ -91,7 +111,7 @@ export function createBetterAuthInstance(db: Db, config: Config, trustedOrigins?
       requireEmailVerification: false,
       disableSignUp: config.authDisableSignUp,
     },
-    ...(isHttpOnly ? { advanced: { useSecureCookies: false } } : {}),
+    advanced: buildBetterAuthAdvancedOptions({ disableSecureCookies: isHttpOnly }),
   };
 
   if (!baseUrl) {
@@ -124,9 +144,8 @@ export async function resolveBetterAuthSessionFromHeaders(
     session?: { id?: string; userId?: string } | null;
     user?: { id?: string; email?: string | null; name?: string | null } | null;
   };
-  const session = value.session?.id && value.session.userId
-    ? { id: value.session.id, userId: value.session.userId }
-    : null;
+  const session =
+    value.session?.id && value.session.userId ? { id: value.session.id, userId: value.session.userId } : null;
   const user = value.user?.id
     ? {
         id: value.user.id,

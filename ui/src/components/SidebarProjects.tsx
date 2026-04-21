@@ -2,14 +2,7 @@ import { useCallback, useMemo, useState } from "react";
 import { NavLink, useLocation } from "@/lib/router";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronRight, Plus } from "lucide-react";
-import {
-  DndContext,
-  MouseSensor,
-  closestCenter,
-  type DragEndEvent,
-  useSensor,
-  useSensors,
-} from "@dnd-kit/core";
+import { DndContext, MouseSensor, closestCenter, type DragEndEvent, useSensor, useSensors } from "@dnd-kit/core";
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useCompany } from "../context/CompanyContext";
@@ -17,15 +10,12 @@ import { useDialog } from "../context/DialogContext";
 import { useSidebar } from "../context/SidebarContext";
 import { authApi } from "../api/auth";
 import { projectsApi } from "../api/projects";
+import { SIDEBAR_SCROLL_RESET_STATE } from "../lib/navigation-scroll";
 import { queryKeys } from "../lib/queryKeys";
 import { cn, projectRouteRef } from "../lib/utils";
 import { useProjectOrder } from "../hooks/useProjectOrder";
 import { BudgetSidebarMarker } from "./BudgetSidebarMarker";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { PluginSlotMount, usePluginSlots } from "@/plugins/slots";
 import type { Project } from "@paperclipai/shared";
 
@@ -48,14 +38,7 @@ function SortableProjectItem({
   projectSidebarSlots: ProjectSidebarSlot[];
   setSidebarOpen: (open: boolean) => void;
 }) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: project.id });
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: project.id });
 
   const routeRef = projectRouteRef(project);
 
@@ -74,7 +57,12 @@ function SortableProjectItem({
       <div className="flex flex-col gap-0.5">
         <NavLink
           to={`/projects/${routeRef}/issues`}
-          onClick={() => {
+          state={SIDEBAR_SCROLL_RESET_STATE}
+          onClick={(e) => {
+            if (isDragging) {
+              e.preventDefault();
+              return;
+            }
             if (isMobile) setSidebarOpen(false);
           }}
           className={cn(
@@ -84,10 +72,7 @@ function SortableProjectItem({
               : "text-foreground/80 hover:bg-accent/50 hover:text-foreground",
           )}
         >
-          <span
-            className="shrink-0 h-3.5 w-3.5 rounded-sm"
-            style={{ backgroundColor: project.color ?? "#6366f1" }}
-          />
+          <span className="shrink-0 h-3.5 w-3.5 rounded-sm" style={{ backgroundColor: project.color ?? "#6366f1" }} />
           <span className="flex-1 truncate">{project.name}</span>
           {project.pauseReason === "budget" ? <BudgetSidebarMarker title="Project paused by budget" /> : null}
         </NavLink>
@@ -140,10 +125,7 @@ export function SidebarProjects() {
 
   const currentUserId = session?.user?.id ?? session?.session?.userId ?? null;
 
-  const visibleProjects = useMemo(
-    () => (projects ?? []).filter((project: Project) => !project.archivedAt),
-    [projects],
-  );
+  const visibleProjects = useMemo(() => (projects ?? []).filter((project: Project) => !project.archivedAt), [projects]);
   const { orderedProjects, persistOrder } = useProjectOrder({
     projects: visibleProjects,
     companyId: selectedCompanyId,
@@ -182,7 +164,7 @@ export function SidebarProjects() {
             <ChevronRight
               className={cn(
                 "h-3 w-3 text-muted-foreground/60 transition-transform opacity-0 group-hover:opacity-100",
-                open && "rotate-90"
+                open && "rotate-90",
               )}
             />
             <span className="text-[10px] font-medium uppercase tracking-widest font-mono text-muted-foreground/60">
@@ -203,15 +185,8 @@ export function SidebarProjects() {
       </div>
 
       <CollapsibleContent>
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragEnd={handleDragEnd}
-        >
-          <SortableContext
-            items={orderedProjects.map((project) => project.id)}
-            strategy={verticalListSortingStrategy}
-          >
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext items={orderedProjects.map((project) => project.id)} strategy={verticalListSortingStrategy}>
             <div className="flex flex-col gap-0.5 mt-0.5">
               {orderedProjects.map((project: Project) => (
                 <SortableProjectItem

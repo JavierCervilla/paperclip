@@ -64,19 +64,28 @@ export function parseAssigneeValue(value: string): AssigneeSelection {
 
 export function currentUserAssigneeOption(currentUserId: string | null | undefined): AssigneeOption[] {
   if (!currentUserId) return [];
-  return [{
-    id: assigneeValueFromSelection({ assigneeUserId: currentUserId }),
-    label: "Me",
-    searchText: currentUserId === "local-board" ? "me board human local-board" : `me human ${currentUserId}`,
-  }];
+  return [
+    {
+      id: assigneeValueFromSelection({ assigneeUserId: currentUserId }),
+      label: "Me",
+      searchText: currentUserId === "local-board" ? "me board human local-board" : `me human ${currentUserId}`,
+    },
+  ];
 }
 
 export function formatAssigneeUserLabel(
   userId: string | null | undefined,
   currentUserId: string | null | undefined,
+  userLabels?: ReadonlyMap<string, string> | Record<string, string> | null,
 ): string | null {
   if (!userId) return null;
-  if (currentUserId && userId === currentUserId) return "Me";
+  if (currentUserId && userId === currentUserId) return "You";
+  if (userLabels) {
+    const label = userLabels instanceof Map
+      ? userLabels.get(userId)
+      : (userLabels as Record<string, string>)[userId];
+    if (typeof label === "string" && label.trim()) return label;
+  }
   if (userId === "local-board") return "Board";
   return userId.slice(0, 5);
 }

@@ -142,10 +142,10 @@ export function workspaceOperationService(db: Db) {
             status: "running",
             logStore: handle.store,
             logRef: handle.logRef,
-            metadata: redactCurrentUserValue(
-              recordInput.metadata ?? null,
-              currentUserRedactionOptions,
-            ) as Record<string, unknown> | null,
+            metadata: redactCurrentUserValue(recordInput.metadata ?? null, currentUserRedactionOptions) as Record<
+              string,
+              unknown
+            > | null,
             startedAt,
           });
           createdIds.push(id);
@@ -250,9 +250,9 @@ export function workspaceOperationService(db: Db) {
         store: operation.logStore,
         logRef: operation.logRef,
         ...result,
-        content: redactCurrentUserText(result.content, {
-          enabled: (await instanceSettings.getGeneral()).censorUsernameInLogs,
-        }),
+        // Workspace-operation log chunks are sanitized before append-time storage.
+        // Returning the stored chunk avoids another whole-string rewrite per poll.
+        content: result.content,
       };
     },
   };

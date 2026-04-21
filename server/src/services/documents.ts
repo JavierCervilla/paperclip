@@ -1,7 +1,7 @@
 import { and, asc, desc, eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { documentRevisions, documents, issueDocuments, issues } from "@paperclipai/db";
-import { issueDocumentKeySchema } from "@paperclipai/shared";
+import { isSystemIssueDocumentKey, issueDocumentKeySchema } from "@paperclipai/shared";
 import { conflict, notFound, unprocessable } from "../errors.js";
 
 function normalizeDocumentKey(key: string) {
@@ -83,8 +83,14 @@ const issueDocumentSelect = {
 };
 
 export function documentService(db: Db) {
+  const filterSystemDocuments = <T extends { key: string }>(rows: T[], includeSystem: boolean) =>
+    includeSystem ? rows : rows.filter((row) => !isSystemIssueDocumentKey(row.key));
+
   return {
-    getIssueDocumentPayload: async (issue: { id: string; description: string | null }) => {
+    getIssueDocumentPayload: async (
+      issue: { id: string; description: string | null },
+      options: { includeSystem?: boolean } = {},
+    ) => {
       const [planDocument, documentSummaries] = await Promise.all([
         db
           .select(issueDocumentSelect)
@@ -104,7 +110,8 @@ export function documentService(db: Db) {
 
       return {
         planDocument: planDocument ? mapIssueDocumentRow(planDocument, true) : null,
-        documentSummaries: documentSummaries.map((row) => mapIssueDocumentRow(row, false)),
+        documentSummaries: filterSystemDocuments(documentSummaries, options.includeSystem ?? false)
+          .map((row) => mapIssueDocumentRow(row, false)),
         legacyPlanDocument: legacyPlanBody
           ? {
               key: "plan" as const,
@@ -115,14 +122,14 @@ export function documentService(db: Db) {
       };
     },
 
-    listIssueDocuments: async (issueId: string) => {
+    listIssueDocuments: async (issueId: string, options: { includeSystem?: boolean } = {}) => {
       const rows = await db
         .select(issueDocumentSelect)
         .from(issueDocuments)
         .innerJoin(documents, eq(issueDocuments.documentId, documents.id))
         .where(eq(issueDocuments.issueId, issueId))
         .orderBy(asc(issueDocuments.key), desc(documents.updatedAt));
-      return rows.map((row) => mapIssueDocumentRow(row, true));
+      return filterSystemDocuments(rows, options.includeSystem ?? false).map((row) => mapIssueDocumentRow(row, true));
     },
 
     getIssueDocumentByKey: async (issueId: string, rawKey: string) => {
@@ -171,6 +178,7 @@ export function documentService(db: Db) {
       baseRevisionId?: string | null;
       createdByAgentId?: string | null;
       createdByUserId?: string | null;
+      createdByRunId?: string | null;
     }) => {
       const key = normalizeDocumentKey(input.key);
       const issue = await db
@@ -231,6 +239,7 @@ export function documentService(db: Db) {
                 changeSummary: input.changeSummary ?? null,
                 createdByAgentId: input.createdByAgentId ?? null,
                 createdByUserId: input.createdByUserId ?? null,
+                createdByRunId: input.createdByRunId ?? null,
                 createdAt: now,
               })
               .returning();
@@ -249,10 +258,7 @@ export function documentService(db: Db) {
               })
               .where(eq(documents.id, existing.id));
 
-            await tx
-              .update(issueDocuments)
-              .set({ updatedAt: now })
-              .where(eq(issueDocuments.documentId, existing.id));
+            await tx.update(issueDocuments).set({ updatedAt: now }).where(eq(issueDocuments.documentId, existing.id));
 
             return {
               created: false as const,
@@ -304,14 +310,12 @@ export function documentService(db: Db) {
               changeSummary: input.changeSummary ?? null,
               createdByAgentId: input.createdByAgentId ?? null,
               createdByUserId: input.createdByUserId ?? null,
+              createdByRunId: input.createdByRunId ?? null,
               createdAt: now,
             })
             .returning();
 
-          await tx
-            .update(documents)
-            .set({ latestRevisionId: revision.id })
-            .where(eq(documents.id, document.id));
+          await tx.update(documents).set({ latestRevisionId: revision.id }).where(eq(documents.id, document.id));
 
           await tx.insert(issueDocuments).values({
             companyId: issue.companyId,
@@ -422,10 +426,7 @@ export function documentService(db: Db) {
           })
           .where(eq(documents.id, existing.id));
 
-        await tx
-          .update(issueDocuments)
-          .set({ updatedAt: now })
-          .where(eq(issueDocuments.documentId, existing.id));
+        await tx.update(issueDocuments).set({ updatedAt: now }).where(eq(issueDocuments.documentId, existing.id));
 
         return {
           restoredFromRevisionId: revision.id,

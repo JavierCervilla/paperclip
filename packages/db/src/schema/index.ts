@@ -1,12 +1,34 @@
 export { companies } from "./companies.js";
 export { companyLogos } from "./company_logos.js";
-export { authUsers, authSessions, authAccounts, authVerifications } from "./auth.js";
+export {
+  authUsers,
+  authSessions,
+  authAccounts,
+  authVerifications,
+  authUsersRelations,
+  authAccountsRelations,
+  authSessionsRelations,
+} from "./auth.js";
+// Aliases required by better-auth's drizzle adapter (db.query[model] must match better-auth model names)
+export {
+  authUsers as user,
+  authSessions as session,
+  authAccounts as account,
+  authVerifications as verification,
+} from "./auth.js";
+export {
+  authUsersRelations as userRelations,
+  authAccountsRelations as accountRelations,
+  authSessionsRelations as sessionRelations,
+} from "./auth.js";
 export { instanceSettings } from "./instance_settings.js";
 export { instanceUserRoles } from "./instance_user_roles.js";
+export { userSidebarPreferences } from "./user_sidebar_preferences.js";
 export { agents } from "./agents.js";
 export { boardApiKeys } from "./board_api_keys.js";
 export { cliAuthChallenges } from "./cli_auth_challenges.js";
 export { companyMemberships } from "./company_memberships.js";
+export { companyUserSidebarPreferences } from "./company_user_sidebar_preferences.js";
 export { principalPermissionGrants } from "./principal_permission_grants.js";
 export { invites } from "./invites.js";
 export { joinRequests } from "./join_requests.js";
@@ -25,13 +47,18 @@ export { workspaceRuntimeServices } from "./workspace_runtime_services.js";
 export { projectGoals } from "./project_goals.js";
 export { goals } from "./goals.js";
 export { issues } from "./issues.js";
+export { issueRelations } from "./issue_relations.js";
 export { routines, routineTriggers, routineRuns } from "./routines.js";
 export { issueWorkProducts } from "./issue_work_products.js";
 export { labels } from "./labels.js";
 export { issueLabels } from "./issue_labels.js";
 export { issueApprovals } from "./issue_approvals.js";
 export { issueComments } from "./issue_comments.js";
+export { issueExecutionDecisions } from "./issue_execution_decisions.js";
 export { issueInboxArchives } from "./issue_inbox_archives.js";
+export { inboxDismissals } from "./inbox_dismissals.js";
+export { feedbackVotes } from "./feedback_votes.js";
+export { feedbackExports } from "./feedback_exports.js";
 export { issueReadStates } from "./issue_read_states.js";
 export { assets } from "./assets.js";
 export { issueAttachments } from "./issue_attachments.js";
@@ -40,6 +67,7 @@ export { documentRevisions } from "./document_revisions.js";
 export { issueDocuments } from "./issue_documents.js";
 export { heartbeatRuns } from "./heartbeat_runs.js";
 export { heartbeatRunEvents } from "./heartbeat_run_events.js";
+export { runTodos } from "./run_todos.js";
 export { costEvents } from "./cost_events.js";
 export { financeEvents } from "./finance_events.js";
 export { approvals } from "./approvals.js";
@@ -53,6 +81,11 @@ export { pluginConfig } from "./plugin_config.js";
 export { pluginCompanySettings } from "./plugin_company_settings.js";
 export { pluginState } from "./plugin_state.js";
 export { pluginEntities } from "./plugin_entities.js";
+export { pluginDatabaseNamespaces, pluginMigrations } from "./plugin_database.js";
 export { pluginJobs, pluginJobRuns } from "./plugin_jobs.js";
 export { pluginWebhookDeliveries } from "./plugin_webhooks.js";
 export { pluginLogs } from "./plugin_logs.js";
+export { chatSessions } from "./chat_sessions.js";
+export { chatMessages } from "./chat_messages.js";
+export { webhooks } from "./webhooks.js";
+export { webhookDeliveries } from "./webhook_deliveries.js";

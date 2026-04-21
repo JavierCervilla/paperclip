@@ -26,12 +26,7 @@
         "groups": [
           {
             "group": "Introduction",
-            "pages": [
-              "start/what-is-paperclip",
-              "start/quickstart",
-              "start/core-concepts",
-              "start/architecture"
-            ]
+            "pages": ["start/what-is-paperclip", "start/quickstart", "start/core-concepts", "start/architecture"]
           }
         ]
       },
@@ -46,6 +41,8 @@
               "guides/board-operator/managing-agents",
               "guides/board-operator/org-structure",
               "guides/board-operator/managing-tasks",
+              "guides/board-operator/execution-workspaces-and-runtime-services",
+              "guides/board-operator/delegation",
               "guides/board-operator/execution-workspaces-and-runtime-services",
               "guides/board-operator/delegation",
               "guides/board-operator/approvals",
@@ -82,7 +79,8 @@
               "deploy/database",
               "deploy/secrets",
               "deploy/storage",
-              "deploy/environment-variables"
+              "deploy/environment-variables",
+              "deploy/branching-workflow"
             ]
           }
         ]
@@ -96,8 +94,11 @@
               "adapters/overview",
               "adapters/claude-local",
               "adapters/codex-local",
+              "adapters/gemini-local",
               "adapters/process",
               "adapters/http",
+              "adapters/external-adapters",
+              "adapters/adapter-ui-parser",
               "adapters/creating-an-adapter"
             ]
           }
@@ -129,11 +130,7 @@
         "groups": [
           {
             "group": "CLI Reference",
-            "pages": [
-              "cli/overview",
-              "cli/setup-commands",
-              "cli/control-plane-commands"
-            ]
+            "pages": ["cli/overview", "cli/setup-commands", "cli/control-plane-commands"]
           }
         ]
       }

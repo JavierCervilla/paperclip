@@ -2,7 +2,11 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { inferOpenAiCompatibleBiller, type AdapterExecutionContext, type AdapterExecutionResult } from "@paperclipai/adapter-utils";
+import {
+  inferOpenAiCompatibleBiller,
+  type AdapterExecutionContext,
+  type AdapterExecutionResult,
+} from "@paperclipai/adapter-utils";
 import {
   asString,
   asNumber,
@@ -17,6 +21,9 @@ import {
   ensurePathInEnv,
   resolveCommandForLogs,
   renderTemplate,
+  renderPaperclipWakePrompt,
+  stringifyPaperclipWakePayload,
+  DEFAULT_PAPERCLIP_AGENT_PROMPT_TEMPLATE,
   runChildProcess,
   readPaperclipRuntimeSkillEntries,
   resolvePaperclipDesiredSkillNames,
@@ -66,10 +73,7 @@ async function ensureOpenCodeSkillsInjected(
     selectedEntries.map((entry) => entry.runtimeName),
   );
   for (const skillName of removedSkills) {
-    await onLog(
-      "stderr",
-      `[paperclip] Removed maintainer-only OpenCode skill "${skillName}" from ${skillsHome}\n`,
-    );
+    await onLog("stderr", `[paperclip] Removed maintainer-only OpenCode skill "${skillName}" from ${skillsHome}\n`);
   }
   for (const entry of selectedEntries) {
     const target = path.join(skillsHome, entry.runtimeName);
@@ -95,7 +99,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
 
   const promptTemplate = asString(
     config.promptTemplate,
-    "You are agent {{agent.id}} ({{agent.name}}). Continue your Paperclip work.",
+    DEFAULT_PAPERCLIP_AGENT_PROMPT_TEMPLATE,
   );
   const command = asString(config.command, "opencode");
   const model = asString(config.model, "").trim();
@@ -120,11 +124,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   await ensureAbsoluteDirectory(cwd, { createIfMissing: true });
   const openCodeSkillEntries = await readPaperclipRuntimeSkillEntries(config, __moduleDir);
   const desiredOpenCodeSkillNames = resolvePaperclipDesiredSkillNames(config, openCodeSkillEntries);
-  await ensureOpenCodeSkillsInjected(
-    onLog,
-    openCodeSkillEntries,
-    desiredOpenCodeSkillNames,
-  );
+  await ensureOpenCodeSkillsInjected(onLog, openCodeSkillEntries, desiredOpenCodeSkillNames);
 
   const envConfig = parseObject(config.env);
   const hasExplicitApiKey =
@@ -136,17 +136,15 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     (typeof context.issueId === "string" && context.issueId.trim().length > 0 && context.issueId.trim()) ||
     null;
   const wakeReason =
-    typeof context.wakeReason === "string" && context.wakeReason.trim().length > 0
-      ? context.wakeReason.trim()
-      : null;
+    typeof context.wakeReason === "string" && context.wakeReason.trim().length > 0 ? context.wakeReason.trim() : null;
   const wakeCommentId =
-    (typeof context.wakeCommentId === "string" && context.wakeCommentId.trim().length > 0 && context.wakeCommentId.trim()) ||
+    (typeof context.wakeCommentId === "string" &&
+      context.wakeCommentId.trim().length > 0 &&
+      context.wakeCommentId.trim()) ||
     (typeof context.commentId === "string" && context.commentId.trim().length > 0 && context.commentId.trim()) ||
     null;
   const approvalId =
-    typeof context.approvalId === "string" && context.approvalId.trim().length > 0
-      ? context.approvalId.trim()
-      : null;
+    typeof context.approvalId === "string" && context.approvalId.trim().length > 0 ? context.approvalId.trim() : null;
   const approvalStatus =
     typeof context.approvalStatus === "string" && context.approvalStatus.trim().length > 0
       ? context.approvalStatus.trim()
@@ -154,12 +152,14 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const linkedIssueIds = Array.isArray(context.issueIds)
     ? context.issueIds.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
     : [];
+  const wakePayloadJson = stringifyPaperclipWakePayload(context.paperclipWake);
   if (wakeTaskId) env.PAPERCLIP_TASK_ID = wakeTaskId;
   if (wakeReason) env.PAPERCLIP_WAKE_REASON = wakeReason;
   if (wakeCommentId) env.PAPERCLIP_WAKE_COMMENT_ID = wakeCommentId;
   if (approvalId) env.PAPERCLIP_APPROVAL_ID = approvalId;
   if (approvalStatus) env.PAPERCLIP_APPROVAL_STATUS = approvalStatus;
   if (linkedIssueIds.length > 0) env.PAPERCLIP_LINKED_ISSUE_IDS = linkedIssueIds.join(",");
+  if (wakePayloadJson) env.PAPERCLIP_WAKE_PAYLOAD_JSON = wakePayloadJson;
   if (effectiveWorkspaceCwd) env.PAPERCLIP_WORKSPACE_CWD = effectiveWorkspaceCwd;
   if (workspaceSource) env.PAPERCLIP_WORKSPACE_SOURCE = workspaceSource;
   if (workspaceId) env.PAPERCLIP_WORKSPACE_ID = workspaceId;
@@ -222,11 +222,8 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         `[paperclip] OpenCode session "${runtimeSessionId}" was saved for cwd "${runtimeSessionCwd}" and will not be resumed in "${cwd}".\n`,
       );
     }
-
     const instructionsFilePath = asString(config.instructionsFilePath, "").trim();
-    const resolvedInstructionsFilePath = instructionsFilePath
-      ? path.resolve(cwd, instructionsFilePath)
-      : "";
+    const resolvedInstructionsFilePath = instructionsFilePath ? path.resolve(cwd, instructionsFilePath) : "";
     const instructionsDir = resolvedInstructionsFilePath ? `${path.dirname(resolvedInstructionsFilePath)}/` : "";
     let instructionsPrefix = "";
     if (resolvedInstructionsFilePath) {
@@ -271,15 +268,18 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       run: { id: runId, source: "on_demand" },
       context,
     };
-    const renderedPrompt = renderTemplate(promptTemplate, templateData);
     const renderedBootstrapPrompt =
       !sessionId && bootstrapPromptTemplate.trim().length > 0
         ? renderTemplate(bootstrapPromptTemplate, templateData).trim()
         : "";
+    const wakePrompt = renderPaperclipWakePrompt(context.paperclipWake, { resumedSession: Boolean(sessionId) });
+    const shouldUseResumeDeltaPrompt = Boolean(sessionId) && wakePrompt.length > 0;
+    const renderedPrompt = shouldUseResumeDeltaPrompt ? "" : renderTemplate(promptTemplate, templateData);
     const sessionHandoffNote = asString(context.paperclipSessionHandoffMarkdown, "").trim();
     const prompt = joinPromptSections([
       instructionsPrefix,
       renderedBootstrapPrompt,
+      wakePrompt,
       sessionHandoffNote,
       renderedPrompt,
     ]);
@@ -287,6 +287,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       promptChars: prompt.length,
       instructionsChars: instructionsPrefix.length,
       bootstrapPromptChars: renderedBootstrapPrompt.length,
+      wakePromptChars: wakePrompt.length,
       sessionHandoffChars: sessionHandoffNote.length,
       heartbeatPromptChars: renderedPrompt.length,
     };
@@ -352,7 +353,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
 
       const resolvedSessionId =
         attempt.parsed.sessionId ??
-        (clearSessionOnMissingSession ? null : runtimeSessionId ?? runtime.sessionId ?? null);
+        (clearSessionOnMissingSession ? null : (runtimeSessionId ?? runtime.sessionId ?? null));
       const resolvedSessionParams = resolvedSessionId
         ? ({
             sessionId: resolvedSessionId,
@@ -368,9 +369,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       const rawExitCode = attempt.proc.exitCode;
       const synthesizedExitCode = parsedError && (rawExitCode ?? 0) === 0 ? 1 : rawExitCode;
       const fallbackErrorMessage =
-        parsedError ||
-        stderrLine ||
-        `OpenCode exited with code ${synthesizedExitCode ?? -1}`;
+        parsedError || stderrLine || `OpenCode exited with code ${synthesizedExitCode ?? -1}`;
       const modelId = model || null;
 
       return {
@@ -403,11 +402,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     const initial = await runAttempt(sessionId);
     const initialFailed =
       !initial.proc.timedOut && ((initial.proc.exitCode ?? 0) !== 0 || Boolean(initial.parsed.errorMessage));
-    if (
-      sessionId &&
-      initialFailed &&
-      isOpenCodeUnknownSessionError(initial.proc.stdout, initial.rawStderr)
-    ) {
+    if (sessionId && initialFailed && isOpenCodeUnknownSessionError(initial.proc.stdout, initial.rawStderr)) {
       await onLog(
         "stdout",
         `[paperclip] OpenCode session "${sessionId}" is unavailable; retrying with a fresh session.\n`,

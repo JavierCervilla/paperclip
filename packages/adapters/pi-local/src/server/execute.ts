@@ -2,7 +2,11 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { inferOpenAiCompatibleBiller, type AdapterExecutionContext, type AdapterExecutionResult } from "@paperclipai/adapter-utils";
+import {
+  inferOpenAiCompatibleBiller,
+  type AdapterExecutionContext,
+  type AdapterExecutionResult,
+} from "@paperclipai/adapter-utils";
 import {
   asString,
   asNumber,
@@ -20,6 +24,9 @@ import {
   resolvePaperclipDesiredSkillNames,
   removeMaintainerOnlySkillSymlinks,
   renderTemplate,
+  renderPaperclipWakePrompt,
+  stringifyPaperclipWakePayload,
+  DEFAULT_PAPERCLIP_AGENT_PROMPT_TEMPLATE,
   runChildProcess,
 } from "@paperclipai/adapter-utils/server-utils";
 import { isPiUnknownSessionError, parsePiJsonl } from "./parse.js";
@@ -67,10 +74,7 @@ async function ensurePiSkillsInjected(
     selectedEntries.map((entry) => entry.runtimeName),
   );
   for (const skillName of removedSkills) {
-    await onLog(
-      "stderr",
-      `[paperclip] Removed maintainer-only Pi skill "${skillName}" from ${PI_AGENT_SKILLS_DIR}\n`,
-    );
+    await onLog("stderr", `[paperclip] Removed maintainer-only Pi skill "${skillName}" from ${PI_AGENT_SKILLS_DIR}\n`);
   }
 
   for (const entry of selectedEntries) {
@@ -111,7 +115,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
 
   const promptTemplate = asString(
     config.promptTemplate,
-    "You are agent {{agent.id}} ({{agent.name}}). Continue your Paperclip work.",
+    DEFAULT_PAPERCLIP_AGENT_PROMPT_TEMPLATE,
   );
   const command = asString(config.command, "pi");
   const model = asString(config.model, "").trim();
@@ -138,10 +142,10 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const effectiveWorkspaceCwd = useConfiguredInsteadOfAgentHome ? "" : workspaceCwd;
   const cwd = effectiveWorkspaceCwd || configuredCwd || process.cwd();
   await ensureAbsoluteDirectory(cwd, { createIfMissing: true });
-  
+
   // Ensure sessions directory exists
   await ensureSessionsDir();
-  
+
   // Inject skills
   const piSkillEntries = await readPaperclipRuntimeSkillEntries(config, __moduleDir);
   const desiredPiSkillNames = resolvePaperclipDesiredSkillNames(config, piSkillEntries);
@@ -153,23 +157,21 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     typeof envConfig.PAPERCLIP_API_KEY === "string" && envConfig.PAPERCLIP_API_KEY.trim().length > 0;
   const env: Record<string, string> = { ...buildPaperclipEnv(agent) };
   env.PAPERCLIP_RUN_ID = runId;
-  
+
   const wakeTaskId =
     (typeof context.taskId === "string" && context.taskId.trim().length > 0 && context.taskId.trim()) ||
     (typeof context.issueId === "string" && context.issueId.trim().length > 0 && context.issueId.trim()) ||
     null;
   const wakeReason =
-    typeof context.wakeReason === "string" && context.wakeReason.trim().length > 0
-      ? context.wakeReason.trim()
-      : null;
+    typeof context.wakeReason === "string" && context.wakeReason.trim().length > 0 ? context.wakeReason.trim() : null;
   const wakeCommentId =
-    (typeof context.wakeCommentId === "string" && context.wakeCommentId.trim().length > 0 && context.wakeCommentId.trim()) ||
+    (typeof context.wakeCommentId === "string" &&
+      context.wakeCommentId.trim().length > 0 &&
+      context.wakeCommentId.trim()) ||
     (typeof context.commentId === "string" && context.commentId.trim().length > 0 && context.commentId.trim()) ||
     null;
   const approvalId =
-    typeof context.approvalId === "string" && context.approvalId.trim().length > 0
-      ? context.approvalId.trim()
-      : null;
+    typeof context.approvalId === "string" && context.approvalId.trim().length > 0 ? context.approvalId.trim() : null;
   const approvalStatus =
     typeof context.approvalStatus === "string" && context.approvalStatus.trim().length > 0
       ? context.approvalStatus.trim()
@@ -177,13 +179,15 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const linkedIssueIds = Array.isArray(context.issueIds)
     ? context.issueIds.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
     : [];
-    
+  const wakePayloadJson = stringifyPaperclipWakePayload(context.paperclipWake);
+
   if (wakeTaskId) env.PAPERCLIP_TASK_ID = wakeTaskId;
   if (wakeReason) env.PAPERCLIP_WAKE_REASON = wakeReason;
   if (wakeCommentId) env.PAPERCLIP_WAKE_COMMENT_ID = wakeCommentId;
   if (approvalId) env.PAPERCLIP_APPROVAL_ID = approvalId;
   if (approvalStatus) env.PAPERCLIP_APPROVAL_STATUS = approvalStatus;
   if (linkedIssueIds.length > 0) env.PAPERCLIP_LINKED_ISSUE_IDS = linkedIssueIds.join(",");
+  if (wakePayloadJson) env.PAPERCLIP_WAKE_PAYLOAD_JSON = wakePayloadJson;
   if (workspaceCwd) env.PAPERCLIP_WORKSPACE_CWD = workspaceCwd;
   if (workspaceSource) env.PAPERCLIP_WORKSPACE_SOURCE = workspaceSource;
   if (workspaceId) env.PAPERCLIP_WORKSPACE_ID = workspaceId;
@@ -198,7 +202,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   if (!hasExplicitApiKey && authToken) {
     env.PAPERCLIP_API_KEY = authToken;
   }
-  
+
   const runtimeEnv = Object.fromEntries(
     Object.entries(ensurePathInEnv({ ...process.env, ...env })).filter(
       (entry): entry is [string, string] => typeof entry[1] === "string",
@@ -236,7 +240,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     runtimeSessionId.length > 0 &&
     (runtimeSessionCwd.length === 0 || path.resolve(runtimeSessionCwd) === path.resolve(cwd));
   const sessionPath = canResumeSession ? runtimeSessionId : buildSessionPath(agent.id, new Date().toISOString());
-  
+
   if (runtimeSessionId && !canResumeSession) {
     await onLog(
       "stdout",
@@ -258,11 +262,9 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
 
   // Handle instructions file and build system prompt extension
   const instructionsFilePath = asString(config.instructionsFilePath, "").trim();
-  const resolvedInstructionsFilePath = instructionsFilePath
-    ? path.resolve(cwd, instructionsFilePath)
-    : "";
+  const resolvedInstructionsFilePath = instructionsFilePath ? path.resolve(cwd, instructionsFilePath) : "";
   const instructionsFileDir = instructionsFilePath ? `${path.dirname(instructionsFilePath)}/` : "";
-  
+
   let systemPromptExtension = "";
   let instructionsReadFailed = false;
   if (resolvedInstructionsFilePath) {
@@ -272,7 +274,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         `${instructionsContents}\n\n` +
         `The above agent instructions were loaded from ${resolvedInstructionsFilePath}. ` +
         `Resolve any relative file references from ${instructionsFileDir}.\n\n` +
-        `You are agent {{agent.id}} ({{agent.name}}). Continue your Paperclip work.`;
+        DEFAULT_PAPERCLIP_AGENT_PROMPT_TEMPLATE;
     } catch (err) {
       instructionsReadFailed = true;
       const reason = err instanceof Error ? err.message : String(err);
@@ -298,14 +300,17 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     context,
   };
   const renderedSystemPromptExtension = renderTemplate(systemPromptExtension, templateData);
-  const renderedHeartbeatPrompt = renderTemplate(promptTemplate, templateData);
   const renderedBootstrapPrompt =
     !canResumeSession && bootstrapPromptTemplate.trim().length > 0
       ? renderTemplate(bootstrapPromptTemplate, templateData).trim()
       : "";
+  const wakePrompt = renderPaperclipWakePrompt(context.paperclipWake, { resumedSession: canResumeSession });
+  const shouldUseResumeDeltaPrompt = canResumeSession && wakePrompt.length > 0;
+  const renderedHeartbeatPrompt = shouldUseResumeDeltaPrompt ? "" : renderTemplate(promptTemplate, templateData);
   const sessionHandoffNote = asString(context.paperclipSessionHandoffMarkdown, "").trim();
   const userPrompt = joinPromptSections([
     renderedBootstrapPrompt,
+    wakePrompt,
     sessionHandoffNote,
     renderedHeartbeatPrompt,
   ]);
@@ -313,6 +318,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     systemPromptChars: renderedSystemPromptExtension.length,
     promptChars: userPrompt.length,
     bootstrapPromptChars: renderedBootstrapPrompt.length,
+    wakePromptChars: wakePrompt.length,
     sessionHandoffChars: sessionHandoffNote.length,
     heartbeatPromptChars: renderedHeartbeatPrompt.length,
   };
@@ -332,14 +338,14 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
 
   const buildArgs = (sessionFile: string): string[] => {
     const args: string[] = [];
-    
+
     // Use JSON mode for structured output with print mode (non-interactive)
     args.push("--mode", "json");
     args.push("-p"); // Non-interactive mode: process prompt and exit
-    
+
     // Use --append-system-prompt to extend Pi's default system prompt
     args.push("--append-system-prompt", renderedSystemPromptExtension);
-    
+
     if (provider) args.push("--provider", provider);
     if (modelId) args.push("--model", modelId);
     if (thinking) args.push("--thinking", thinking);
@@ -351,7 +357,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     args.push("--skill", PI_AGENT_SKILLS_DIR);
 
     if (extraArgs.length > 0) args.push(...extraArgs);
-    
+
     // Add the user prompt as the last argument
     args.push(userPrompt);
 
@@ -382,13 +388,13 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         await onLog(stream, chunk);
         return;
       }
-      
+
       // Buffer stdout and emit only complete lines
       stdoutBuffer += chunk;
       const lines = stdoutBuffer.split("\n");
       // Keep the last (potentially incomplete) line in the buffer
       stdoutBuffer = lines.pop() || "";
-      
+
       // Emit complete lines
       for (const line of lines) {
         if (line) {
@@ -405,12 +411,12 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       onSpawn,
       onLog: bufferedOnLog,
     });
-    
+
     // Flush any remaining buffer content
     if (stdoutBuffer) {
       await onLog("stdout", stdoutBuffer);
     }
-    
+
     return {
       proc,
       rawStderr: proc.stderr,
@@ -437,19 +443,19 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     }
 
     const resolvedSessionId = clearSessionOnMissingSession ? null : sessionPath;
-    const resolvedSessionParams = resolvedSessionId
-      ? { sessionId: resolvedSessionId, cwd }
-      : null;
+    const resolvedSessionParams = resolvedSessionId ? { sessionId: resolvedSessionId, cwd } : null;
 
     const stderrLine = firstNonEmptyLine(attempt.proc.stderr);
     const rawExitCode = attempt.proc.exitCode;
-    const fallbackErrorMessage = stderrLine || `Pi exited with code ${rawExitCode ?? -1}`;
+    const parsedError = attempt.parsed.errors.find((error) => error.trim().length > 0) ?? "";
+    const effectiveExitCode = (rawExitCode ?? 0) === 0 && parsedError ? 1 : rawExitCode;
+    const fallbackErrorMessage = parsedError || stderrLine || `Pi exited with code ${rawExitCode ?? -1}`;
 
     return {
-      exitCode: rawExitCode,
+      exitCode: effectiveExitCode,
       signal: attempt.proc.signal,
       timedOut: false,
-      errorMessage: (rawExitCode ?? 0) === 0 ? null : fallbackErrorMessage,
+      errorMessage: (effectiveExitCode ?? 0) === 0 ? null : fallbackErrorMessage,
       usage: {
         inputTokens: attempt.parsed.usage.inputTokens,
         outputTokens: attempt.parsed.usage.outputTokens,
@@ -475,12 +481,8 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const initial = await runAttempt(sessionPath);
   const initialFailed =
     !initial.proc.timedOut && ((initial.proc.exitCode ?? 0) !== 0 || initial.parsed.errors.length > 0);
-  
-  if (
-    canResumeSession &&
-    initialFailed &&
-    isPiUnknownSessionError(initial.proc.stdout, initial.rawStderr)
-  ) {
+
+  if (canResumeSession && initialFailed && isPiUnknownSessionError(initial.proc.stdout, initial.rawStderr)) {
     await onLog(
       "stdout",
       `[paperclip] Pi session "${runtimeSessionId}" is unavailable; retrying with a fresh session.\n`,

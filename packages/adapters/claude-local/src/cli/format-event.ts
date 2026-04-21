@@ -42,6 +42,7 @@ export function printClaudeStreamEvent(raw: string, debug: boolean): void {
   const line = raw.trim();
   if (!line) return;
 
+  // eslint-disable-next-line no-useless-assignment
   let parsed: Record<string, unknown> | null = null;
   try {
     parsed = JSON.parse(line) as Record<string, unknown>;

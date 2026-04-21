@@ -39,15 +39,15 @@ paperclipai company export <company-id> --out ./my-export
 
 ### Options
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--out <path>` | Output directory (required) | — |
-| `--include <values>` | Comma-separated set: `company`, `agents`, `projects`, `issues`, `tasks`, `skills` | `company,agents` |
-| `--skills <values>` | Export only specific skill slugs | all |
-| `--projects <values>` | Export only specific project shortnames or IDs | all |
-| `--issues <values>` | Export specific issue identifiers or IDs | none |
-| `--project-issues <values>` | Export issues belonging to specific projects | none |
-| `--expand-referenced-skills` | Vendor skill file contents instead of keeping upstream references | `false` |
+| Option                       | Description                                                                       | Default          |
+| ---------------------------- | --------------------------------------------------------------------------------- | ---------------- |
+| `--out <path>`               | Output directory (required)                                                       | —                |
+| `--include <values>`         | Comma-separated set: `company`, `agents`, `projects`, `issues`, `tasks`, `skills` | `company,agents` |
+| `--skills <values>`          | Export only specific skill slugs                                                  | all              |
+| `--projects <values>`        | Export only specific project shortnames or IDs                                    | all              |
+| `--issues <values>`          | Export specific issue identifiers or IDs                                          | none             |
+| `--project-issues <values>`  | Export issues belonging to specific projects                                      | none             |
+| `--expand-referenced-skills` | Vendor skill file contents instead of keeping upstream references                 | `false`          |
 
 ### Examples
 
@@ -94,18 +94,18 @@ paperclipai company import org/repo/companies/acme
 
 ### Options
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--target <mode>` | `new` (create a new company) or `existing` (merge into existing) | inferred from context |
-| `--company-id <id>` | Target company ID for `--target existing` | current context |
-| `--new-company-name <name>` | Override company name for `--target new` | from package |
-| `--include <values>` | Comma-separated set: `company`, `agents`, `projects`, `issues`, `tasks`, `skills` | auto-detected |
-| `--agents <list>` | Comma-separated agent slugs to import, or `all` | `all` |
-| `--collision <mode>` | How to handle name conflicts: `rename`, `skip`, or `replace` | `rename` |
-| `--ref <value>` | Git ref for GitHub imports (branch, tag, or commit) | default branch |
-| `--dry-run` | Preview what would be imported without applying | `false` |
-| `--yes` | Skip the interactive confirmation prompt | `false` |
-| `--json` | Output result as JSON | `false` |
+| Option                      | Description                                                                       | Default               |
+| --------------------------- | --------------------------------------------------------------------------------- | --------------------- |
+| `--target <mode>`           | `new` (create a new company) or `existing` (merge into existing)                  | inferred from context |
+| `--company-id <id>`         | Target company ID for `--target existing`                                         | current context       |
+| `--new-company-name <name>` | Override company name for `--target new`                                          | from package          |
+| `--include <values>`        | Comma-separated set: `company`, `agents`, `projects`, `issues`, `tasks`, `skills` | auto-detected         |
+| `--agents <list>`           | Comma-separated agent slugs to import, or `all`                                   | `all`                 |
+| `--collision <mode>`        | How to handle name conflicts: `rename`, `skip`, or `replace`                      | `rename`              |
+| `--ref <value>`             | Git ref for GitHub imports (branch, tag, or commit)                               | default branch        |
+| `--dry-run`                 | Preview what would be imported without applying                                   | `false`               |
+| `--yes`                     | Skip the interactive confirmation prompt                                          | `false`               |
+| `--json`                    | Output result as JSON                                                             | `false`               |
 
 ### Target Modes
 
@@ -135,6 +135,7 @@ paperclipai company import org/repo --target existing --company-id abc123 --dry-
 ```
 
 The preview shows:
+
 - **Package contents** — How many agents, projects, tasks, and skills are in the source
 - **Import plan** — What will be created, renamed, skipped, or replaced
 - **Env inputs** — Environment variables that may need values after import
@@ -181,13 +182,13 @@ paperclipai company import ./package \
 
 The CLI commands use these API endpoints under the hood:
 
-| Action | Endpoint |
-|--------|----------|
-| Export company | `POST /api/companies/{companyId}/export` |
+| Action                            | Endpoint                                          |
+| --------------------------------- | ------------------------------------------------- |
+| Export company                    | `POST /api/companies/{companyId}/export`          |
 | Preview import (existing company) | `POST /api/companies/{companyId}/imports/preview` |
-| Apply import (existing company) | `POST /api/companies/{companyId}/imports/apply` |
-| Preview import (new company) | `POST /api/companies/import/preview` |
-| Apply import (new company) | `POST /api/companies/import` |
+| Apply import (existing company)   | `POST /api/companies/{companyId}/imports/apply`   |
+| Preview import (new company)      | `POST /api/companies/import/preview`              |
+| Apply import (new company)        | `POST /api/companies/import`                      |
 
 CEO agents can also use the safe import routes (`/imports/preview` and `/imports/apply`) which enforce non-destructive rules: `replace` is rejected, collisions resolve with `rename` or `skip`, and issues are always created as new.
 

@@ -57,7 +57,6 @@ function parseFrontmatter(content: string): { data: Record<string, unknown>; bod
       }
 
       if (val === "null" || val === "~") {
-        currentValue = null;
         data[currentKey] = null;
         currentKey = null;
         currentValue = null;

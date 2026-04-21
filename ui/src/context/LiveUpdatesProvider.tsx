@@ -1,12 +1,15 @@
 import { useEffect, useRef, type ReactNode } from "react";
-import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
-import type { Agent, Issue, LiveEvent } from "@paperclipai/shared";
+import { useQuery, useQueryClient, type InfiniteData, type QueryClient } from "@tanstack/react-query";
+import type { Agent, Issue, IssueComment, LiveEvent } from "@paperclipai/shared";
 import type { RunForIssue } from "../api/activity";
 import type { ActiveRunForIssue, LiveRunForIssue } from "../api/heartbeats";
+import type { CompanyUserDirectoryResponse } from "../api/access";
+import { issuesApi } from "../api/issues";
 import { authApi } from "../api/auth";
 import { useCompany } from "./CompanyContext";
 import type { ToastInput } from "./ToastContext";
-import { useToast } from "./ToastContext";
+import { useToastActions } from "./ToastContext";
+import { upsertIssueCommentInPages } from "../lib/optimistic-issue-comments";
 import { queryKeys } from "../lib/queryKeys";
 import { toCompanyRelativePath } from "../lib/company-routes";
 import { useLocation } from "../lib/router";
@@ -39,15 +42,24 @@ function shortId(value: string) {
   return value.slice(0, 8);
 }
 
-function resolveAgentName(
-  queryClient: QueryClient,
-  companyId: string,
-  agentId: string,
-): string | null {
+function resolveAgentName(queryClient: QueryClient, companyId: string, agentId: string): string | null {
   const agents = queryClient.getQueryData<Agent[]>(queryKeys.agents.list(companyId));
   if (!agents) return null;
   const agent = agents.find((a) => a.id === agentId);
   return agent?.name ?? null;
+}
+
+function resolveUserName(
+  queryClient: QueryClient,
+  companyId: string,
+  userId: string,
+): string | null {
+  const directory = queryClient.getQueryData<CompanyUserDirectoryResponse>(
+    queryKeys.access.companyUserDirectory(companyId),
+  );
+  if (!directory) return null;
+  const entry = directory.users.find((u) => u.principalId === userId);
+  return entry?.user?.name?.trim() || entry?.user?.email?.trim() || null;
 }
 
 function truncate(text: string, max: number): string {
@@ -66,7 +78,7 @@ function resolveActorLabel(
   }
   if (actorType === "system") return "System";
   if (actorType === "user" && actorId) {
-    return "Board";
+    return resolveUserName(queryClient, companyId, actorId) ?? "Board";
   }
   return "Someone";
 }
@@ -83,6 +95,7 @@ interface VisibleRouteOptions {
 }
 
 interface VisibleIssueRouteContext {
+  routeIssueRef: string;
   issueRefs: Set<string>;
   assigneeAgentId: string | null;
   runIds: Set<string>;
@@ -97,9 +110,7 @@ function resolveIssueQueryRefs(
   const refs = new Set<string>([issueId]);
   const detailIssue = queryClient.getQueryData<Issue>(queryKeys.issues.detail(issueId));
   const listIssues = queryClient.getQueryData<Issue[]>(queryKeys.issues.list(companyId));
-  const detailsIdentifier =
-    readString(details?.identifier) ??
-    readString(details?.issueIdentifier);
+  const detailsIdentifier = readString(details?.identifier) ?? readString(details?.issueIdentifier);
 
   if (detailsIdentifier) refs.add(detailsIdentifier);
 
@@ -137,11 +148,7 @@ function resolveIssueToastContext(
     readString(details?.issueIdentifier) ??
     cachedIssue?.identifier ??
     `Issue ${shortId(issueId)}`;
-  const title =
-    readString(details?.title) ??
-    readString(details?.issueTitle) ??
-    cachedIssue?.title ??
-    null;
+  const title = readString(details?.title) ?? readString(details?.issueTitle) ?? cachedIssue?.title ?? null;
   return {
     ref,
     title,
@@ -189,6 +196,7 @@ function resolveVisibleIssueRouteContext(
   }
 
   return {
+    routeIssueRef: issueRef,
     issueRefs,
     assigneeAgentId: issue?.assigneeAgentId ?? null,
     runIds,
@@ -241,6 +249,30 @@ function shouldSuppressRunStatusToastForVisibleIssue(
   return !!agentId && !!context.assigneeAgentId && agentId === context.assigneeAgentId;
 }
 
+function invalidateVisibleIssueRunQueries(
+  queryClient: QueryClient,
+  pathname: string,
+  payload: Record<string, unknown>,
+  options?: VisibleRouteOptions,
+): boolean {
+  const context = resolveVisibleIssueRouteContext(queryClient, pathname, options);
+  if (!context) return false;
+
+  const runId = readString(payload.runId);
+  const agentId = readString(payload.agentId);
+  const matchesVisibleIssue =
+    (runId !== null && context.runIds.has(runId)) ||
+    (!!agentId && !!context.assigneeAgentId && agentId === context.assigneeAgentId);
+  if (!matchesVisibleIssue) return false;
+
+  queryClient.invalidateQueries({ queryKey: queryKeys.issues.detail(context.routeIssueRef) });
+  queryClient.invalidateQueries({ queryKey: queryKeys.issues.activity(context.routeIssueRef) });
+  queryClient.invalidateQueries({ queryKey: queryKeys.issues.runs(context.routeIssueRef) });
+  queryClient.invalidateQueries({ queryKey: queryKeys.issues.liveRuns(context.routeIssueRef) });
+  queryClient.invalidateQueries({ queryKey: queryKeys.issues.activeRun(context.routeIssueRef) });
+  return true;
+}
+
 function shouldSuppressAgentStatusToastForVisibleIssue(
   queryClient: QueryClient,
   pathname: string,
@@ -252,6 +284,95 @@ function shouldSuppressAgentStatusToastForVisibleIssue(
 
   const agentId = readString(payload.agentId);
   return !!agentId && agentId === context.assigneeAgentId;
+}
+
+function shouldDeferIssueRefetchForVisibleAgentActivity(
+  queryClient: QueryClient,
+  pathname: string,
+  payload: Record<string, unknown>,
+  options?: VisibleRouteOptions,
+): boolean {
+  const entityType = readString(payload.entityType);
+  const entityId = readString(payload.entityId);
+  const actorType = readString(payload.actorType);
+  const action = readString(payload.action);
+  const details = readRecord(payload.details);
+
+  if (entityType !== "issue" || !entityId) return false;
+  if (actorType !== "agent" && actorType !== "system") return false;
+  if (action !== "issue.updated") return false;
+  if (readString(details?.source) === "comment") return false;
+
+  const context = resolveVisibleIssueRouteContext(queryClient, pathname, options);
+  if (!context) return false;
+
+  return overlaps(context.issueRefs, buildIssueRefsForPayload(entityId, details));
+}
+
+function shouldDeferVisibleIssueCommentActivity(
+  queryClient: QueryClient,
+  pathname: string,
+  payload: Record<string, unknown>,
+  options?: VisibleRouteOptions,
+): boolean {
+  const entityType = readString(payload.entityType);
+  const entityId = readString(payload.entityId);
+  const action = readString(payload.action);
+  const details = readRecord(payload.details);
+
+  if (entityType !== "issue" || !entityId) return false;
+  if (action !== "issue.comment_added") return false;
+
+  const context = resolveVisibleIssueRouteContext(queryClient, pathname, options);
+  if (!context) return false;
+
+  return overlaps(context.issueRefs, buildIssueRefsForPayload(entityId, details));
+}
+
+async function hydrateVisibleIssueComment(
+  queryClient: QueryClient,
+  pathname: string,
+  payload: Record<string, unknown>,
+  options?: VisibleRouteOptions,
+) {
+  const entityType = readString(payload.entityType);
+  const action = readString(payload.action);
+  const details = readRecord(payload.details);
+  const commentId = readString(details?.commentId);
+
+  if (entityType !== "issue" || action !== "issue.comment_added" || !commentId) return false;
+
+  const context = resolveVisibleIssueRouteContext(queryClient, pathname, options);
+  if (!context) return false;
+
+  const entityId = readString(payload.entityId);
+  if (!entityId || !overlaps(context.issueRefs, buildIssueRefsForPayload(entityId, details))) {
+    return false;
+  }
+
+  try {
+    const comment = await issuesApi.getComment(context.routeIssueRef, commentId);
+    queryClient.setQueryData<InfiniteData<IssueComment[], string | null> | undefined>(
+      queryKeys.issues.comments(context.routeIssueRef),
+      (current) => {
+        if (!current) {
+          return {
+            pages: [[comment]],
+            pageParams: [null],
+          };
+        }
+
+        return {
+          ...current,
+          pages: upsertIssueCommentInPages(current.pages, comment),
+        };
+      },
+    );
+    return true;
+  } catch {
+    queryClient.invalidateQueries({ queryKey: queryKeys.issues.comments(context.routeIssueRef) });
+    return false;
+  }
 }
 
 const ISSUE_TOAST_ACTIONS = new Set(["issue.created", "issue.updated", "issue.comment_added"]);
@@ -357,7 +478,7 @@ function buildActivityToast(
       ? issue.title
         ? `${reopenedLabel} - ${issue.title}`
         : reopenedLabel
-      : issue.title ?? undefined;
+      : (issue.title ?? undefined);
   return {
     title,
     body: body ? truncate(body, 96) : undefined,
@@ -367,9 +488,7 @@ function buildActivityToast(
   };
 }
 
-function buildJoinRequestToast(
-  payload: Record<string, unknown>,
-): ToastInput | null {
+function buildJoinRequestToast(payload: Record<string, unknown>): ToastInput | null {
   const entityType = readString(payload.entityType);
   const action = readString(payload.action);
   const entityId = readString(payload.entityId);
@@ -402,10 +521,7 @@ function buildAgentStatusToast(
 
   const tone = status === "error" ? "error" : "info";
   const name = nameOf(agentId) ?? `Agent ${shortId(agentId)}`;
-  const title =
-    status === "running"
-      ? `${name} started`
-      : `${name} errored`;
+  const title = status === "running" ? `${name} started` : `${name} errored`;
 
   const agents = queryClient.getQueryData<Agent[]>(queryKeys.agents.list(companyId));
   const agent = agents?.find((a) => a.id === agentId);
@@ -434,9 +550,12 @@ function buildRunStatusToast(
   const name = nameOf(agentId) ?? `Agent ${shortId(agentId)}`;
   const tone = status === "succeeded" ? "success" : status === "cancelled" ? "warn" : "error";
   const statusLabel =
-    status === "succeeded" ? "succeeded"
-      : status === "failed" ? "failed"
-        : status === "timed_out" ? "timed out"
+    status === "succeeded"
+      ? "succeeded"
+      : status === "failed"
+        ? "failed"
+        : status === "timed_out"
+          ? "timed out"
           : "cancelled";
   const title = `${name} run ${statusLabel}`;
 
@@ -480,6 +599,8 @@ function invalidateActivityQueries(
   queryClient: ReturnType<typeof useQueryClient>,
   companyId: string,
   payload: Record<string, unknown>,
+  currentActor: { userId: string | null; agentId: string | null },
+  options?: { pathname?: string; isForegrounded?: boolean },
 ) {
   queryClient.invalidateQueries({ queryKey: queryKeys.activity(companyId) });
   queryClient.invalidateQueries({ queryKey: queryKeys.dashboard(companyId) });
@@ -487,6 +608,9 @@ function invalidateActivityQueries(
 
   const entityType = readString(payload.entityType);
   const entityId = readString(payload.entityId);
+  const action = readString(payload.action);
+  const actorType = readString(payload.actorType);
+  const actorId = readString(payload.actorId);
 
   if (entityType === "issue") {
     queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(companyId) });
@@ -495,17 +619,32 @@ function invalidateActivityQueries(
     queryClient.invalidateQueries({ queryKey: queryKeys.issues.listUnreadTouchedByMe(companyId) });
     if (entityId) {
       const details = readRecord(payload.details);
+      const selfCommentActivity =
+        (action === "issue.comment_added" ||
+          (action === "issue.updated" && readString(details?.source) === "comment")) &&
+        ((actorType === "user" && !!currentActor.userId && actorId === currentActor.userId) ||
+          (actorType === "agent" && !!currentActor.agentId && actorId === currentActor.agentId));
+      const visibleIssueAgentActivity =
+        !!options?.pathname &&
+        shouldDeferIssueRefetchForVisibleAgentActivity(queryClient, options.pathname, payload, {
+          isForegrounded: options.isForegrounded,
+        });
+      const visibleIssueCommentActivity =
+        !!options?.pathname &&
+        shouldDeferVisibleIssueCommentActivity(queryClient, options.pathname, payload, {
+          isForegrounded: options.isForegrounded,
+        });
       const issueRefs = resolveIssueQueryRefs(queryClient, companyId, entityId, details);
       for (const ref of issueRefs) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.issues.detail(ref) });
-        queryClient.invalidateQueries({ queryKey: queryKeys.issues.comments(ref) });
-        queryClient.invalidateQueries({ queryKey: queryKeys.issues.activity(ref) });
-        queryClient.invalidateQueries({ queryKey: queryKeys.issues.runs(ref) });
-        queryClient.invalidateQueries({ queryKey: queryKeys.issues.documents(ref) });
-        queryClient.invalidateQueries({ queryKey: queryKeys.issues.attachments(ref) });
-        queryClient.invalidateQueries({ queryKey: queryKeys.issues.approvals(ref) });
-        queryClient.invalidateQueries({ queryKey: queryKeys.issues.liveRuns(ref) });
-        queryClient.invalidateQueries({ queryKey: queryKeys.issues.activeRun(ref) });
+        const invalidationOptions =
+          selfCommentActivity || visibleIssueAgentActivity || visibleIssueCommentActivity
+            ? { refetchType: "inactive" as const }
+            : undefined;
+        queryClient.invalidateQueries({ queryKey: queryKeys.issues.detail(ref), ...invalidationOptions });
+        queryClient.invalidateQueries({ queryKey: queryKeys.issues.activity(ref), ...invalidationOptions });
+        if (action === "issue.comment_added") {
+          queryClient.invalidateQueries({ queryKey: queryKeys.issues.comments(ref), ...invalidationOptions });
+        }
       }
     }
     return;
@@ -616,12 +755,10 @@ function handleLiveEvent(
 
   if (event.type === "heartbeat.run.queued" || event.type === "heartbeat.run.status") {
     invalidateHeartbeatQueries(queryClient, expectedCompanyId, payload);
+    invalidateVisibleIssueRunQueries(queryClient, pathname, payload);
     if (event.type === "heartbeat.run.status") {
       const toast = buildRunStatusToast(payload, nameOf);
-      if (
-        toast &&
-        !shouldSuppressRunStatusToastForVisibleIssue(queryClient, pathname, payload)
-      ) {
+      if (toast && !shouldSuppressRunStatusToastForVisibleIssue(queryClient, pathname, payload)) {
         gatedPushToast(gate, pushToast, "run-status", toast);
       }
     }
@@ -639,37 +776,28 @@ function handleLiveEvent(
     const agentId = readString(payload.agentId);
     if (agentId) queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(agentId) });
     const toast = buildAgentStatusToast(payload, nameOf, queryClient, expectedCompanyId);
-    if (
-      toast &&
-      !shouldSuppressAgentStatusToastForVisibleIssue(queryClient, pathname, payload)
-    ) {
+    if (toast && !shouldSuppressAgentStatusToastForVisibleIssue(queryClient, pathname, payload)) {
       gatedPushToast(gate, pushToast, "agent-status", toast);
     }
     return;
   }
 
   if (event.type === "activity.logged") {
-    invalidateActivityQueries(queryClient, expectedCompanyId, payload);
+    invalidateActivityQueries(queryClient, expectedCompanyId, payload, currentActor, { pathname });
+    if (shouldDeferVisibleIssueCommentActivity(queryClient, pathname, payload)) {
+      void hydrateVisibleIssueComment(queryClient, pathname, payload);
+    }
     const action = readString(payload.action);
     const toast =
-      buildActivityToast(queryClient, expectedCompanyId, payload, currentActor) ??
-      buildJoinRequestToast(payload);
-    if (
-      toast &&
-      !shouldSuppressActivityToastForVisibleIssue(queryClient, pathname, payload)
-    ) {
+      buildActivityToast(queryClient, expectedCompanyId, payload, currentActor) ?? buildJoinRequestToast(payload);
+    if (toast && !shouldSuppressActivityToastForVisibleIssue(queryClient, pathname, payload)) {
       gatedPushToast(gate, pushToast, `activity:${action ?? "unknown"}`, toast);
     }
   }
 }
 
-function resolveLiveCompanyId(
-  selectedCompanyId: string | null,
-  selectedCompanyLiveId: string | null,
-): string | null {
-  return selectedCompanyId && selectedCompanyId === selectedCompanyLiveId
-    ? selectedCompanyId
-    : null;
+function resolveLiveCompanyId(selectedCompanyId: string | null, selectedCompanyLiveId: string | null): string | null {
+  return selectedCompanyId && selectedCompanyId === selectedCompanyLiveId ? selectedCompanyId : null;
 }
 
 function resetSocketHandlers(target: LiveUpdatesSocketLike) {
@@ -706,8 +834,12 @@ export const __liveUpdatesTestUtils = {
   buildAgentStatusToast,
   buildRunStatusToast,
   closeSocketQuietly,
+  hydrateVisibleIssueComment,
   invalidateActivityQueries,
+  invalidateVisibleIssueRunQueries,
   resolveLiveCompanyId,
+  shouldDeferIssueRefetchForVisibleAgentActivity,
+  shouldDeferVisibleIssueCommentActivity,
   shouldSuppressActivityToastForVisibleIssue,
   shouldSuppressRunStatusToastForVisibleIssue,
   shouldSuppressAgentStatusToastForVisibleIssue,
@@ -716,7 +848,7 @@ export const __liveUpdatesTestUtils = {
 export function LiveUpdatesProvider({ children }: { children: ReactNode }) {
   const { selectedCompanyId, selectedCompany } = useCompany();
   const queryClient = useQueryClient();
-  const { pushToast } = useToast();
+  const { pushToast } = useToastActions();
   const location = useLocation();
   const gateRef = useRef<ToastGate>({ cooldownHits: new Map(), suppressUntil: 0 });
   const pathnameRef = useRef(location.pathname);

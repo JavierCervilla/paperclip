@@ -1,0 +1,9 @@
+node_modules/
+dist/
+data/
+coverage/
+*.tsbuildinfo
+drizzle/meta/
+.vite/
+.pnpm-store/
+pnpm-lock.yaml

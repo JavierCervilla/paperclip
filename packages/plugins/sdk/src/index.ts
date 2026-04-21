@@ -54,11 +54,7 @@ export { createTestHarness } from "./testing.js";
 export { createPluginBundlerPresets } from "./bundlers.js";
 export { startPluginDevServer, getUiBuildSnapshot } from "./dev-server.js";
 export { startWorkerRpcHost, runWorker } from "./worker-rpc-host.js";
-export {
-  createHostClientHandlers,
-  getRequiredCapability,
-  CapabilityDeniedError,
-} from "./host-client-factory.js";
+export { createHostClientHandlers, getRequiredCapability, CapabilityDeniedError } from "./host-client-factory.js";
 
 // JSON-RPC protocol helpers and constants
 export {
@@ -95,12 +91,10 @@ export type {
   PluginHealthDiagnostics,
   PluginConfigValidationResult,
   PluginWebhookInput,
+  PluginApiRequestInput,
+  PluginApiResponse,
 } from "./define-plugin.js";
-export type {
-  TestHarness,
-  TestHarnessOptions,
-  TestHarnessLogEntry,
-} from "./testing.js";
+export type { TestHarness, TestHarnessOptions, TestHarnessLogEntry } from "./testing.js";
 export type {
   PluginBundlerPresetInput,
   PluginBundlerPresets,
@@ -108,16 +102,8 @@ export type {
   RollupLikeConfig,
 } from "./bundlers.js";
 export type { PluginDevServer, PluginDevServerOptions } from "./dev-server.js";
-export type {
-  WorkerRpcHostOptions,
-  WorkerRpcHost,
-  RunWorkerOptions,
-} from "./worker-rpc-host.js";
-export type {
-  HostServices,
-  HostClientFactoryOptions,
-  HostClientHandlers,
-} from "./host-client-factory.js";
+export type { WorkerRpcHostOptions, WorkerRpcHost, RunWorkerOptions } from "./worker-rpc-host.js";
+export type { HostServices, HostClientFactoryOptions, HostClientHandlers } from "./host-client-factory.js";
 
 // JSON-RPC protocol types
 export type {
@@ -171,6 +157,22 @@ export type {
   PluginProjectsClient,
   PluginCompaniesClient,
   PluginIssuesClient,
+  PluginIssueMutationActor,
+  PluginIssueRelationsClient,
+  PluginIssueRelationSummary,
+  PluginIssueCheckoutOwnership,
+  PluginIssueWakeupResult,
+  PluginIssueWakeupBatchResult,
+  PluginIssueRunSummary,
+  PluginIssueApprovalSummary,
+  PluginIssueCostSummary,
+  PluginBudgetIncidentSummary,
+  PluginIssueInvocationBlockSummary,
+  PluginIssueOrchestrationSummary,
+  PluginIssueSubtreeOptions,
+  PluginIssueAssigneeSummary,
+  PluginIssueSubtree,
+  PluginIssueSummariesClient,
   PluginAgentsClient,
   PluginAgentSessionsClient,
   AgentSession,
@@ -182,6 +184,7 @@ export type {
   PluginStreamsClient,
   PluginToolsClient,
   PluginMetricsClient,
+  PluginTelemetryClient,
   PluginLogger,
 } from "./types.js";
 
@@ -202,8 +205,10 @@ export type {
   Project,
   Issue,
   IssueComment,
+  IssueDocumentSummary,
   Agent,
   Goal,
+  PluginDatabaseClient,
 } from "./types.js";
 
 // Manifest and constant types re-exported from @paperclipai/shared
@@ -220,7 +225,12 @@ export type {
   PluginLauncherRenderDeclaration,
   PluginLauncherDeclaration,
   PluginMinimumHostVersion,
+  PluginDatabaseDeclaration,
+  PluginApiRouteCompanyResolution,
+  PluginApiRouteDeclaration,
   PluginRecord,
+  PluginDatabaseNamespaceRecord,
+  PluginMigrationRecord,
   PluginConfig,
   JsonSchema,
   PluginStatus,
@@ -237,6 +247,13 @@ export type {
   PluginJobRunStatus,
   PluginJobRunTrigger,
   PluginWebhookDeliveryStatus,
+  PluginDatabaseCoreReadTable,
+  PluginDatabaseMigrationStatus,
+  PluginDatabaseNamespaceMode,
+  PluginDatabaseNamespaceStatus,
+  PluginApiRouteAuthMode,
+  PluginApiRouteCheckoutPolicy,
+  PluginApiRouteMethod,
   PluginEventType,
   PluginBridgeErrorCode,
 } from "./types.js";

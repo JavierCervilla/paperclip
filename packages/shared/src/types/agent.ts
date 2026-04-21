@@ -1,16 +1,20 @@
-import type {
-  AgentAdapterType,
-  PauseReason,
-  AgentRole,
-  AgentStatus,
-} from "../constants.js";
-import type {
-  CompanyMembership,
-  PrincipalPermissionGrant,
-} from "./access.js";
+import type { AgentAdapterType, PauseReason, AgentRole, AgentStatus } from "../constants.js";
+import type { CompanyMembership, PrincipalPermissionGrant } from "./access.js";
+
+export interface AgentWorkspacePreference {
+  priority: number;
+}
+
+export interface AgentWorkspaceConfig {
+  defaultProjectWorkspaceId?: string | null;
+  allowedProjectWorkspaceIds?: string[] | null;
+  workspacePreferences?: Record<string, AgentWorkspacePreference> | null;
+  crossWorkspaceRefs?: boolean | null;
+}
 
 export interface AgentPermissions {
   canCreateAgents: boolean;
+  canReadSecrets?: boolean;
 }
 
 export type AgentInstructionsBundleMode = "managed" | "external";
@@ -79,6 +83,7 @@ export interface Agent {
   pausedAt: Date | null;
   permissions: AgentPermissions;
   lastHeartbeatAt: Date | null;
+  workspaceConfig: AgentWorkspaceConfig;
   metadata: Record<string, unknown> | null;
   createdAt: Date;
   updatedAt: Date;

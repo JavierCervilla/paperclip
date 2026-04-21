@@ -2,10 +2,9 @@ FROM node:lts-trixie-slim AS base
 ARG USER_UID=1000
 ARG USER_GID=1000
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates curl git gosu \
-  && rm -rf /var/lib/apt/lists/*
-
-RUN corepack enable
+  && apt-get install -y --no-install-recommends ca-certificates gosu curl gh git wget ripgrep python3 \
+  && rm -rf /var/lib/apt/lists/* \
+  && corepack enable
 
 # Modify the existing node user/group to have the specified UID/GID to match host user
 RUN usermod -u $USER_UID --non-unique node \
@@ -21,6 +20,7 @@ COPY ui/package.json ui/
 COPY packages/shared/package.json packages/shared/
 COPY packages/db/package.json packages/db/
 COPY packages/adapter-utils/package.json packages/adapter-utils/
+COPY packages/mcp-server/package.json packages/mcp-server/
 COPY packages/adapters/claude-local/package.json packages/adapters/claude-local/
 COPY packages/adapters/codex-local/package.json packages/adapters/codex-local/
 COPY packages/adapters/cursor-local/package.json packages/adapters/cursor-local/
@@ -29,6 +29,10 @@ COPY packages/adapters/openclaw-gateway/package.json packages/adapters/openclaw-
 COPY packages/adapters/opencode-local/package.json packages/adapters/opencode-local/
 COPY packages/adapters/pi-local/package.json packages/adapters/pi-local/
 COPY packages/plugins/sdk/package.json packages/plugins/sdk/
+COPY packages/plugins/plugin-knowledge-base/package.json packages/plugins/plugin-knowledge-base/
+COPY packages/plugins/plugin-obsidian/package.json packages/plugins/plugin-obsidian/
+COPY packages/plugins/plugin-sentry/package.json packages/plugins/plugin-sentry/
+COPY packages/plugins/plugin-telegram/package.json packages/plugins/plugin-telegram/
 COPY patches/ patches/
 
 RUN pnpm install --frozen-lockfile
@@ -48,10 +52,13 @@ ARG USER_GID=1000
 WORKDIR /app
 COPY --chown=node:node --from=build /app /app
 RUN npm install --global --omit=dev @anthropic-ai/claude-code@latest @openai/codex@latest opencode-ai \
+  && apt-get update \
+  && apt-get install -y --no-install-recommends openssh-client jq \
+  && rm -rf /var/lib/apt/lists/* \
   && mkdir -p /paperclip \
   && chown node:node /paperclip
 
-COPY docker-entrypoint.sh /usr/local/bin/
+COPY scripts/docker-entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 ENV NODE_ENV=production \
@@ -65,7 +72,8 @@ ENV NODE_ENV=production \
   USER_GID=${USER_GID} \
   PAPERCLIP_CONFIG=/paperclip/instances/default/config.json \
   PAPERCLIP_DEPLOYMENT_MODE=authenticated \
-  PAPERCLIP_DEPLOYMENT_EXPOSURE=private
+  PAPERCLIP_DEPLOYMENT_EXPOSURE=private \
+  OPENCODE_ALLOW_ALL_MODELS=true
 
 VOLUME ["/paperclip"]
 EXPOSE 3100

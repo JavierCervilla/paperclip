@@ -1,13 +1,6 @@
 import type { ReactNode } from "react";
 import { cn } from "../lib/utils";
-import {
-  ChevronDown,
-  ChevronRight,
-  FileCode2,
-  FileText,
-  Folder,
-  FolderOpen,
-} from "lucide-react";
+import { ChevronDown, ChevronRight, FileCode2, FileText, Folder, FolderOpen } from "lucide-react";
 
 // ── Tree types ────────────────────────────────────────────────────────
 
@@ -26,10 +19,7 @@ const TREE_ROW_HEIGHT_CLASS = "min-h-9";
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
-export function buildFileTree(
-  files: Record<string, unknown>,
-  actionMap?: Map<string, string>,
-): FileTreeNode[] {
+export function buildFileTree(files: Record<string, unknown>, actionMap?: Map<string, string>): FileTreeNode[] {
   const root: FileTreeNode = { name: "", path: "", kind: "dir", children: [] };
 
   for (const filePath of Object.keys(files)) {
@@ -77,10 +67,7 @@ export function countFiles(nodes: FileTreeNode[]): number {
   return count;
 }
 
-export function collectAllPaths(
-  nodes: FileTreeNode[],
-  type: "file" | "dir" | "all" = "all",
-): Set<string> {
+export function collectAllPaths(nodes: FileTreeNode[], type: "file" | "dir" | "all" = "all"): Set<string> {
   const paths = new Set<string>();
   for (const node of nodes) {
     if (type === "all" || node.kind === type) paths.add(node.path);
@@ -115,7 +102,12 @@ export function parseFrontmatter(content: string): { data: FrontmatterData; body
 
     if (trimmed.startsWith("- ") && currentKey) {
       if (!currentList) currentList = [];
-      currentList.push(trimmed.slice(2).trim().replace(/^["']|["']$/g, ""));
+      currentList.push(
+        trimmed
+          .slice(2)
+          .trim()
+          .replace(/^["']|["']$/g, ""),
+      );
       continue;
     }
 
@@ -177,6 +169,7 @@ export function PackageFileTree({
   renderFileExtra,
   fileRowClassName,
   showCheckboxes = true,
+  wrapLabels = false,
   depth = 0,
 }: {
   nodes: FileTreeNode[];
@@ -191,6 +184,8 @@ export function PackageFileTree({
   /** Optional additional className for file rows */
   fileRowClassName?: (node: FileTreeNode, checked: boolean) => string | undefined;
   showCheckboxes?: boolean;
+  /** Allow long file and directory names to wrap instead of forcing horizontal overflow. */
+  wrapLabels?: boolean;
   depth?: number;
 }) {
   const effectiveCheckedFiles = checkedFiles ?? new Set<string>();
@@ -221,7 +216,9 @@ export function PackageFileTree({
                     <input
                       type="checkbox"
                       checked={allChecked}
-                      ref={(el) => { if (el) el.indeterminate = someChecked && !allChecked; }}
+                      ref={(el) => {
+                        if (el) el.indeterminate = someChecked && !allChecked;
+                      }}
                       onChange={() => onToggleCheck?.(node.path, "dir")}
                       className="mr-2 accent-foreground"
                     />
@@ -233,24 +230,18 @@ export function PackageFileTree({
                   onClick={() => onToggleDir(node.path)}
                 >
                   <span className="flex h-4 w-4 shrink-0 items-center justify-center">
-                    {expanded ? (
-                      <FolderOpen className="h-3.5 w-3.5" />
-                    ) : (
-                      <Folder className="h-3.5 w-3.5" />
-                    )}
+                    {expanded ? <FolderOpen className="h-3.5 w-3.5" /> : <Folder className="h-3.5 w-3.5" />}
                   </span>
-                  <span className="truncate">{node.name}</span>
+                  <span className={cn("min-w-0", wrapLabels ? "break-all leading-4" : "truncate")}>
+                    {node.name}
+                  </span>
                 </button>
                 <button
                   type="button"
                   className="flex h-9 w-9 items-center justify-center self-center rounded-sm text-muted-foreground opacity-70 transition-[background-color,color,opacity] hover:bg-accent hover:text-foreground group-hover:opacity-100"
                   onClick={() => onToggleDir(node.path)}
                 >
-                  {expanded ? (
-                    <ChevronDown className="h-3.5 w-3.5" />
-                  ) : (
-                    <ChevronRight className="h-3.5 w-3.5" />
-                  )}
+                  {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
                 </button>
               </div>
               {expanded && (
@@ -265,6 +256,7 @@ export function PackageFileTree({
                   renderFileExtra={renderFileExtra}
                   fileRowClassName={fileRowClassName}
                   showCheckboxes={showCheckboxes}
+                  wrapLabels={wrapLabels}
                   depth={depth + 1}
                 />
               )}
@@ -307,7 +299,9 @@ export function PackageFileTree({
               <span className="flex h-4 w-4 shrink-0 items-center justify-center">
                 <FileIcon className="h-3.5 w-3.5" />
               </span>
-              <span className="truncate">{node.name}</span>
+              <span className={cn("min-w-0", wrapLabels ? "break-all leading-4" : "truncate")}>
+                {node.name}
+              </span>
             </button>
             {renderFileExtra?.(node, checked)}
           </div>

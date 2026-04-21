@@ -62,7 +62,11 @@ export function boardAuthService(db: Db) {
         .where(eq(authUsers.id, userId))
         .then((rows) => rows[0] ?? null),
       db
-        .select({ companyId: companyMemberships.companyId })
+        .select({
+          companyId: companyMemberships.companyId,
+          membershipRole: companyMemberships.membershipRole,
+          status: companyMemberships.status,
+        })
         .from(companyMemberships)
         .where(
           and(
@@ -71,7 +75,7 @@ export function boardAuthService(db: Db) {
             eq(companyMemberships.status, "active"),
           ),
         )
-        .then((rows) => rows.map((row) => row.companyId)),
+        .then((rows) => rows),
       db
         .select({ id: instanceUserRoles.id })
         .from(instanceUserRoles)
@@ -81,7 +85,8 @@ export function boardAuthService(db: Db) {
 
     return {
       user,
-      companyIds: memberships,
+      companyIds: memberships.map((row) => row.companyId),
+      memberships,
       isInstanceAdmin: Boolean(adminRole),
     };
   }
@@ -104,9 +109,7 @@ export function boardAuthService(db: Db) {
         .from(cliAuthChallenges)
         .where(eq(cliAuthChallenges.boardApiKeyId, input.boardApiKeyId.trim()))
         .then((rows) =>
-          rows
-            .map((row) => row.requestedCompanyId?.trim() ?? null)
-            .filter((value): value is string => Boolean(value)),
+          rows.map((row) => row.requestedCompanyId?.trim() ?? null).filter((value): value is string => Boolean(value)),
         );
       for (const companyId of challengeCompanyIds) {
         companyIds.add(companyId);
@@ -132,12 +135,7 @@ export function boardAuthService(db: Db) {
     return db
       .select()
       .from(boardApiKeys)
-      .where(
-        and(
-          eq(boardApiKeys.keyHash, tokenHash),
-          isNull(boardApiKeys.revokedAt),
-        ),
-      )
+      .where(and(eq(boardApiKeys.keyHash, tokenHash), isNull(boardApiKeys.revokedAt)))
       .then((rows) => rows.find((row) => !row.expiresAt || row.expiresAt.getTime() > now.getTime()) ?? null);
   }
 
@@ -166,9 +164,7 @@ export function boardAuthService(db: Db) {
     const expiresAt = cliAuthChallengeExpiresAt();
     const labelBase = input.clientName?.trim() || "paperclipai cli";
     const pendingKeyName =
-      input.requestedAccess === "instance_admin_required"
-        ? `${labelBase} (instance admin)`
-        : `${labelBase} (board)`;
+      input.requestedAccess === "instance_admin_required" ? `${labelBase} (instance admin)` : `${labelBase} (board)`;
 
     const created = await db
       .insert(cliAuthChallenges)

@@ -44,7 +44,10 @@ function stableStringify(value: unknown): string {
   }
   if (value && typeof value === "object") {
     const rec = value as Record<string, unknown>;
-    return `{${Object.keys(rec).sort().map((key) => `${JSON.stringify(key)}:${stableStringify(rec[key])}`).join(",")}}`;
+    return `{${Object.keys(rec)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableStringify(rec[key])}`)
+      .join(",")}}`;
   }
   return JSON.stringify(value);
 }
@@ -137,11 +140,7 @@ export function createLocalServiceKey(input: LocalServiceIdentityInput) {
 
 export async function writeLocalServiceRegistryRecord(record: LocalServiceRegistryRecord) {
   await fs.mkdir(getRuntimeServicesDir(), { recursive: true });
-  await fs.writeFile(
-    getRuntimeServiceRegistryPath(record.serviceKey),
-    `${JSON.stringify(record, null, 2)}\n`,
-    "utf8",
-  );
+  await fs.writeFile(getRuntimeServiceRegistryPath(record.serviceKey), `${JSON.stringify(record, null, 2)}\n`, "utf8");
 }
 
 export async function removeLocalServiceRegistryRecord(serviceKey: string) {
@@ -184,7 +183,32 @@ export async function findLocalServiceRegistryRecordByRuntimeServiceId(input: {
   const records = await listLocalServiceRegistryRecords(
     input.profileKind ? { profileKind: input.profileKind } : undefined,
   );
-  return records.find((record) => record.runtimeServiceId === input.runtimeServiceId) ?? null;
+  const record = records.find((entry) => entry.runtimeServiceId === input.runtimeServiceId) ?? null;
+  if (!record) return null;
+
+  let candidate = record;
+  if (!isPidAlive(candidate.pid)) {
+    const ownerPid = candidate.port ? await readLocalServicePortOwner(candidate.port) : null;
+    if (!ownerPid) {
+      await removeLocalServiceRegistryRecord(candidate.serviceKey);
+      return null;
+    }
+    candidate = {
+      ...candidate,
+      pid: ownerPid,
+      processGroupId:
+        candidate.processGroupId && isPidAlive(candidate.processGroupId) ? candidate.processGroupId : ownerPid,
+      lastSeenAt: new Date().toISOString(),
+    };
+    await writeLocalServiceRegistryRecord(candidate);
+  }
+
+  if (!(await isLikelyMatchingCommand(candidate))) {
+    await removeLocalServiceRegistryRecord(record.serviceKey);
+    return null;
+  }
+
+  return candidate;
 }
 
 export function isPidAlive(pid: number) {
@@ -197,13 +221,29 @@ export function isPidAlive(pid: number) {
   }
 }
 
+export function isProcessGroupAlive(processGroupId: number | null | undefined) {
+  if (process.platform === "win32") return false;
+  if (typeof processGroupId !== "number" || !Number.isInteger(processGroupId) || processGroupId <= 0) return false;
+  try {
+    process.kill(-processGroupId, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function isLikelyMatchingCommand(record: LocalServiceRegistryRecord) {
   if (process.platform === "win32") return true;
   try {
     const { stdout } = await execFileAsync("ps", ["-o", "command=", "-p", String(record.pid)]);
     const commandLine = stdout.trim();
     if (!commandLine) return false;
-    return commandLine.includes(record.command) || commandLine.includes(record.serviceName);
+    const normalize = (value: string) => value.replace(/["']/g, "").replace(/\s+/g, " ").trim();
+    const normalizedCommandLine = normalize(commandLine);
+    const normalizedRecordedCommand = normalize(record.command);
+    return (
+      normalizedCommandLine.includes(normalizedRecordedCommand) || normalizedCommandLine.includes(record.serviceName)
+    );
   } catch {
     return true;
   }
@@ -269,13 +309,15 @@ export async function terminateLocalService(
 
   const deadline = Date.now() + (opts?.forceAfterMs ?? 2_000);
   while (Date.now() < deadline) {
-    if (!isPidAlive(record.pid)) {
+    const targetAlive = targetProcessGroup ? isProcessGroupAlive(record.processGroupId) : isPidAlive(record.pid);
+    if (!targetAlive) {
       return;
     }
     await delay(100);
   }
 
-  if (!isPidAlive(record.pid)) return;
+  const stillAlive = targetProcessGroup ? isProcessGroupAlive(record.processGroupId) : isPidAlive(record.pid);
+  if (!stillAlive) return;
   try {
     if (targetProcessGroup) {
       process.kill(-record.processGroupId!, "SIGKILL");

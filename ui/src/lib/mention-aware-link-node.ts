@@ -1,10 +1,6 @@
-import {
-  LinkNode,
-  type LinkAttributes,
-  type SerializedLinkNode,
-} from "@lexical/link";
+import { LinkNode, type LinkAttributes, type SerializedLinkNode } from "@lexical/link";
 
-const CUSTOM_MENTION_URL_RE = /^(agent|project):\/\//;
+const CUSTOM_MENTION_URL_RE = /^(agent|project|skill):\/\//;
 
 export class MentionAwareLinkNode extends LinkNode {
   static getType(): string {
@@ -24,14 +20,11 @@ export class MentionAwareLinkNode extends LinkNode {
   }
 
   static importJSON(serializedNode: SerializedLinkNode): MentionAwareLinkNode {
-    return new MentionAwareLinkNode(
-      serializedNode.url ?? "",
-      {
-        rel: serializedNode.rel ?? null,
-        target: serializedNode.target ?? null,
-        title: serializedNode.title ?? null,
-      },
-    );
+    return new MentionAwareLinkNode(serializedNode.url ?? "", {
+      rel: serializedNode.rel ?? null,
+      target: serializedNode.target ?? null,
+      title: serializedNode.title ?? null,
+    });
   }
 
   constructor(url?: string, attributes?: LinkAttributes, key?: string) {

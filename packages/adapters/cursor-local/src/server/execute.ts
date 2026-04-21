@@ -2,7 +2,11 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { inferOpenAiCompatibleBiller, type AdapterExecutionContext, type AdapterExecutionResult } from "@paperclipai/adapter-utils";
+import {
+  inferOpenAiCompatibleBiller,
+  type AdapterExecutionContext,
+  type AdapterExecutionResult,
+} from "@paperclipai/adapter-utils";
 import {
   asString,
   asNumber,
@@ -19,6 +23,9 @@ import {
   resolvePaperclipDesiredSkillNames,
   removeMaintainerOnlySkillSymlinks,
   renderTemplate,
+  renderPaperclipWakePrompt,
+  stringifyPaperclipWakePayload,
+  DEFAULT_PAPERCLIP_AGENT_PROMPT_TEMPLATE,
   joinPromptSections,
   runChildProcess,
 } from "@paperclipai/adapter-utils/server-utils";
@@ -105,8 +112,9 @@ export async function ensureCursorSkillsInjected(
   onLog: AdapterExecutionContext["onLog"],
   options: EnsureCursorSkillsInjectedOptions = {},
 ) {
-  const skillsEntries = options.skillsEntries
-    ?? (options.skillsDir
+  const skillsEntries =
+    options.skillsEntries ??
+    (options.skillsDir
       ? (await fs.readdir(options.skillsDir, { withFileTypes: true }))
           .filter((entry) => entry.isDirectory())
           .map((entry) => ({
@@ -132,10 +140,7 @@ export async function ensureCursorSkillsInjected(
     skillsEntries.map((entry) => entry.runtimeName),
   );
   for (const skillName of removedSkills) {
-    await onLog(
-      "stderr",
-      `[paperclip] Removed maintainer-only Cursor skill "${skillName}" from ${skillsHome}\n`,
-    );
+    await onLog("stderr", `[paperclip] Removed maintainer-only Cursor skill "${skillName}" from ${skillsHome}\n`);
   }
   const linkSkill = options.linkSkill ?? ((source: string, target: string) => fs.symlink(source, target));
   for (const entry of skillsEntries) {
@@ -162,7 +167,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
 
   const promptTemplate = asString(
     config.promptTemplate,
-    "You are agent {{agent.id}} ({{agent.name}}). Continue your Paperclip work.",
+    DEFAULT_PAPERCLIP_AGENT_PROMPT_TEMPLATE,
   );
   const command = asString(config.command, "agent");
   const model = asString(config.model, DEFAULT_CURSOR_LOCAL_MODEL).trim();
@@ -201,17 +206,15 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     (typeof context.issueId === "string" && context.issueId.trim().length > 0 && context.issueId.trim()) ||
     null;
   const wakeReason =
-    typeof context.wakeReason === "string" && context.wakeReason.trim().length > 0
-      ? context.wakeReason.trim()
-      : null;
+    typeof context.wakeReason === "string" && context.wakeReason.trim().length > 0 ? context.wakeReason.trim() : null;
   const wakeCommentId =
-    (typeof context.wakeCommentId === "string" && context.wakeCommentId.trim().length > 0 && context.wakeCommentId.trim()) ||
+    (typeof context.wakeCommentId === "string" &&
+      context.wakeCommentId.trim().length > 0 &&
+      context.wakeCommentId.trim()) ||
     (typeof context.commentId === "string" && context.commentId.trim().length > 0 && context.commentId.trim()) ||
     null;
   const approvalId =
-    typeof context.approvalId === "string" && context.approvalId.trim().length > 0
-      ? context.approvalId.trim()
-      : null;
+    typeof context.approvalId === "string" && context.approvalId.trim().length > 0 ? context.approvalId.trim() : null;
   const approvalStatus =
     typeof context.approvalStatus === "string" && context.approvalStatus.trim().length > 0
       ? context.approvalStatus.trim()
@@ -219,6 +222,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const linkedIssueIds = Array.isArray(context.issueIds)
     ? context.issueIds.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
     : [];
+  const wakePayloadJson = stringifyPaperclipWakePayload(context.paperclipWake);
   if (wakeTaskId) {
     env.PAPERCLIP_TASK_ID = wakeTaskId;
   }
@@ -236,6 +240,9 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   }
   if (linkedIssueIds.length > 0) {
     env.PAPERCLIP_LINKED_ISSUE_IDS = linkedIssueIds.join(",");
+  }
+  if (wakePayloadJson) {
+    env.PAPERCLIP_WAKE_PAYLOAD_JSON = wakePayloadJson;
   }
   if (effectiveWorkspaceCwd) {
     env.PAPERCLIP_WORKSPACE_CWD = effectiveWorkspaceCwd;
@@ -352,16 +359,19 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     run: { id: runId, source: "on_demand" },
     context,
   };
-  const renderedPrompt = renderTemplate(promptTemplate, templateData);
   const renderedBootstrapPrompt =
     !sessionId && bootstrapPromptTemplate.trim().length > 0
       ? renderTemplate(bootstrapPromptTemplate, templateData).trim()
       : "";
+  const wakePrompt = renderPaperclipWakePrompt(context.paperclipWake, { resumedSession: Boolean(sessionId) });
+  const shouldUseResumeDeltaPrompt = Boolean(sessionId) && wakePrompt.length > 0;
+  const renderedPrompt = shouldUseResumeDeltaPrompt ? "" : renderTemplate(promptTemplate, templateData);
   const sessionHandoffNote = asString(context.paperclipSessionHandoffMarkdown, "").trim();
   const paperclipEnvNote = renderPaperclipEnvNote(env);
   const prompt = joinPromptSections([
     instructionsPrefix,
     renderedBootstrapPrompt,
+    wakePrompt,
     sessionHandoffNote,
     paperclipEnvNote,
     renderedPrompt,
@@ -370,6 +380,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     promptChars: prompt.length,
     instructionsChars,
     bootstrapPromptChars: renderedBootstrapPrompt.length,
+    wakePromptChars: wakePrompt.length,
     sessionHandoffChars: sessionHandoffNote.length,
     runtimeNoteChars: paperclipEnvNote.length,
     heartbeatPromptChars: renderedPrompt.length,
@@ -485,19 +496,13 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       : null;
     const parsedError = typeof attempt.parsed.errorMessage === "string" ? attempt.parsed.errorMessage.trim() : "";
     const stderrLine = firstNonEmptyLine(attempt.proc.stderr);
-    const fallbackErrorMessage =
-      parsedError ||
-      stderrLine ||
-      `Cursor exited with code ${attempt.proc.exitCode ?? -1}`;
+    const fallbackErrorMessage = parsedError || stderrLine || `Cursor exited with code ${attempt.proc.exitCode ?? -1}`;
 
     return {
       exitCode: attempt.proc.exitCode,
       signal: attempt.proc.signal,
       timedOut: false,
-      errorMessage:
-        (attempt.proc.exitCode ?? 0) === 0
-          ? null
-          : fallbackErrorMessage,
+      errorMessage: (attempt.proc.exitCode ?? 0) === 0 ? null : fallbackErrorMessage,
       usage: attempt.parsed.usage,
       sessionId: resolvedSessionId,
       sessionParams: resolvedSessionParams,

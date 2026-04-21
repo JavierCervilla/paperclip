@@ -8,16 +8,13 @@ import { useSidebar } from "../context/SidebarContext";
 import { agentsApi } from "../api/agents";
 import { authApi } from "../api/auth";
 import { heartbeatsApi } from "../api/heartbeats";
+import { SIDEBAR_SCROLL_RESET_STATE } from "../lib/navigation-scroll";
 import { queryKeys } from "../lib/queryKeys";
 import { cn, agentRouteRef, agentUrl } from "../lib/utils";
 import { useAgentOrder } from "../hooks/useAgentOrder";
 import { AgentIcon } from "./AgentIconPicker";
 import { BudgetSidebarMarker } from "./BudgetSidebarMarker";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import type { Agent } from "@paperclipai/shared";
 export function SidebarAgents() {
   const [open, setOpen] = useState(true);
@@ -52,9 +49,7 @@ export function SidebarAgents() {
   }, [liveRuns]);
 
   const visibleAgents = useMemo(() => {
-    const filtered = (agents ?? []).filter(
-      (a: Agent) => a.status !== "terminated"
-    );
+    const filtered = (agents ?? []).filter((a: Agent) => a.status !== "terminated");
     return filtered;
   }, [agents]);
   const currentUserId = session?.user?.id ?? session?.session?.userId ?? null;
@@ -68,7 +63,6 @@ export function SidebarAgents() {
   const activeAgentId = agentMatch?.[1] ?? null;
   const activeTab = agentMatch?.[2] ?? null;
 
-
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
       <div className="group">
@@ -77,7 +71,7 @@ export function SidebarAgents() {
             <ChevronRight
               className={cn(
                 "h-3 w-3 text-muted-foreground/60 transition-transform opacity-0 group-hover:opacity-100",
-                open && "rotate-90"
+                open && "rotate-90",
               )}
             />
             <span className="text-[10px] font-medium uppercase tracking-widest font-mono text-muted-foreground/60">
@@ -105,6 +99,7 @@ export function SidebarAgents() {
               <NavLink
                 key={agent.id}
                 to={activeTab ? `${agentUrl(agent)}/${activeTab}` : agentUrl(agent)}
+                state={SIDEBAR_SCROLL_RESET_STATE}
                 onClick={() => {
                   if (isMobile) setSidebarOpen(false);
                 }}
@@ -112,15 +107,23 @@ export function SidebarAgents() {
                   "flex items-center gap-2.5 px-3 py-1.5 text-[13px] font-medium transition-colors",
                   activeAgentId === agentRouteRef(agent)
                     ? "bg-accent text-foreground"
-                    : "text-foreground/80 hover:bg-accent/50 hover:text-foreground"
+                    : "text-foreground/80 hover:bg-accent/50 hover:text-foreground",
                 )}
               >
                 <AgentIcon icon={agent.icon} className="shrink-0 h-3.5 w-3.5 text-muted-foreground" />
                 <span className="flex-1 truncate">{agent.name}</span>
-                {(agent.pauseReason === "budget" || runCount > 0) && (
+                {(agent.pauseReason === "budget" || agent.pauseReason === "quota_reset" || runCount > 0) && (
                   <span className="ml-auto flex items-center gap-1.5 shrink-0">
                     {agent.pauseReason === "budget" ? (
                       <BudgetSidebarMarker title="Agent paused by budget" />
+                    ) : agent.pauseReason === "quota_reset" ? (
+                      <span
+                        title="Waiting for quota reset"
+                        aria-label="Waiting for quota reset"
+                        className="ml-auto inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-500/90 text-white shadow-[0_0_0_1px_rgba(255,255,255,0.08)] text-[10px] font-bold"
+                      >
+                        Q
+                      </span>
                     ) : null}
                     {runCount > 0 ? (
                       <span className="relative flex h-2 w-2">
@@ -129,9 +132,7 @@ export function SidebarAgents() {
                       </span>
                     ) : null}
                     {runCount > 0 ? (
-                      <span className="text-[11px] font-medium text-blue-600 dark:text-blue-400">
-                        {runCount} live
-                      </span>
+                      <span className="text-[11px] font-medium text-blue-600 dark:text-blue-400">{runCount} live</span>
                     ) : null}
                   </span>
                 )}

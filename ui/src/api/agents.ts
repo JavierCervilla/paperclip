@@ -8,6 +8,7 @@ import type {
   AgentKeyCreated,
   AgentRuntimeState,
   AgentTaskSession,
+  AgentWakeupResponse,
   HeartbeatRun,
   Approval,
   AgentConfigRevision,
@@ -31,6 +32,7 @@ export interface DetectedAdapterModel {
   model: string;
   provider: string;
   source: string;
+  candidates?: string[];
 }
 
 export interface ClaudeLoginResult {
@@ -58,6 +60,7 @@ export interface AgentHireResponse {
 export interface AgentPermissionUpdate {
   canCreateAgents: boolean;
   canAssignTasks: boolean;
+  grants?: Record<string, boolean>;
 }
 
 function withCompanyScope(path: string, companyId?: string) {
@@ -81,12 +84,7 @@ export const agentsApi = {
     } catch (error) {
       // Backward-compat fallback: if backend shortname lookup reports ambiguity,
       // resolve using company agent list while ignoring terminated agents.
-      if (
-        !(error instanceof ApiError) ||
-        error.status !== 409 ||
-        !companyId ||
-        isUuidLike(id)
-      ) {
+      if (!(error instanceof ApiError) || error.status !== 409 || !companyId || isUuidLike(id)) {
         throw error;
       }
 
@@ -109,8 +107,7 @@ export const agentsApi = {
     api.get<AgentConfigRevision>(agentPath(id, companyId, `/config-revisions/${revisionId}`)),
   rollbackConfigRevision: (id: string, revisionId: string, companyId?: string) =>
     api.post<Agent>(agentPath(id, companyId, `/config-revisions/${revisionId}/rollback`), {}),
-  create: (companyId: string, data: Record<string, unknown>) =>
-    api.post<Agent>(`/companies/${companyId}/agents`, data),
+  create: (companyId: string, data: Record<string, unknown>) => api.post<Agent>(`/companies/${companyId}/agents`, data),
   hire: (companyId: string, data: Record<string, unknown>) =>
     api.post<AgentHireResponse>(`/companies/${companyId}/agent-hires`, data),
   update: (id: string, data: Record<string, unknown>, companyId?: string) =>
@@ -144,11 +141,11 @@ export const agentsApi = {
     ),
   pause: (id: string, companyId?: string) => api.post<Agent>(agentPath(id, companyId, "/pause"), {}),
   resume: (id: string, companyId?: string) => api.post<Agent>(agentPath(id, companyId, "/resume"), {}),
+  approve: (id: string, companyId?: string) => api.post<Agent>(agentPath(id, companyId, "/approve"), {}),
   terminate: (id: string, companyId?: string) => api.post<Agent>(agentPath(id, companyId, "/terminate"), {}),
   remove: (id: string, companyId?: string) => api.delete<{ ok: true }>(agentPath(id, companyId)),
   listKeys: (id: string, companyId?: string) => api.get<AgentKey[]>(agentPath(id, companyId, "/keys")),
-  skills: (id: string, companyId?: string) =>
-    api.get<AgentSkillSnapshot>(agentPath(id, companyId, "/skills")),
+  skills: (id: string, companyId?: string) => api.get<AgentSkillSnapshot>(agentPath(id, companyId, "/skills")),
   syncSkills: (id: string, desiredSkills: string[], companyId?: string) =>
     api.post<AgentSkillSnapshot>(agentPath(id, companyId, "/skills/sync"), { desiredSkills }),
   createKey: (id: string, name: string, companyId?: string) =>
@@ -162,22 +159,13 @@ export const agentsApi = {
   resetSession: (id: string, taskKey?: string | null, companyId?: string) =>
     api.post<void>(agentPath(id, companyId, "/runtime-state/reset-session"), { taskKey: taskKey ?? null }),
   adapterModels: (companyId: string, type: string) =>
-    api.get<AdapterModel[]>(
-      `/companies/${encodeURIComponent(companyId)}/adapters/${encodeURIComponent(type)}/models`,
-    ),
+    api.get<AdapterModel[]>(`/companies/${encodeURIComponent(companyId)}/adapters/${encodeURIComponent(type)}/models`),
   detectModel: (companyId: string, type: string) =>
     api.get<DetectedAdapterModel | null>(
       `/companies/${encodeURIComponent(companyId)}/adapters/${encodeURIComponent(type)}/detect-model`,
     ),
-  testEnvironment: (
-    companyId: string,
-    type: string,
-    data: { adapterConfig: Record<string, unknown> },
-  ) =>
-    api.post<AdapterEnvironmentTestResult>(
-      `/companies/${companyId}/adapters/${type}/test-environment`,
-      data,
-    ),
+  testEnvironment: (companyId: string, type: string, data: { adapterConfig: Record<string, unknown> }) =>
+    api.post<AdapterEnvironmentTestResult>(`/companies/${companyId}/adapters/${type}/test-environment`, data),
   invoke: (id: string, companyId?: string) => api.post<HeartbeatRun>(agentPath(id, companyId, "/heartbeat/invoke"), {}),
   wakeup: (
     id: string,
@@ -189,12 +177,76 @@ export const agentsApi = {
       idempotencyKey?: string | null;
     },
     companyId?: string,
-  ) => api.post<HeartbeatRun | { status: "skipped" }>(agentPath(id, companyId, "/wakeup"), data),
+  ) => api.post<AgentWakeupResponse>(agentPath(id, companyId, "/wakeup"), data),
   loginWithClaude: (id: string, companyId?: string) =>
     api.post<ClaudeLoginResult>(agentPath(id, companyId, "/claude-login"), {}),
-  availableSkills: () =>
-    api.get<{ skills: AvailableSkill[] }>("/skills/available"),
+  availableSkills: () => api.get<{ skills: AvailableSkill[] }>("/skills/available"),
+
+  // ── Agent Direct Chat ──────────────────────────────────────────
+  sendChatMessage: (id: string, content: string, companyId?: string, attachmentIds?: string[]) =>
+    api.post<unknown>(agentPath(id, companyId, "/chat-messages"), {
+      content,
+      ...(attachmentIds?.length ? { attachmentIds } : {}),
+    }),
+  chatMessages: (id: string, after?: string, companyId?: string) =>
+    api.get<unknown>(agentPath(id, companyId, `/chat-messages${after ? `?after=${encodeURIComponent(after)}` : ""}`)),
+  chatSession: (id: string, companyId?: string) => api.get<unknown>(agentPath(id, companyId, "/chat-session")),
+  endChatSession: (id: string, companyId?: string) =>
+    api.delete<{ ok: true }>(agentPath(id, companyId, "/chat-session")),
+  chatProcess: (id: string, companyId?: string) =>
+    api.get<ChatProcessInfo | null>(agentPath(id, companyId, "/chat-process")),
+  chatTyping: (id: string, isTyping: boolean, companyId?: string) =>
+    api.post<{ ok: true }>(agentPath(id, companyId, "/chat-typing"), { isTyping }),
+  chatMarkRead: (id: string, messageIds: string[], companyId?: string) =>
+    api.post<{ ok: true; markedCount: number }>(agentPath(id, companyId, "/chat-read"), { messageIds }),
+
+  // ── Chat History ──────────────────────────────────────────────
+  chatHistory: (id: string, companyId?: string, opts?: { limit?: number; before?: string }) => {
+    const params = new URLSearchParams();
+    if (opts?.limit) params.set("limit", String(opts.limit));
+    if (opts?.before) params.set("before", opts.before);
+    const qs = params.toString();
+    return api.get<{ sessions: ChatHistorySession[] }>(agentPath(id, companyId, `/chat-history${qs ? `?${qs}` : ""}`));
+  },
+  chatHistoryMessages: (id: string, sessionId: string, companyId?: string) =>
+    api.get<{ messages: ChatHistoryMessage[] }>(
+      agentPath(id, companyId, `/chat-history/${encodeURIComponent(sessionId)}`),
+    ),
 };
+
+export interface ChatProcessInfo {
+  id: string;
+  agentId: string;
+  companyId: string;
+  sessionId: string;
+  pid: number | null;
+  startedAt: string;
+  status: "running" | "exited";
+  exitCode: number | null;
+}
+
+export interface ChatHistorySession {
+  id: string;
+  agentId: string;
+  companyId: string;
+  startedByUserId: string;
+  messageCount: number;
+  startedAt: string;
+  endedAt: string | null;
+  endReason: string | null;
+  firstMessagePreview: string | null;
+}
+
+export interface ChatHistoryMessage {
+  id: string;
+  sessionId: string;
+  agentId: string;
+  sender: "user" | "agent";
+  content: string;
+  attachments?: { assetId: string; contentPath: string; contentType: string; originalFilename: string | null }[];
+  readAt?: string | null;
+  createdAt: string;
+}
 
 export interface AvailableSkill {
   name: string;

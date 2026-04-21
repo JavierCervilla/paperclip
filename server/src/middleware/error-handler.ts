@@ -1,6 +1,8 @@
 import type { Request, Response, NextFunction } from "express";
 import { ZodError } from "zod";
 import { HttpError } from "../errors.js";
+import { trackErrorHandlerCrash } from "@paperclipai/shared/telemetry";
+import { getTelemetryClient } from "../telemetry.js";
 
 export interface ErrorContext {
   error: { message: string; stack?: string; name?: string; details?: unknown; raw?: unknown };
@@ -11,12 +13,7 @@ export interface ErrorContext {
   reqQuery?: unknown;
 }
 
-function attachErrorContext(
-  req: Request,
-  res: Response,
-  payload: ErrorContext["error"],
-  rawError?: Error,
-) {
+function attachErrorContext(req: Request, res: Response, payload: ErrorContext["error"], rawError?: Error) {
   (res as any).__errorContext = {
     error: payload,
     method: req.method,
@@ -30,12 +27,7 @@ function attachErrorContext(
   }
 }
 
-export function errorHandler(
-  err: unknown,
-  req: Request,
-  res: Response,
-  _next: NextFunction,
-) {
+export function errorHandler(err: unknown, req: Request, res: Response, _next: NextFunction) {
   if (err instanceof HttpError) {
     if (err.status >= 500) {
       attachErrorContext(
@@ -44,6 +36,8 @@ export function errorHandler(
         { message: err.message, stack: err.stack, name: err.name, details: err.details },
         err,
       );
+      const tc = getTelemetryClient();
+      if (tc) trackErrorHandlerCrash(tc, { errorCode: err.name });
     }
     res.status(err.status).json({
       error: err.message,
@@ -66,6 +60,9 @@ export function errorHandler(
       : { message: String(err), raw: err, stack: rootError.stack, name: rootError.name },
     rootError,
   );
+
+  const tc = getTelemetryClient();
+  if (tc) trackErrorHandlerCrash(tc, { errorCode: rootError.name });
 
   res.status(500).json({ error: "Internal server error" });
 }
