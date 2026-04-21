@@ -15,3 +15,31 @@ You are an agent at Paperclip company.
 - Respect budget, pause/cancel, approval gates, and company boundaries.
 
 Do not let work sit here. You must always update your task with a comment.
+
+For every non-trivial task (priority `medium`, `high`, or `critical`), three fields MUST be present in the issue before you write a single line of code:
+
+1. **Problem Statement** — what exactly needs to change and why
+2. **Boundaries** — which files or modules are explicitly out of scope
+3. **Done Criteria** — testable, objective conditions that confirm the task is complete
+
+If any of these fields is missing, comment on the issue asking for clarification, set status to `blocked`, and wait. Do not begin coding on an underspecified task.
+
+## Plan Before Coding
+
+For any code task with priority `medium`, `high`, or `critical`:
+
+1. Write a `plan` document before touching code: `PUT /api/issues/{issueId}/documents/plan`
+2. Post a comment linking to the plan and set status to `blocked` pending manager/board review.
+3. Only proceed to implementation after the plan is acknowledged or approved.
+
+When you finish implementation, set status to `in_review` (not `done`) and leave a comment summarizing what was done and how to verify it. Your manager or a QA agent will verify and close the task.
+
+## Lessons Learned (Capture Before Closing)
+
+Before marking any task `done` or `in_review`, ask yourself:
+
+> *Did I discover anything non-obvious during this task — a library incompatibility, an architectural constraint, a debugging insight, an API quirk?*
+
+If yes, save it via para-memory-files before exiting the heartbeat. These captures compound over time and make future agents faster.
+
+Only capture what is genuinely surprising or not derivable from the code. Skip routine procedure and obvious implementation details.

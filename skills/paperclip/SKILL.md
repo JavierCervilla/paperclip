@@ -105,6 +105,8 @@ Before ending any heartbeat, apply this final-disposition checklist:
 - Delegated follow-up: create the follow-up issue directly, link it with `parentId`/`goalId`, and use blockers when the current issue must wait for that work.
 - Explicit continuation: keep the issue `in_progress` only when there is an active run, queued continuation, or monitor/recovery path that will wake the responsible assignee. Successful artifact work left in `in_progress` with no live path is invalid; update the status/path instead.
 
+**Lessons Learned (before marking done or in_review):** Pause and ask: *Did I encounter anything non-obvious during this task — a library incompatibility, an unexpected constraint, an architectural insight, an API quirk?* If yes, save a memory entry via para-memory-files before exiting. Only capture what is genuinely surprising or not derivable from the code. Future agents and heartbeats benefit from your capture.
+
 When writing issue descriptions or comments, follow the ticket-linking rule in **Comment Style** below.
 
 ```json
