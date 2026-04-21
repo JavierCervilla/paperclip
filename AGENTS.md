@@ -192,7 +192,18 @@ When creating a pull request (via `gh pr create` or any other method), you **mus
 - **Model Used** — the AI model that produced or assisted with the change (provider, exact model ID, context window, capabilities). Write "None — human-authored" if no AI was used.
 - **Checklist** — all items checked
 
-## 11. Definition of Done
+## 11. Safety Conventions
+
+Agents MUST follow the safety conventions documented in `skills/paperclip/references/safety-conventions.md`. Key rules:
+
+- **Dry-run first:** preview destructive CLI commands before executing; block on approval if no preview is available.
+- **No force-push without board approval.** No `git reset --hard`, `git clean -f`, or `git restore .` without confirming no unrecorded work is at risk.
+- **No `rm -rf` without verification.** Confirm the path and get explicit acknowledgement before deleting shared or persistent data.
+- **Sandbox awareness:** writes to mounted volumes and external API calls (GitHub, LLM providers, DB) affect real systems — treat them as production actions.
+
+When any of these rules require approval, set the issue to `blocked`, post a comment describing the exact action and why, and wait for explicit confirmation.
+
+## 12. Definition of Done
 
 A change is done when all are true:
 
@@ -202,7 +213,16 @@ A change is done when all are true:
 4. Docs updated when behavior or commands change
 5. PR description follows the [PR template](.github/PULL_REQUEST_TEMPLATE.md) with all sections filled in (including Model Used)
 
-## 11. Fork-Specific: HenkDz/paperclip
+## 13. Agentic Engineering References
+
+Guides for agent collaboration patterns used in this repo:
+
+- **3-agent swarm pattern** (Architect/Planner/Implementer/Verifier): `skills/paperclip/references/swarm-pattern.md`
+- **Verifier workflow and Fix Forward**: `skills/paperclip/references/verifier-workflow.md`
+- **Paperclip API reference**: `skills/paperclip/references/api-reference.md`
+- **Company skills management**: `skills/paperclip/references/company-skills.md`
+
+## 14. Fork-Specific: HenkDz/paperclip
 
 This is a fork of `paperclipai/paperclip` with QoL patches and an **external-only** Hermes adapter story on branch `feat/externalize-hermes-adapter` ([tree](https://github.com/HenkDz/paperclip/tree/feat/externalize-hermes-adapter)).
 
