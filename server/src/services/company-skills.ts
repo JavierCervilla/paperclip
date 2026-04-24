@@ -300,6 +300,10 @@ function deriveCanonicalSkillKey(
 
   const owner = normalizeSkillSlug(asString(metadata?.owner));
   const repo = normalizeSkillSlug(asString(metadata?.repo));
+  if (sourceKind === "paperclip_bundled_optional") {
+    if (owner && repo) return `${owner}/${repo}/${slug}`;
+    return `paperclipai/paperclip/${slug}`;
+  }
   if (
     (input.sourceType === "github" ||
       input.sourceType === "skills_sh" ||
@@ -676,12 +680,37 @@ export function parseSkillImportSourceInput(rawInput: string): ParsedSkillImport
   };
 }
 
-function resolveBundledSkillsRoot() {
+async function firstExistingDirectory(candidates: string[]): Promise<string | null> {
+  for (const candidate of candidates) {
+    const stats = await fs.stat(candidate).catch(() => null);
+    if (stats?.isDirectory()) return candidate;
+  }
+  return null;
+}
+
+type BundledSkillsRootSpec = {
+  sourceKind: "paperclip_bundled" | "paperclip_bundled_optional";
+  candidates: string[];
+  excludeSubpaths: string[];
+  metadataExtras?: Record<string, unknown>;
+};
+
+function resolveBundledSkillsRoots(): BundledSkillsRootSpec[] {
   const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+  const repoRoots = [path.resolve(moduleDir, "../.."), process.cwd(), path.resolve(moduleDir, "../../..")];
+
   return [
-    path.resolve(moduleDir, "../../skills"),
-    path.resolve(process.cwd(), "skills"),
-    path.resolve(moduleDir, "../../../skills"),
+    {
+      sourceKind: "paperclip_bundled",
+      candidates: repoRoots.map((root) => path.resolve(root, "skills")),
+      excludeSubpaths: ["vendor"],
+    },
+    {
+      sourceKind: "paperclip_bundled_optional",
+      candidates: repoRoots.map((root) => path.resolve(root, "skills/vendor/agent-skills/skills")),
+      excludeSubpaths: [],
+      metadataExtras: { owner: "addyosmani", repo: "agent-skills" },
+    },
   ];
 }
 
@@ -1525,31 +1554,37 @@ export function companySkillService(db: Db) {
   const secretsSvc = secretService(db);
 
   async function ensureBundledSkills(companyId: string) {
-    for (const skillsRoot of resolveBundledSkillsRoot()) {
-      const stats = await fs.stat(skillsRoot).catch(() => null);
-      if (!stats?.isDirectory()) continue;
-      const bundledSkills = await readLocalSkillImports(companyId, skillsRoot)
-        .then((skills) =>
-          skills.map((skill) => ({
-            ...skill,
-            key: deriveCanonicalSkillKey(companyId, {
-              ...skill,
-              metadata: {
-                ...(skill.metadata ?? {}),
-                sourceKind: "paperclip_bundled",
-              },
-            }),
-            metadata: {
-              ...(skill.metadata ?? {}),
-              sourceKind: "paperclip_bundled",
-            },
-          })),
-        )
-        .catch(() => [] as ImportedSkill[]);
-      if (bundledSkills.length === 0) continue;
-      return upsertImportedSkills(companyId, bundledSkills);
+    const upserted: CompanySkill[] = [];
+    for (const spec of resolveBundledSkillsRoots()) {
+      const skillsRoot = await firstExistingDirectory(spec.candidates);
+      if (!skillsRoot) continue;
+
+      const exclusionPrefixes = spec.excludeSubpaths.map((sub) => path.resolve(skillsRoot, sub));
+      const rawSkills = await readLocalSkillImports(companyId, skillsRoot).catch(() => [] as ImportedSkill[]);
+      const filtered = rawSkills.filter((skill) => {
+        const locator = skill.sourceLocator ? path.resolve(skill.sourceLocator) : null;
+        if (!locator) return true;
+        return !exclusionPrefixes.some((prefix) => locator === prefix || locator.startsWith(`${prefix}${path.sep}`));
+      });
+
+      const stamped = filtered.map((skill) => {
+        const metadata = {
+          ...(skill.metadata ?? {}),
+          ...(spec.metadataExtras ?? {}),
+          sourceKind: spec.sourceKind,
+        };
+        return {
+          ...skill,
+          metadata,
+          key: deriveCanonicalSkillKey(companyId, { ...skill, metadata }),
+        };
+      });
+
+      if (stamped.length === 0) continue;
+      const result = await upsertImportedSkills(companyId, stamped);
+      upserted.push(...result);
     }
-    return [];
+    return upserted;
   }
 
   async function pruneMissingLocalPathSkills(companyId: string) {
@@ -1660,7 +1695,7 @@ export function companySkillService(db: Db) {
     return Promise.all(
       desiredAgents.map(async (agent) => {
         const adapter = findActiveServerAdapter(agent.adapterType);
-        let actualState: string | null = null;
+        let actualState: string | null;
 
         if (!adapter?.listSkills) {
           actualState = "unsupported";
@@ -1768,7 +1803,7 @@ export function companySkillService(db: Db) {
     }
 
     const source = deriveSkillSourceInfo(skill);
-    let content = "";
+    let content: string;
 
     if (skill.sourceType === "local_path" || skill.sourceType === "catalog") {
       const absolutePath = resolveLocalSkillFilePath(skill, normalizedPath);

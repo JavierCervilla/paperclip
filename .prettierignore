@@ -7,3 +7,7 @@ drizzle/meta/
 .vite/
 .pnpm-store/
 pnpm-lock.yaml
+
+# Vendored third-party content. Keep byte-identical with upstream so bumps stay diff-clean.
+# See skills/vendor/agent-skills/VENDOR.md for the bump procedure.
+skills/vendor/

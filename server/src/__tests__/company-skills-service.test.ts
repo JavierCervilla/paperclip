@@ -87,3 +87,50 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     });
   });
 });
+
+describeEmbeddedPostgres("companySkillService bundled discovery", () => {
+  let db!: ReturnType<typeof createDb>;
+  let svc!: ReturnType<typeof companySkillService>;
+  let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
+
+  beforeAll(async () => {
+    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-company-skills-bundled-");
+    db = createDb(tempDb.connectionString);
+    svc = companySkillService(db);
+  }, 20_000);
+
+  afterEach(async () => {
+    await db.delete(companySkills);
+    await db.delete(companies);
+  });
+
+  afterAll(async () => {
+    await tempDb?.cleanup();
+  });
+
+  it("auto-installs native and vendored bundled skills with the correct sourceKind", async () => {
+    const companyId = randomUUID();
+    await db.insert(companies).values({
+      id: companyId,
+      name: "BundledTest",
+      issuePrefix: `B${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+      requireBoardApprovalForNewAgents: false,
+    });
+
+    const listed = await svc.list(companyId);
+    const native = listed.filter((entry) => entry.key.startsWith("paperclipai/paperclip/"));
+    const vendored = listed.filter((entry) => entry.key.startsWith("addyosmani/agent-skills/"));
+
+    expect(native.length).toBeGreaterThan(0);
+    expect(vendored.length).toBeGreaterThan(0);
+    expect(native.some((entry) => entry.key.includes("vendor"))).toBe(false);
+
+    const runtime = await svc.listRuntimeSkillEntries(companyId, { materializeMissing: false });
+    const requiredKeys = runtime.filter((entry) => entry.required).map((entry) => entry.key);
+    const optionalKeys = runtime.filter((entry) => !entry.required).map((entry) => entry.key);
+
+    expect(requiredKeys.every((key) => key.startsWith("paperclipai/paperclip/"))).toBe(true);
+    expect(optionalKeys.some((key) => key.startsWith("addyosmani/agent-skills/"))).toBe(true);
+    expect(requiredKeys.some((key) => key.startsWith("addyosmani/agent-skills/"))).toBe(false);
+  });
+});
