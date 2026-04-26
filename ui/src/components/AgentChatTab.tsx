@@ -13,8 +13,6 @@ import {
   X,
   Loader2,
   MessageSquare,
-  ChevronDown,
-  ChevronRight,
   Paperclip,
   FileText,
   Download,
@@ -23,12 +21,12 @@ import {
   CheckCheck,
 } from "lucide-react";
 import type { Agent, AssetImage } from "@paperclipai/shared";
-import { agentsApi, type ChatHistorySession, type ChatHistoryMessage } from "../api/agents";
+import { agentsApi } from "../api/agents";
 import { assetsApi } from "../api/assets";
 import { type LiveRunForIssue } from "../api/heartbeats";
-import { MarkdownBody } from "./MarkdownBody";
-import { RunTranscriptView } from "./transcript/RunTranscriptView";
+
 import { useLiveRunTranscripts } from "./transcript/useLiveRunTranscripts";
+import { AgentAssistantMessage } from "./agent-message/AgentAssistantMessage";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -48,16 +46,6 @@ interface ChatMessage {
   attachments?: ChatAttachment[];
   readAt?: string | null;
   createdAt: string;
-}
-
-interface ChatSession {
-  id: string;
-  agentId: string;
-  companyId: string;
-  startedByUserId: string;
-  startedAt: string;
-  lastActivityAt: string;
-  messages: ChatMessage[];
 }
 
 /** Pending attachment (uploaded but not yet sent with a message) */
@@ -269,26 +257,29 @@ function ChatHistoryViewer({
           </div>
         )}
 
-        {messages.map((msg) => (
-          <div key={msg.id} className={cn("flex", msg.sender === "user" ? "justify-end" : "justify-start")}>
-            <div
-              className={cn(
-                "max-w-[80%] rounded-lg px-3 py-2 text-sm",
-                msg.sender === "user" ? "bg-primary text-primary-foreground" : "bg-muted text-foreground",
-              )}
-            >
-              {msg.sender === "agent" ? (
-                <MarkdownBody className="text-sm">{msg.content}</MarkdownBody>
-              ) : (
+        {messages.map((msg) =>
+          msg.sender === "agent" ? (
+            <AgentAssistantMessage
+              key={msg.id}
+              agentName={agent.name}
+              agentIcon={agent.icon}
+              content={msg.content}
+              createdAt={msg.createdAt}
+            />
+          ) : (
+            <div key={msg.id} className="flex justify-end">
+              <div className="max-w-[80%] rounded-2xl px-4 py-2.5 text-sm bg-muted">
                 <p className="whitespace-pre-wrap break-words">{msg.content}</p>
-              )}
-              {msg.attachments && msg.attachments.length > 0 && (
-                <MessageAttachments attachments={msg.attachments} isUser={msg.sender === "user"} />
-              )}
-              <span className="block text-[10px] opacity-50 mt-1">{new Date(msg.createdAt).toLocaleTimeString()}</span>
+                {msg.attachments && msg.attachments.length > 0 && (
+                  <MessageAttachments attachments={msg.attachments} isUser />
+                )}
+                <span className="block text-[10px] opacity-50 mt-1">
+                  {new Date(msg.createdAt).toLocaleTimeString()}
+                </span>
+              </div>
             </div>
-          </div>
-        ))}
+          ),
+        )}
       </div>
     </div>
   );
@@ -301,7 +292,6 @@ export function AgentChatTab({ agent, companyId }: { agent: Agent; companyId: st
   const [input, setInput] = useState("");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [isTyping, setIsTyping] = useState(false);
-  const [thinkingOpen, setThinkingOpen] = useState(true);
   const [activeRun, setActiveRun] = useState<LiveRunForIssue | null>(null);
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const [uploadingCount, setUploadingCount] = useState(0);
@@ -319,7 +309,7 @@ export function AgentChatTab({ agent, companyId }: { agent: Agent; companyId: st
   // Track the agent's active chat process while typing
   useEffect(() => {
     if (!isTyping) {
-      setActiveRun(null);
+      setActiveRun(null); // eslint-disable-line react-hooks/set-state-in-effect
       return;
     }
 
@@ -354,12 +344,7 @@ export function AgentChatTab({ agent, companyId }: { agent: Agent; companyId: st
       cancelled = true;
       clearInterval(interval);
     };
-  }, [isTyping, companyId, agent.id, agent.name]);
-
-  // Reset thinking accordion to open when a new typing session starts
-  useEffect(() => {
-    if (isTyping) setThinkingOpen(true);
-  }, [isTyping]);
+  }, [isTyping, companyId, agent.id, agent.name, agent.adapterType]);
 
   const runs = useMemo(() => (activeRun ? [activeRun] : []), [activeRun]);
   const { transcriptByRun } = useLiveRunTranscripts({ runs, companyId, maxChunksPerRun: 120 });
@@ -747,29 +732,30 @@ export function AgentChatTab({ agent, companyId }: { agent: Agent; companyId: st
                 </div>
               )}
 
-              {messages.map((msg) => (
-                <div key={msg.id} className={cn("flex", msg.sender === "user" ? "justify-end" : "justify-start")}>
-                  <div
-                    className={cn(
-                      "max-w-[80%] rounded-lg px-3 py-2 text-sm",
-                      msg.sender === "user" ? "bg-primary text-primary-foreground" : "bg-muted text-foreground",
-                    )}
-                  >
-                    {msg.sender === "agent" ? (
-                      <MarkdownBody className="text-sm">{msg.content}</MarkdownBody>
-                    ) : (
+              {messages.map((msg) =>
+                msg.sender === "agent" ? (
+                  <AgentAssistantMessage
+                    key={msg.id}
+                    agentName={agent.name}
+                    agentIcon={agent.icon}
+                    content={msg.content}
+                    createdAt={msg.createdAt}
+                  />
+                ) : (
+                  <div key={msg.id} className="flex justify-end">
+                    <div className="max-w-[80%] rounded-2xl px-4 py-2.5 text-sm bg-muted">
                       <p className="whitespace-pre-wrap break-words">{msg.content}</p>
-                    )}
-                    {msg.attachments && msg.attachments.length > 0 && (
-                      <MessageAttachments attachments={msg.attachments} isUser={msg.sender === "user"} />
-                    )}
-                    <span className="flex items-center gap-1 text-[10px] opacity-50 mt-1">
-                      {new Date(msg.createdAt).toLocaleTimeString()}
-                      {msg.sender === "user" && msg.readAt && <CheckCheck className="h-3 w-3 text-blue-400" />}
-                    </span>
+                      {msg.attachments && msg.attachments.length > 0 && (
+                        <MessageAttachments attachments={msg.attachments} isUser />
+                      )}
+                      <span className="flex items-center gap-1 text-[10px] opacity-50 mt-1">
+                        {new Date(msg.createdAt).toLocaleTimeString()}
+                        {msg.readAt && <CheckCheck className="h-3 w-3 text-blue-400" />}
+                      </span>
+                    </div>
                   </div>
-                </div>
-              ))}
+                ),
+              )}
 
               {/* User typing indicator (from the other side) */}
               {remoteTyping && (
@@ -787,36 +773,14 @@ export function AgentChatTab({ agent, companyId }: { agent: Agent; companyId: st
               )}
 
               {isTyping && (
-                <div className="flex justify-start">
-                  <div className="max-w-[80%] bg-muted rounded-lg text-sm text-muted-foreground">
-                    <button
-                      type="button"
-                      onClick={() => setThinkingOpen((o) => !o)}
-                      className="flex items-center gap-1.5 px-3 py-2 w-full text-left hover:bg-muted/80 rounded-lg transition-colors"
-                    >
-                      <Loader2 className="h-3 w-3 animate-spin flex-shrink-0" />
-                      <span className="flex-1">{agent.name} is thinking...</span>
-                      {transcript.length > 0 &&
-                        (thinkingOpen ? (
-                          <ChevronDown className="h-3 w-3 flex-shrink-0" />
-                        ) : (
-                          <ChevronRight className="h-3 w-3 flex-shrink-0" />
-                        ))}
-                    </button>
-                    {thinkingOpen && transcript.length > 0 && (
-                      <div className="px-3 pb-2 max-h-[300px] overflow-y-auto border-t border-border/50">
-                        <RunTranscriptView
-                          entries={transcript}
-                          density="compact"
-                          streaming
-                          collapseStdout
-                          thinkingClassName="!text-[10px] !leading-4"
-                          emptyMessage=""
-                        />
-                      </div>
-                    )}
-                  </div>
-                </div>
+                <AgentAssistantMessage
+                  agentName={agent.name}
+                  agentIcon={agent.icon}
+                  content=""
+                  isRunning
+                  transcript={transcript}
+                  startedAt={activeRun?.startedAt ? new Date(activeRun.startedAt).getTime() : null}
+                />
               )}
 
               <div ref={messagesEndRef} />
