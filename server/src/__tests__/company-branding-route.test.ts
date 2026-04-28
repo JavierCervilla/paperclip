@@ -46,6 +46,7 @@ vi.mock("../services/index.js", () => ({
   companyPortabilityService: () => mockCompanyPortabilityService,
   companyService: () => mockCompanyService,
   feedbackService: () => mockFeedbackService,
+  heartbeatService: () => ({ cancelActiveForAgent: vi.fn() }),
   logActivity: mockLogActivity,
   instanceSettingsService: () => ({}),
   assetService: () => ({}),
