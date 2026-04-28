@@ -38,6 +38,8 @@ export const companiesApi = {
   updateBranding: (companyId: string, data: UpdateCompanyBranding) =>
     api.patch<Company>(`/companies/${companyId}/branding`, data),
   archive: (companyId: string) => api.post<Company>(`/companies/${companyId}/archive`, {}),
+  pause: (companyId: string, reason = "manual") => api.post<Company>(`/companies/${companyId}/pause`, { reason }),
+  resume: (companyId: string) => api.post<Company>(`/companies/${companyId}/resume`, {}),
   remove: (companyId: string) => api.delete<{ ok: true }>(`/companies/${companyId}`),
   exportBundle: (companyId: string, data: CompanyPortabilityExportRequest) =>
     api.post<CompanyPortabilityExportResult>(`/companies/${companyId}/export`, data),
