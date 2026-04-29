@@ -45,6 +45,8 @@ export interface ChatSession {
   messages: ChatMessage[];
   /** Timer handle for idle cleanup */
   idleTimer: ReturnType<typeof setTimeout> | null;
+  /** When this session was started by resuming an earlier one, the prior session's id. */
+  resumedFromSessionId?: string | null;
 }
 
 export interface ChatSessionSummary {
@@ -57,14 +59,62 @@ export interface ChatSessionSummary {
   endedAt: string | null;
   endReason: string | null;
   firstMessagePreview: string | null;
+  summary: string | null;
+  resumedFromSessionId: string | null;
+}
+
+/**
+ * Context assembled from an ended session (and any earlier resumed-from chain)
+ * to be injected into a freshly resumed chat process.
+ */
+export interface ChatResumeContext {
+  /** Prior session ids walked in oldest → newest order. */
+  priorSessionIds: string[];
+  /** All available summaries from the chain, oldest first, joined as one markdown string. */
+  combinedSummary: string;
+  /**
+   * The last few raw messages from the immediately prior session, included only if
+   * the prior session ended recently enough that direct continuity is more useful
+   * than just the summary.
+   */
+  lastMessages: ChatMessage[];
 }
 
 export type SessionEndReason = "idle_timeout" | "user_closed" | "agent_closed";
+
+/**
+ * Optional handler invoked by `endSession` shortly after a session ends if no
+ * summary has been written yet. Implementations should write a summary via
+ * `setSessionSummary`.
+ */
+export type SummaryFallbackHandler = (input: {
+  sessionId: string;
+  agentId: string;
+  companyId: string;
+  reason: SessionEndReason | null;
+}) => void | Promise<void>;
 
 // ── Constants ──────────────────────────────────────────────────────
 
 const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 const RECONNECT_GRACE_MS = 30 * 1000; // 30 second grace period after idle timeout
+
+/**
+ * If the agent process exits without writing a summary, fire the registered
+ * fallback after this delay so we don't race against an in-flight summary call.
+ */
+const SUMMARY_FALLBACK_DELAY_MS = 3 * 1000;
+/**
+ * Maximum chain depth we walk when assembling resume context. Prevents pathological
+ * loops (we already have a unique constraint chain via FK, but bound the walk anyway).
+ */
+const RESUME_CHAIN_MAX_DEPTH = 32;
+/**
+ * If the immediately prior session ended within this window, include its last few
+ * raw messages alongside the summary so the agent can pick up the exact phrasing.
+ */
+const RESUME_FRESH_TAIL_WINDOW_MS = 5 * 60 * 1000;
+const RESUME_FRESH_TAIL_MAX_MESSAGES = 5;
 
 // ── In-memory store ────────────────────────────────────────────────
 
@@ -79,6 +129,16 @@ const recentlyEndedSessions = new Map<
   string,
   { session: ChatSession; endedAt: number; graceTimer: ReturnType<typeof setTimeout> }
 >();
+
+/**
+ * Optional summary fallback handler. Wired up at boot by `chat-process.ts` so the
+ * service stays free of process-spawning concerns and remains unit-testable.
+ */
+let summaryFallbackHandler: SummaryFallbackHandler | null = null;
+
+export function setSummaryFallbackHandler(handler: SummaryFallbackHandler | null): void {
+  summaryFallbackHandler = handler;
+}
 
 // ── Helpers ────────────────────────────────────────────────────────
 
@@ -227,6 +287,33 @@ export function chatService(db?: Db) {
         endReason,
       },
     });
+
+    // Schedule the summary fallback. The chat process is expected to call
+    // setSessionSummary itself before exiting; the fallback only fires if it didn't.
+    if (summaryFallbackHandler && session.messages.length > 0) {
+      const handler = summaryFallbackHandler;
+      const sessionId = session.id;
+      const companyId = session.companyId;
+      setTimeout(() => {
+        // Skip if a summary is already present (the agent wrote it before exit).
+        if (!db) return;
+        db.select({ summary: chatSessions.summary })
+          .from(chatSessions)
+          .where(eq(chatSessions.id, sessionId))
+          .limit(1)
+          .execute()
+          .then(async (rows) => {
+            const existing = rows[0]?.summary;
+            if (existing && existing.trim().length > 0) return;
+            try {
+              await handler({ sessionId, agentId, companyId, reason: endReason });
+            } catch (err) {
+              logger.error({ err, sessionId }, "Summary fallback handler failed");
+            }
+          })
+          .catch((err) => logger.error({ err, sessionId }, "Failed to check existing summary before fallback"));
+      }, SUMMARY_FALLBACK_DELAY_MS).unref?.();
+    }
 
     return true;
   }
@@ -508,6 +595,8 @@ export function chatService(db?: Db) {
         startedAt: chatSessions.startedAt,
         endedAt: chatSessions.endedAt,
         endReason: chatSessions.endReason,
+        summary: chatSessions.summary,
+        resumedFromSessionId: chatSessions.resumedFromSessionId,
       })
       .from(chatSessions)
       .where(
@@ -538,6 +627,8 @@ export function chatService(db?: Db) {
         endedAt: row.endedAt?.toISOString() ?? null,
         endReason: row.endReason ?? null,
         firstMessagePreview: firstMsg[0]?.content.slice(0, 120) ?? null,
+        summary: row.summary ?? null,
+        resumedFromSessionId: row.resumedFromSessionId ?? null,
       });
     }
 
@@ -583,6 +674,185 @@ export function chatService(db?: Db) {
     return rows[0] ?? null;
   }
 
+  /**
+   * Persist a summary on a chat session row. Idempotent — last write wins.
+   * Called either by the agent process before exit (primary path) or by the
+   * server-side fallback when the agent didn't get to it.
+   */
+  async function setSessionSummary(sessionId: string, summary: string): Promise<boolean> {
+    if (!db) return false;
+    const trimmed = summary.trim();
+    if (!trimmed) return false;
+    await db.update(chatSessions).set({ summary: trimmed }).where(eq(chatSessions.id, sessionId)).execute();
+    return true;
+  }
+
+  /**
+   * Walk the resumed-from chain backwards from `priorSessionId` (oldest first
+   * in the returned arrays), collecting every recorded summary. Returns the
+   * combined summary plus a tail of recent messages from the immediately prior
+   * session if it ended within the freshness window.
+   */
+  async function getResumeContext(priorSessionId: string): Promise<ChatResumeContext> {
+    const empty: ChatResumeContext = { priorSessionIds: [], combinedSummary: "", lastMessages: [] };
+    if (!db) return empty;
+
+    type ChainRow = {
+      id: string;
+      summary: string | null;
+      endedAt: Date | null;
+      resumedFromSessionId: string | null;
+    };
+
+    const reversedChain: ChainRow[] = [];
+    let cursor: string | null = priorSessionId;
+    const seen = new Set<string>();
+    while (cursor && reversedChain.length < RESUME_CHAIN_MAX_DEPTH) {
+      if (seen.has(cursor)) break; // defensive: cycle protection
+      seen.add(cursor);
+      const rows: ChainRow[] = await db
+        .select({
+          id: chatSessions.id,
+          summary: chatSessions.summary,
+          endedAt: chatSessions.endedAt,
+          resumedFromSessionId: chatSessions.resumedFromSessionId,
+        })
+        .from(chatSessions)
+        .where(eq(chatSessions.id, cursor))
+        .limit(1);
+      const row: ChainRow | undefined = rows[0];
+      if (!row) break;
+      reversedChain.push(row);
+      cursor = row.resumedFromSessionId;
+    }
+
+    if (reversedChain.length === 0) return empty;
+
+    // Reverse → oldest first.
+    const chain = reversedChain.slice().reverse();
+    const priorSessionIds = chain.map((r) => r.id);
+
+    const summaryParts: string[] = [];
+    for (const row of chain) {
+      const summary = row.summary?.trim();
+      if (summary) {
+        summaryParts.push(`### Sesión ${row.id.slice(0, 8)}\n${summary}`);
+      }
+    }
+    const combinedSummary = summaryParts.join("\n\n");
+
+    // Optionally include the tail of the immediately prior session.
+    let lastMessages: ChatMessage[] = [];
+    const immediate = chain[chain.length - 1];
+    const endedAtMs = immediate.endedAt?.getTime() ?? null;
+    const isFresh = endedAtMs !== null && Date.now() - endedAtMs <= RESUME_FRESH_TAIL_WINDOW_MS;
+    if (isFresh) {
+      const tail = await db
+        .select()
+        .from(chatMessages)
+        .where(eq(chatMessages.sessionId, immediate.id))
+        .orderBy(desc(chatMessages.createdAt))
+        .limit(RESUME_FRESH_TAIL_MAX_MESSAGES);
+      lastMessages = tail.reverse().map((r) => ({
+        id: r.id,
+        sessionId: r.sessionId,
+        agentId: r.agentId,
+        sender: r.sender as "user" | "agent",
+        content: r.content,
+        ...(r.attachments ? { attachments: r.attachments as ChatAttachment[] } : {}),
+        readAt: r.readAt?.toISOString() ?? null,
+        createdAt: r.createdAt.toISOString(),
+      }));
+    }
+
+    return { priorSessionIds, combinedSummary, lastMessages };
+  }
+
+  /**
+   * Start a new chat session that resumes from a prior (already-ended) session.
+   *
+   * Resume rules:
+   * - The prior session must belong to `agentId`.
+   * - Only the original `startedByUserId` can resume.
+   * - The prior session must already be ended (no piggy-backing on a live one).
+   * - There must be no active session for the same agent — caller should close it first.
+   */
+  async function resumeSession(opts: {
+    priorSessionId: string;
+    agentId: string;
+    companyId: string;
+    userId: string;
+  }): Promise<{ session: ChatSession; resumeContext: ChatResumeContext }> {
+    if (!db) throw new Error("Database not available");
+
+    if (sessions.has(opts.agentId)) {
+      throw new Error("AGENT_HAS_ACTIVE_SESSION");
+    }
+
+    const priorRows = await db
+      .select({
+        id: chatSessions.id,
+        agentId: chatSessions.agentId,
+        companyId: chatSessions.companyId,
+        startedByUserId: chatSessions.startedByUserId,
+        endedAt: chatSessions.endedAt,
+      })
+      .from(chatSessions)
+      .where(eq(chatSessions.id, opts.priorSessionId))
+      .limit(1);
+    const prior = priorRows[0];
+    if (!prior) throw new Error("PRIOR_SESSION_NOT_FOUND");
+    if (prior.agentId !== opts.agentId) throw new Error("PRIOR_SESSION_AGENT_MISMATCH");
+    if (prior.companyId !== opts.companyId) throw new Error("PRIOR_SESSION_COMPANY_MISMATCH");
+    if (prior.startedByUserId !== opts.userId) throw new Error("PRIOR_SESSION_NOT_OWNED_BY_USER");
+    if (!prior.endedAt) throw new Error("PRIOR_SESSION_STILL_ACTIVE");
+
+    const resumeContext = await getResumeContext(opts.priorSessionId);
+
+    const sessionId = randomUUID();
+    const startedAt = now();
+
+    const session: ChatSession = {
+      id: sessionId,
+      agentId: opts.agentId,
+      companyId: opts.companyId,
+      startedByUserId: opts.userId,
+      startedAt,
+      lastActivityAt: startedAt,
+      messages: [],
+      idleTimer: null,
+      resumedFromSessionId: opts.priorSessionId,
+    };
+
+    sessions.set(opts.agentId, session);
+    resetIdleTimer(session, () => endSession(opts.agentId, "idle_timeout"));
+
+    await db
+      .insert(chatSessions)
+      .values({
+        id: sessionId,
+        agentId: opts.agentId,
+        companyId: opts.companyId,
+        startedByUserId: opts.userId,
+        startedAt: new Date(startedAt),
+        resumedFromSessionId: opts.priorSessionId,
+      })
+      .execute();
+
+    publishLiveEvent({
+      companyId: opts.companyId,
+      type: "chat.session.started",
+      payload: {
+        sessionId: session.id,
+        agentId: opts.agentId,
+        startedByUserId: opts.userId,
+        resumedFromSessionId: opts.priorSessionId,
+      },
+    });
+
+    return { session, resumeContext };
+  }
+
   return {
     startSession,
     endSession,
@@ -596,5 +866,8 @@ export function chatService(db?: Db) {
     getHistory,
     getSessionMessages,
     getSessionById,
+    setSessionSummary,
+    getResumeContext,
+    resumeSession,
   };
 }

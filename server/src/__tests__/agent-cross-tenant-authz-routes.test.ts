@@ -129,6 +129,8 @@ vi.mock("../services/index.js", () => ({
   assetService: () => ({}),
   chatService: () => ({}),
   chatProcessService: () => ({}),
+  setChatSummaryFallbackHandler: vi.fn(),
+  buildDeterministicChatSummary: vi.fn(() => ""),
 }));
 
 vi.mock("../services/instance-settings.js", () => ({

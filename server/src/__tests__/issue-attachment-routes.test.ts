@@ -40,6 +40,8 @@ function registerRouteMocks() {
     assetService: () => ({}),
     chatService: () => ({}),
     chatProcessService: () => ({}),
+    setChatSummaryFallbackHandler: vi.fn(),
+    buildDeterministicChatSummary: vi.fn(() => ""),
     goalService: () => ({}),
     heartbeatService: () => ({
       wakeup: vi.fn(async () => undefined),

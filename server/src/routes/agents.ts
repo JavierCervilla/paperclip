@@ -43,6 +43,8 @@ import {
   budgetService,
   chatService,
   chatProcessService,
+  setChatSummaryFallbackHandler,
+  buildDeterministicChatSummary,
   heartbeatService,
   issueApprovalService,
   issueService,
@@ -135,6 +137,20 @@ export function agentRoutes(db: Db) {
   const assetsSvc = assetService(db);
   const chat = chatService(db);
   const chatProc = chatProcessService();
+
+  // Wire the deterministic summary fallback. Fires only if the agent process
+  // exits without writing its own summary via POST /chat-summary (rare).
+  setChatSummaryFallbackHandler(async ({ sessionId, reason }) => {
+    if (!db) return;
+    const messages = await chat.getSessionMessages(sessionId);
+    const summary = buildDeterministicChatSummary({
+      messages: messages.map((m) => ({ sender: m.sender, content: m.content, createdAt: m.createdAt })),
+      endReason: reason,
+    });
+    if (summary) {
+      await chat.setSessionSummary(sessionId, summary);
+    }
+  });
   const heartbeat = heartbeatService(db);
   const issueApprovalsSvc = issueApprovalService(db);
   const secretsSvc = secretService(db);
@@ -2969,6 +2985,127 @@ export function agentRoutes(db: Db) {
 
     const proc = chatProc.getProcess(id);
     res.json(proc);
+  });
+
+  /**
+   * POST /agents/:id/chat-resume
+   * Resume a previously-ended chat session as a new live session, injecting the
+   * prior summary chain (and a tail of recent messages if the prior session ended
+   * very recently) into the new chat process prompt.
+   * Body: { priorSessionId: string }
+   */
+  router.post("/agents/:id/chat-resume", async (req, res) => {
+    const id = req.params.id as string;
+    const agent = await svc.getById(id);
+    if (!agent) {
+      res.status(404).json({ error: "Agent not found" });
+      return;
+    }
+    assertCompanyAccess(req, agent.companyId);
+    assertBoard(req);
+
+    const { priorSessionId } = req.body ?? {};
+    if (!priorSessionId || typeof priorSessionId !== "string") {
+      res.status(400).json({ error: "priorSessionId (string) is required" });
+      return;
+    }
+
+    const userId = req.actor.userId ?? "unknown";
+
+    let result: {
+      session: ReturnType<typeof chat.getSession>;
+      resumeContext: Awaited<ReturnType<typeof chat.getResumeContext>>;
+    };
+    try {
+      const r = await chat.resumeSession({
+        priorSessionId,
+        agentId: id,
+        companyId: agent.companyId,
+        userId,
+      });
+      result = { session: r.session, resumeContext: r.resumeContext };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "RESUME_FAILED";
+      const status =
+        message === "AGENT_HAS_ACTIVE_SESSION"
+          ? 409
+          : message === "PRIOR_SESSION_NOT_FOUND"
+            ? 404
+            : message === "PRIOR_SESSION_NOT_OWNED_BY_USER"
+              ? 403
+              : message === "PRIOR_SESSION_AGENT_MISMATCH" || message === "PRIOR_SESSION_COMPANY_MISMATCH"
+                ? 404
+                : message === "PRIOR_SESSION_STILL_ACTIVE"
+                  ? 409
+                  : 500;
+      res.status(status).json({ error: message });
+      return;
+    }
+
+    const session = result.session!;
+    await chatProc.spawnChatProcess({
+      agent: {
+        id: agent.id,
+        companyId: agent.companyId,
+        name: agent.name,
+        adapterType: agent.adapterType,
+        adapterConfig: agent.adapterConfig as Record<string, unknown>,
+      },
+      sessionId: session.id,
+      resumeContext: result.resumeContext,
+    });
+
+    const { idleTimer: _idleTimer, ...sessionData } = session;
+    res.status(201).json(sessionData);
+  });
+
+  /**
+   * POST /agents/:id/chat-summary
+   * Agent-only. Persists a summary of the current (or most recently active)
+   * chat session before the chat process exits. Idempotent — last write wins.
+   * Body: { summary: string }
+   */
+  router.post("/agents/:id/chat-summary", async (req, res) => {
+    const id = req.params.id as string;
+    const agent = await svc.getById(id);
+    if (!agent) {
+      res.status(404).json({ error: "Agent not found" });
+      return;
+    }
+    assertCompanyAccess(req, agent.companyId);
+
+    // Agent-only: only the agent itself (via its run JWT) may set its own summary.
+    if (req.actor.agentId !== id) {
+      res.status(403).json({ error: "Only the agent itself may set its chat summary" });
+      return;
+    }
+
+    const { summary, sessionId: bodySessionId } = req.body ?? {};
+    if (!summary || typeof summary !== "string" || summary.trim().length === 0) {
+      res.status(400).json({ error: "summary (non-empty string) is required" });
+      return;
+    }
+
+    // Prefer an explicitly-supplied sessionId; otherwise use the agent's active session.
+    let sessionId: string;
+    if (typeof bodySessionId === "string" && bodySessionId.length > 0) {
+      const owned = await chat.getSessionById(bodySessionId);
+      if (!owned || owned.agentId !== id) {
+        res.status(404).json({ error: "Chat session not found for this agent" });
+        return;
+      }
+      sessionId = bodySessionId;
+    } else {
+      const active = chat.getSession(id);
+      if (!active) {
+        res.status(404).json({ error: "No active chat session for this agent" });
+        return;
+      }
+      sessionId = active.id;
+    }
+
+    const ok = await chat.setSessionSummary(sessionId, summary);
+    res.json({ ok });
   });
 
   return router;

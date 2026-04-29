@@ -211,7 +211,20 @@ export const agentsApi = {
     api.get<{ messages: ChatHistoryMessage[] }>(
       agentPath(id, companyId, `/chat-history/${encodeURIComponent(sessionId)}`),
     ),
+  resumeChat: (id: string, priorSessionId: string, companyId?: string) =>
+    api.post<ChatSessionData>(agentPath(id, companyId, "/chat-resume"), { priorSessionId }),
 };
+
+export interface ChatSessionData {
+  id: string;
+  agentId: string;
+  companyId: string;
+  startedByUserId: string;
+  startedAt: string;
+  lastActivityAt: string;
+  messages: ChatHistoryMessage[];
+  resumedFromSessionId?: string | null;
+}
 
 export interface ChatProcessInfo {
   id: string;
@@ -234,6 +247,8 @@ export interface ChatHistorySession {
   endedAt: string | null;
   endReason: string | null;
   firstMessagePreview: string | null;
+  summary: string | null;
+  resumedFromSessionId: string | null;
 }
 
 export interface ChatHistoryMessage {

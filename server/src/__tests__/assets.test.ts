@@ -29,6 +29,8 @@ function registerModuleMocks() {
     })),
     chatService: () => ({}),
     chatProcessService: () => ({}),
+    setChatSummaryFallbackHandler: vi.fn(),
+    buildDeterministicChatSummary: vi.fn(() => ""),
     feedbackService: () => ({}),
     instanceSettingsService: () => ({}),
     logActivity: logActivityMock,
