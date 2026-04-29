@@ -21,11 +21,13 @@ function registerServiceMocks() {
     logActivity: vi.fn(async () => undefined),
     workspaceOperationService: () => mockWorkspaceOperationService,
     feedbackService: () => ({}),
-  instanceSettingsService: () => ({}),
-  assetService: () => ({}),
-  chatService: () => ({}),
-  chatProcessService: () => ({}),
-}));
+    instanceSettingsService: () => ({}),
+    assetService: () => ({}),
+    chatService: () => ({}),
+    chatProcessService: () => ({}),
+    setChatSummaryFallbackHandler: vi.fn(),
+    buildDeterministicChatSummary: vi.fn(() => ""),
+  }));
 }
 
 async function createApp() {

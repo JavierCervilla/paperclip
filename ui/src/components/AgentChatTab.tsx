@@ -224,11 +224,17 @@ function ChatHistoryViewer({
   companyId,
   sessionId,
   onBack,
+  hasActiveSession,
+  onResume,
+  isResuming,
 }: {
   agent: Agent;
   companyId: string;
   sessionId: string;
   onBack: () => void;
+  hasActiveSession: boolean;
+  onResume: (priorSessionId: string) => void;
+  isResuming: boolean;
 }) {
   const { data, isLoading } = useQuery({
     queryKey: ["chat-history-messages", agent.id, sessionId],
@@ -236,6 +242,8 @@ function ChatHistoryViewer({
   });
 
   const messages = data?.messages ?? [];
+  const resumeDisabled = hasActiveSession || isResuming;
+  const resumeTooltip = hasActiveSession ? "Cierra la sesión actual antes de continuar otra conversación" : undefined;
 
   return (
     <div className="flex flex-col h-full">
@@ -244,9 +252,19 @@ function ChatHistoryViewer({
         <Button variant="ghost" size="sm" onClick={onBack} className="h-7 px-2">
           <ArrowLeft className="h-3.5 w-3.5" />
         </Button>
-        <span className="text-sm text-muted-foreground">
+        <span className="text-sm text-muted-foreground flex-1">
           Past session &middot; {messages.length} message{messages.length !== 1 ? "s" : ""}
         </span>
+        <Button
+          size="sm"
+          onClick={() => onResume(sessionId)}
+          disabled={resumeDisabled}
+          title={resumeTooltip}
+          className="h-7 text-xs"
+        >
+          {isResuming ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : null}
+          Continuar conversación
+        </Button>
       </div>
 
       {/* Messages */}
@@ -291,6 +309,7 @@ export function AgentChatTab({ agent, companyId }: { agent: Agent; companyId: st
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [resumedFromSessionId, setResumedFromSessionId] = useState<string | null>(null);
   const [isTyping, setIsTyping] = useState(false);
   const [activeRun, setActiveRun] = useState<LiveRunForIssue | null>(null);
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
@@ -453,6 +472,7 @@ export function AgentChatTab({ agent, companyId }: { agent: Agent; companyId: st
 
           if (parsed.type === "chat.session.ended") {
             setSessionId(null);
+            setResumedFromSessionId(null);
             setMessages([]);
             setIsTyping(false);
             setRemoteTyping(false);
@@ -631,12 +651,28 @@ export function AgentChatTab({ agent, companyId }: { agent: Agent; companyId: st
     mutationFn: () => agentsApi.endChatSession(agent.id, companyId),
     onSuccess: () => {
       setSessionId(null);
+      setResumedFromSessionId(null);
       setMessages([]);
       setIsTyping(false);
       setRemoteTyping(false);
       lastMessageIdRef.current = null;
       setPendingAttachments([]);
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+    },
+  });
+
+  // Resume from a past (ended) session
+  const resumeMutation = useMutation({
+    mutationFn: (priorSessionId: string) => agentsApi.resumeChat(agent.id, priorSessionId, companyId),
+    onSuccess: (newSession) => {
+      setSessionId(newSession.id);
+      setResumedFromSessionId(newSession.resumedFromSessionId ?? null);
+      setMessages([]);
+      lastMessageIdRef.current = null;
+      setIsTyping(true); // The agent process is spawning and will respond shortly
+      setViewingHistoryId(null);
+      setMobileHistoryOpen(false);
+      inputRef.current?.focus();
     },
   });
 
@@ -687,6 +723,9 @@ export function AgentChatTab({ agent, companyId }: { agent: Agent; companyId: st
             companyId={companyId}
             sessionId={viewingHistoryId}
             onBack={() => setViewingHistoryId(null)}
+            hasActiveSession={Boolean(sessionId)}
+            onResume={(priorSessionId) => resumeMutation.mutate(priorSessionId)}
+            isResuming={resumeMutation.isPending}
           />
         ) : (
           <>
@@ -695,6 +734,16 @@ export function AgentChatTab({ agent, companyId }: { agent: Agent; companyId: st
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <MessageSquare className="h-4 w-4" />
                 <span>{sessionId ? "Chat session active" : "Start a conversation"}</span>
+                {resumedFromSessionId && (
+                  <button
+                    type="button"
+                    onClick={() => setViewingHistoryId(resumedFromSessionId)}
+                    className="rounded-full border border-border bg-muted/50 px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground hover:bg-muted transition-colors"
+                    title="Ver conversación anterior"
+                  >
+                    Continúa de #{resumedFromSessionId.slice(0, 8)}
+                  </button>
+                )}
               </div>
               <div className="flex items-center gap-1">
                 {/* Mobile history toggle — visible only below lg breakpoint */}

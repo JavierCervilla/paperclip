@@ -42,11 +42,13 @@ function registerModuleMocks() {
     logActivity: mockLogActivity,
     notifyHireApproved: vi.fn(),
     feedbackService: () => ({}),
-  instanceSettingsService: () => ({}),
-  assetService: () => ({}),
-  chatService: () => ({}),
-  chatProcessService: () => ({}),
-}));
+    instanceSettingsService: () => ({}),
+    assetService: () => ({}),
+    chatService: () => ({}),
+    chatProcessService: () => ({}),
+    setChatSummaryFallbackHandler: vi.fn(),
+    buildDeterministicChatSummary: vi.fn(() => ""),
+  }));
 }
 
 function createDbStub() {

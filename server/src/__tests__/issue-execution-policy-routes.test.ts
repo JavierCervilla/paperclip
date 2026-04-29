@@ -40,6 +40,8 @@ function registerModuleMocks() {
     assetService: () => ({}),
     chatService: () => ({}),
     chatProcessService: () => ({}),
+    setChatSummaryFallbackHandler: vi.fn(),
+    buildDeterministicChatSummary: vi.fn(() => ""),
     goalService: () => ({}),
     heartbeatService: () => mockHeartbeatService,
     instanceSettingsService: () => ({

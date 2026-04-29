@@ -111,7 +111,9 @@ function registerModuleMocks() {
     routineService: () => mockRoutineService,
     workProductService: () => ({}),
     chatService: () => ({}),
-  chatProcessService: () => ({}),
+    chatProcessService: () => ({}),
+    setChatSummaryFallbackHandler: vi.fn(),
+    buildDeterministicChatSummary: vi.fn(() => ""),
     assetService: () => ({}),
   }));
 }

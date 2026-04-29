@@ -61,6 +61,8 @@ function registerServiceMocks() {
     assetService: () => ({}),
     chatService: () => ({}),
     chatProcessService: () => ({}),
+    setChatSummaryFallbackHandler: vi.fn(),
+    buildDeterministicChatSummary: vi.fn(() => ""),
     goalService: () => ({
       getDefaultCompanyGoal: vi.fn(async () => null),
       getById: vi.fn(async () => null),

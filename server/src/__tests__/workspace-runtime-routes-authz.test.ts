@@ -39,11 +39,13 @@ function registerModuleMocks() {
     secretService: () => mockSecretService,
     workspaceOperationService: () => mockWorkspaceOperationService,
     feedbackService: () => ({}),
-  instanceSettingsService: () => ({}),
-  assetService: () => ({}),
-  chatService: () => ({}),
-  chatProcessService: () => ({}),
-}));
+    instanceSettingsService: () => ({}),
+    assetService: () => ({}),
+    chatService: () => ({}),
+    chatProcessService: () => ({}),
+    setChatSummaryFallbackHandler: vi.fn(),
+    buildDeterministicChatSummary: vi.fn(() => ""),
+  }));
 
   vi.doMock("../services/workspace-runtime.js", () => ({
     cleanupExecutionWorkspaceArtifacts: vi.fn(),

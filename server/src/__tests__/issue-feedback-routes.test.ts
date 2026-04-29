@@ -76,9 +76,11 @@ function registerModuleMocks() {
     routineService: () => mockRoutineService,
     workProductService: () => ({}),
     assetService: () => ({}),
-  chatService: () => ({}),
-  chatProcessService: () => ({}),
-}));
+    chatService: () => ({}),
+    chatProcessService: () => ({}),
+    setChatSummaryFallbackHandler: vi.fn(),
+    buildDeterministicChatSummary: vi.fn(() => ""),
+  }));
 }
 
 async function createApp(actor: Record<string, unknown>) {
