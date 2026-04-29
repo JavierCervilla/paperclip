@@ -24,6 +24,7 @@ import {
   joinPromptSections,
 } from "@paperclipai/adapter-utils/server-utils";
 import { publishLiveEvent } from "./live-events.js";
+import type { ChatResumeContext, ChatMessage } from "./chat.js";
 
 const __moduleDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -87,6 +88,96 @@ async function buildSkillsDir(): Promise<string> {
   return tmp;
 }
 
+// ── Summary fallback ───────────────────────────────────────────────
+
+/**
+ * Deterministic summary builder used when the agent process exits without
+ * writing its own summary (rare: typically only happens when the user closes
+ * the chat mid-response or the process crashes).
+ *
+ * Cheaper than spawning another LLM call and gives a usable scaffold so a
+ * resumed conversation still has *some* anchor. The agent will replace this
+ * on its next exit if it gets the chance.
+ */
+const DETERMINISTIC_SUMMARY_PREVIEW_CHARS = 280;
+const DETERMINISTIC_SUMMARY_MAX_CHARS = 1200;
+
+export function buildDeterministicChatSummary(input: {
+  messages: { sender: "user" | "agent"; content: string; createdAt: string }[];
+  endReason: string | null;
+}): string {
+  const { messages, endReason } = input;
+  if (messages.length === 0) return "";
+
+  const userMessages = messages.filter((m) => m.sender === "user");
+  const agentMessages = messages.filter((m) => m.sender === "agent");
+
+  const firstUser = userMessages[0]?.content.trim() ?? "";
+  const lastUser = userMessages[userMessages.length - 1]?.content.trim() ?? "";
+  const lastAgent = agentMessages[agentMessages.length - 1]?.content.trim() ?? "";
+
+  const truncate = (s: string, n: number) => (s.length > n ? `${s.slice(0, n).trimEnd()}…` : s);
+
+  const lines: string[] = [];
+  lines.push(
+    `Auto-generated fallback summary (${userMessages.length} user / ${agentMessages.length} agent messages, ended: ${endReason ?? "unknown"}).`,
+  );
+  if (firstUser) {
+    lines.push("", `First user message: ${truncate(firstUser, DETERMINISTIC_SUMMARY_PREVIEW_CHARS)}`);
+  }
+  if (lastUser && lastUser !== firstUser) {
+    lines.push(`Last user message: ${truncate(lastUser, DETERMINISTIC_SUMMARY_PREVIEW_CHARS)}`);
+  }
+  if (lastAgent) {
+    lines.push(`Last agent reply: ${truncate(lastAgent, DETERMINISTIC_SUMMARY_PREVIEW_CHARS)}`);
+  }
+
+  return truncate(lines.join("\n"), DETERMINISTIC_SUMMARY_MAX_CHARS);
+}
+
+// ── Prompt helpers ─────────────────────────────────────────────────
+
+const RESUME_TAIL_CONTENT_MAX_CHARS = 600;
+
+function truncateForPrompt(content: string, max: number): string {
+  if (content.length <= max) return content;
+  return `${content.slice(0, max).trimEnd()}…`;
+}
+
+function buildResumeContextSection(ctx: ChatResumeContext | undefined): string | null {
+  if (!ctx) return null;
+  if (ctx.priorSessionIds.length === 0 && ctx.lastMessages.length === 0) return null;
+
+  const lines: string[] = ["## Prior conversation context", ""];
+
+  if (ctx.combinedSummary && ctx.combinedSummary.trim().length > 0) {
+    lines.push(
+      "This session is a continuation of an earlier conversation with the same user.",
+      "Use this summary to maintain continuity:",
+      "",
+      ctx.combinedSummary.trim(),
+      "",
+    );
+  } else {
+    lines.push(
+      "This session is a continuation of an earlier conversation with the same user.",
+      "(No prior summary was recorded.)",
+      "",
+    );
+  }
+
+  if (ctx.lastMessages.length > 0) {
+    lines.push("Most recent exchange from the prior session (verbatim, oldest first):", "");
+    for (const m of ctx.lastMessages) {
+      const who = m.sender === "agent" ? "Agent" : "User";
+      lines.push(`- **${who}**: ${truncateForPrompt(m.content, RESUME_TAIL_CONTENT_MAX_CHARS)}`);
+    }
+    lines.push("");
+  }
+
+  return lines.join("\n");
+}
+
 // ── Service ────────────────────────────────────────────────────────
 
 export function chatProcessService() {
@@ -98,6 +189,11 @@ export function chatProcessService() {
     agent: AgentInfo;
     sessionId: string;
     initialMessage?: string;
+    /**
+     * When the session was started via resume, the assembled context from prior
+     * sessions: combined summaries plus an optional tail of recent messages.
+     */
+    resumeContext?: ChatResumeContext;
   }): Promise<ChatProcess> {
     const existing = chatProcesses.get(opts.agent.id);
     if (existing && existing.meta.status === "running") {
@@ -156,6 +252,18 @@ export function chatProcessService() {
     }
 
     // Build CLI args — use chat-specific prompt instead of heartbeat template
+    const promptSections: string[] = [];
+
+    // Resume context (prior summaries + optional fresh tail) goes first so it
+    // anchors the conversation that follows.
+    const resumeBlock = buildResumeContextSection(opts.resumeContext);
+    if (resumeBlock) promptSections.push(resumeBlock);
+
+    const initialMessage = opts.initialMessage ?? "";
+    const initialMessageBlock = initialMessage
+      ? [`The user's message:`, `> ${initialMessage.replace(/\n/g, "\n> ")}`].join("\n")
+      : `The user has just resumed this conversation. Greet them briefly, acknowledge what was discussed before (using the prior context above), and wait for their next message.`;
+
     const chatPrompt = [
       `You are agent ${opts.agent.id} (${opts.agent.name}).`,
       ``,
@@ -164,8 +272,7 @@ export function chatProcessService() {
       ``,
       `## Chat session: ${opts.sessionId}`,
       ``,
-      `The user's message:`,
-      `> ${(opts.initialMessage ?? "").replace(/\n/g, "\n> ")}`,
+      initialMessageBlock,
       ``,
       `## How to respond`,
       ``,
@@ -181,8 +288,18 @@ export function chatProcessService() {
       `4. Repeat for each new user message.`,
       ``,
       `Stay conversational and concise. One response per user message.`,
+      ``,
+      `## Before exiting (REQUIRED)`,
+      ``,
+      `Right before you terminate (idle, user closed, or you are done), POST a 3-5 sentence`,
+      `summary of this conversation so it can be used as context if the user resumes later:`,
+      `  POST $PAPERCLIP_API_URL/api/agents/${opts.agent.id}/chat-summary`,
+      `  Headers: Authorization: Bearer $PAPERCLIP_API_KEY, X-Paperclip-Run-Id: ${chatId}`,
+      `  Body: { "summary": "..." , "sessionId": "${opts.sessionId}" }`,
+      `Keep the summary user-facing and factual: what the user asked, what you did, any decisions.`,
     ].join("\n");
-    const prompt = joinPromptSections([chatPrompt]);
+    promptSections.push(chatPrompt);
+    const prompt = joinPromptSections(promptSections);
 
     const args = ["--print", "-", "--output-format", "stream-json", "--verbose"];
     if (dangerouslySkipPermissions) args.push("--dangerously-skip-permissions");

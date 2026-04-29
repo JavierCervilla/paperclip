@@ -34,11 +34,13 @@ function registerModuleMocks() {
     syncInstructionsBundleConfigFromFilePath: vi.fn((_agent, config) => config),
     workspaceOperationService: () => ({}),
     feedbackService: () => ({}),
-  instanceSettingsService: () => ({}),
-  assetService: () => ({}),
-  chatService: () => ({}),
-  chatProcessService: () => ({}),
-}));
+    instanceSettingsService: () => ({}),
+    assetService: () => ({}),
+    chatService: () => ({}),
+    chatProcessService: () => ({}),
+    setChatSummaryFallbackHandler: vi.fn(),
+    buildDeterministicChatSummary: vi.fn(() => ""),
+  }));
 
   vi.doMock("../adapters/index.js", () => ({
     findServerAdapter: vi.fn(),

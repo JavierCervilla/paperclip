@@ -89,11 +89,13 @@ function registerModuleMocks() {
     heartbeatService: () => mockHeartbeatService,
     logActivity: mockLogActivity,
     feedbackService: () => ({}),
-  instanceSettingsService: () => ({}),
-  assetService: () => ({}),
-  chatService: () => ({}),
-  chatProcessService: () => ({}),
-}));
+    instanceSettingsService: () => ({}),
+    assetService: () => ({}),
+    chatService: () => ({}),
+    chatProcessService: () => ({}),
+    setChatSummaryFallbackHandler: vi.fn(),
+    buildDeterministicChatSummary: vi.fn(() => ""),
+  }));
 
   vi.doMock("../services/quota-windows.js", () => ({
     fetchAllQuotaWindows: mockFetchAllQuotaWindows,

@@ -50,9 +50,11 @@ function registerModuleMocks() {
     }),
     workProductService: () => ({}),
     assetService: () => ({}),
-  chatService: () => ({}),
-  chatProcessService: () => ({}),
-}));
+    chatService: () => ({}),
+    chatProcessService: () => ({}),
+    setChatSummaryFallbackHandler: vi.fn(),
+    buildDeterministicChatSummary: vi.fn(() => ""),
+  }));
 }
 
 function makeIssue(status: "todo" | "done") {

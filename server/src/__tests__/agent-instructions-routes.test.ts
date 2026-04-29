@@ -47,6 +47,8 @@ vi.mock("../services/index.js", () => ({
     getSessionMessages: vi.fn(),
   }),
   chatProcessService: () => ({}),
+  setChatSummaryFallbackHandler: vi.fn(),
+  buildDeterministicChatSummary: vi.fn(() => ""),
   companySkillService: () => ({ listRuntimeSkillEntries: vi.fn() }),
   budgetService: () => ({}),
   heartbeatService: () => ({}),
@@ -85,6 +87,8 @@ function registerModuleMocks() {
     assetService: () => ({}),
     chatService: () => ({}),
     chatProcessService: () => ({}),
+    setChatSummaryFallbackHandler: vi.fn(),
+    buildDeterministicChatSummary: vi.fn(() => ""),
   }));
 
   vi.doMock("../adapters/index.js", () => ({
