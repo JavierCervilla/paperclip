@@ -41,6 +41,7 @@ These changes exist in `preview`/`deploy/dokploy` but not upstream. Conflicts du
 - **Repo references**: Updated from `paperclipai/paperclip` to `JavierCervilla/paperclip` where applicable.
 - **Dokploy service naming**: DB service renamed to avoid DNS collisions on `dokploy-network`.
 - **GH_TOKEN env var**: Passed through for `gh` CLI authentication.
+- **Company pause/resume API**: `POST /api/companies/:id/pause` and `/resume` in `server/src/routes/companies.ts`, `companiesApi.pause`/`.resume` in `ui/src/api/companies.ts`, and the "Operations" section in `ui/src/pages/CompanySettings.tsx`. The `companyService.pause`/`.resume` methods (`server/src/services/companies.ts`) and the `pauseReason`/`pausedAt` columns are also fork-only; the budget-driven auto-pause path (`server/src/services/budgets.ts`) depends on them. **The routes were silently dropped during the 2026-04-16 upstream sync (PAP-860); always re-check route handlers exist after merging upstream.**
 
 ## Build & Test Commands
 
