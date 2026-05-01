@@ -96,7 +96,7 @@ export type SummaryFallbackHandler = (input: {
 
 // ── Constants ──────────────────────────────────────────────────────
 
-const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+const IDLE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
 const RECONNECT_GRACE_MS = 30 * 1000; // 30 second grace period after idle timeout
 
 /**
@@ -335,6 +335,10 @@ export function chatService(db?: Db) {
 
     if (isTyping) {
       typingState.set(agentId, { who, since: now() });
+      // Treat typing as activity so a user composing a long message doesn't get
+      // killed by idle timeout mid-keystroke.
+      session.lastActivityAt = now();
+      resetIdleTimer(session, () => endSession(agentId, "idle_timeout"));
     } else {
       const current = typingState.get(agentId);
       if (current?.who === who) {
