@@ -1,6 +1,6 @@
-import { type ChangeEvent, useEffect, useState } from "react";
+import { type ChangeEvent, useEffect, useMemo, useState } from "react";
 import { Link } from "@/lib/router";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { DEFAULT_FEEDBACK_DATA_SHARING_TERMS_VERSION } from "@paperclipai/shared";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
@@ -10,7 +10,7 @@ import { accessApi } from "../api/access";
 import { assetsApi } from "../api/assets";
 import { queryKeys } from "../lib/queryKeys";
 import { Button } from "@/components/ui/button";
-import { Settings, Check, Download, Upload, Pause, Play } from "lucide-react";
+import { Settings, Check, Download, Upload, Pause, Play, Copy, Trash2, Link2 } from "lucide-react";
 import { CompanyPatternIcon } from "../components/CompanyPatternIcon";
 import { Field, ToggleField, HintIcon } from "../components/agent-config-primitives";
 
@@ -48,6 +48,13 @@ export function CompanySettings() {
   const [inviteSnippet, setInviteSnippet] = useState<string | null>(null);
   const [snippetCopied, setSnippetCopied] = useState(false);
   const [snippetCopyDelightId, setSnippetCopyDelightId] = useState(0);
+
+  // Human invite (Members & Invites section) state
+  const [memberInviteEmail, setMemberInviteEmail] = useState("");
+  const [memberInviteError, setMemberInviteError] = useState<string | null>(null);
+  // Map of inviteId → token for invites generated in this session
+  const [sessionInviteTokens, setSessionInviteTokens] = useState<Map<string, string>>(new Map());
+  const [copiedInviteId, setCopiedInviteId] = useState<string | null>(null);
 
   const generalDirty =
     !!selectedCompany &&
@@ -137,6 +144,58 @@ export function CompanySettings() {
     },
   });
 
+  const memberInvitesQuery = useQuery({
+    queryKey: ["company-invites", selectedCompanyId],
+    queryFn: () => accessApi.listCompanyInvites(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
+  // eslint-disable-next-line react-hooks/purity -- Date.now() is intentional: relative expiry display requires current time
+  const renderNow = useMemo(() => Date.now(), [memberInvitesQuery.data]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const memberInviteMutation = useMutation({
+    mutationFn: (email: string) =>
+      accessApi.createCompanyInvite(selectedCompanyId!, {
+        allowedJoinTypes: "human",
+        recipientEmail: email || null,
+      }),
+    onSuccess: (invite) => {
+      setMemberInviteError(null);
+      setMemberInviteEmail("");
+      setSessionInviteTokens((prev) => {
+        const next = new Map(prev);
+        next.set(invite.id, invite.token);
+        return next;
+      });
+      void memberInvitesQuery.refetch();
+      const url = `${window.location.origin}${invite.inviteUrl}`;
+      void navigator.clipboard.writeText(url).catch(() => {});
+      setCopiedInviteId(invite.id);
+      setTimeout(() => setCopiedInviteId(null), 2000);
+    },
+    onError: (err) => {
+      setMemberInviteError(err instanceof Error ? err.message : "Failed to generate invite link");
+    },
+  });
+
+  const revokeInviteMutation = useMutation({
+    mutationFn: (inviteId: string) => accessApi.revokeInvite(inviteId),
+    onSuccess: (_data, inviteId) => {
+      setSessionInviteTokens((prev) => {
+        const next = new Map(prev);
+        next.delete(inviteId);
+        return next;
+      });
+      void memberInvitesQuery.refetch();
+    },
+    onError: (err) => {
+      pushToast({
+        title: "Failed to revoke invite",
+        body: err instanceof Error ? err.message : "Unknown error",
+        tone: "error",
+      });
+    },
+  });
+
   const syncLogoState = (nextLogoUrl: string | null) => {
     setLogoUrl(nextLogoUrl ?? "");
     void queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
@@ -179,6 +238,10 @@ export function CompanySettings() {
     setInviteSnippet(null);
     setSnippetCopied(false);
     setSnippetCopyDelightId(0);
+    setMemberInviteEmail("");
+    setMemberInviteError(null);
+    setSessionInviteTokens(new Map());
+    setCopiedInviteId(null);
   }, [selectedCompanyId]);
 
   const archiveMutation = useMutation({
@@ -488,6 +551,114 @@ export function CompanySettings() {
               </div>
             </div>
           )}
+        </div>
+      </div>
+
+      {/* Members & Invites */}
+      <div className="space-y-4" data-testid="company-settings-member-invites-section">
+        <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Members &amp; Invites</div>
+        <div className="space-y-3 rounded-md border border-border px-4 py-4">
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-muted-foreground">
+              Generate a shareable invite link (valid 7 days). Share it manually — no email sent.
+            </span>
+            <HintIcon text="Creates a human-join invite with a 7-day TTL. Copy and send the URL via WhatsApp, DM, or any channel." />
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              className="rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none w-56"
+              type="email"
+              placeholder="recipient@example.com (optional)"
+              value={memberInviteEmail}
+              onChange={(e) => setMemberInviteEmail(e.target.value)}
+              disabled={memberInviteMutation.isPending}
+            />
+            <Button
+              data-testid="company-settings-member-invite-generate-button"
+              size="sm"
+              onClick={() => memberInviteMutation.mutate(memberInviteEmail.trim())}
+              disabled={memberInviteMutation.isPending}
+            >
+              <Link2 className="mr-1.5 h-3.5 w-3.5" />
+              {memberInviteMutation.isPending ? "Generating…" : "Generate invite link"}
+            </Button>
+          </div>
+          {memberInviteError && <p className="text-sm text-destructive">{memberInviteError}</p>}
+
+          {/* Active invite list */}
+          {memberInvitesQuery.data && memberInvitesQuery.data.length > 0 && (
+            <div className="mt-2 space-y-1">
+              <div className="text-xs font-medium text-muted-foreground">Active invites</div>
+              <div className="divide-y divide-border rounded-md border border-border">
+                {memberInvitesQuery.data.map((invite) => {
+                  const token = sessionInviteTokens.get(invite.id);
+                  const inviteUrl = token ? `${window.location.origin}/invite/${token}` : null;
+                  const expiresAtMs = new Date(invite.expiresAt).getTime();
+                  const expiresInMs = expiresAtMs - renderNow;
+                  const expiresInDays = Math.ceil(expiresInMs / (1000 * 60 * 60 * 24));
+                  const expiresLabel =
+                    expiresInMs <= 0 ? "expired" : expiresInDays === 1 ? "in 1 day" : `in ${expiresInDays} days`;
+                  return (
+                    <div key={invite.id} className="flex items-center gap-2 px-3 py-2 text-xs">
+                      <div className="flex-1 min-w-0">
+                        <span className="text-foreground truncate">
+                          {invite.recipientEmail ?? <span className="text-muted-foreground italic">no email</span>}
+                        </span>
+                        <span className="ml-2 text-muted-foreground">· expires {expiresLabel}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {inviteUrl ? (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 px-2 text-xs"
+                            onClick={async () => {
+                              await navigator.clipboard.writeText(inviteUrl).catch(() => {});
+                              setCopiedInviteId(invite.id);
+                              setTimeout(() => setCopiedInviteId(null), 2000);
+                            }}
+                          >
+                            {copiedInviteId === invite.id ? (
+                              <>
+                                <Check className="mr-1 h-3 w-3 text-green-600" />
+                                Copied
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="mr-1 h-3 w-3" />
+                                Copy link
+                              </>
+                            )}
+                          </Button>
+                        ) : (
+                          <span
+                            className="text-muted-foreground italic cursor-help"
+                            title="Link only available right after creation — revoke and regenerate to get a new shareable link."
+                          >
+                            Link unavailable
+                          </span>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 px-2 text-xs text-destructive hover:text-destructive"
+                          disabled={revokeInviteMutation.isPending}
+                          onClick={() => {
+                            if (window.confirm("Revoke this invite link? It will no longer be usable.")) {
+                              revokeInviteMutation.mutate(invite.id);
+                            }
+                          }}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          {memberInvitesQuery.data?.length === 0 && <p className="text-xs text-muted-foreground">No active invites.</p>}
         </div>
       </div>
 
