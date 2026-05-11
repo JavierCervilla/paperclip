@@ -88,10 +88,20 @@ type CompanyInviteCreated = {
   inviteUrl: string;
   expiresAt: string;
   allowedJoinTypes: "human" | "agent" | "both";
+  recipientEmail?: string | null;
   companyName?: string | null;
   onboardingTextPath?: string;
   onboardingTextUrl?: string;
   inviteMessage?: string | null;
+};
+
+type CompanyInviteListed = {
+  id: string;
+  allowedJoinTypes: "human" | "agent" | "both";
+  recipientEmail: string | null;
+  expiresAt: string;
+  createdAt: string;
+  inviteType: string;
 };
 
 export const accessApi = {
@@ -99,10 +109,15 @@ export const accessApi = {
     companyId: string,
     input: {
       allowedJoinTypes?: "human" | "agent" | "both";
+      recipientEmail?: string | null;
       defaultsPayload?: Record<string, unknown> | null;
       agentMessage?: string | null;
     } = {},
   ) => api.post<CompanyInviteCreated>(`/companies/${companyId}/invites`, input),
+
+  listCompanyInvites: (companyId: string) => api.get<CompanyInviteListed[]>(`/companies/${companyId}/invites`),
+
+  revokeInvite: (inviteId: string) => api.post(`/invites/${inviteId}/revoke`, {}),
 
   createOpenClawInvitePrompt: (
     companyId: string,
