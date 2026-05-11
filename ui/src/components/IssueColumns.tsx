@@ -20,14 +20,7 @@ import { timeAgo } from "../lib/timeAgo";
 import { Identity } from "./Identity";
 import { StatusIcon } from "./StatusIcon";
 
-export const issueTrailingColumns: InboxIssueColumn[] = [
-  "assignee",
-  "project",
-  "workspace",
-  "parent",
-  "labels",
-  "updated",
-];
+export const issueTrailingColumns: InboxIssueColumn[] = ["assignee", "project", "workspace", "parent", "labels", "updated"];
 
 const issueColumnLabels: Record<InboxIssueColumn, string> = {
   status: "Status",
@@ -97,16 +90,15 @@ export function IssueColumnPicker({
           {!iconOnly && "Columns"}
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align="end"
-        className="w-[300px] rounded-xl border-border/70 p-1.5 shadow-xl shadow-black/10"
-      >
+      <DropdownMenuContent align="end" className="w-[300px] rounded-xl border-border/70 p-1.5 shadow-xl shadow-black/10">
         <DropdownMenuLabel className="px-2 pb-1 pt-1.5">
           <div className="space-y-1">
             <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
               Desktop issue rows
             </div>
-            <div className="text-sm font-medium text-foreground">{title}</div>
+            <div className="text-sm font-medium text-foreground">
+              {title}
+            </div>
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
@@ -119,13 +111,20 @@ export function IssueColumnPicker({
             className="items-start rounded-lg px-3 py-2.5 pl-8"
           >
             <span className="flex flex-col gap-0.5">
-              <span className="text-sm font-medium text-foreground">{issueColumnLabels[column]}</span>
-              <span className="text-xs leading-relaxed text-muted-foreground">{issueColumnDescriptions[column]}</span>
+              <span className="text-sm font-medium text-foreground">
+                {issueColumnLabels[column]}
+              </span>
+              <span className="text-xs leading-relaxed text-muted-foreground">
+                {issueColumnDescriptions[column]}
+              </span>
             </span>
           </DropdownMenuCheckboxItem>
         ))}
         <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={onResetColumns} className="rounded-lg px-3 py-2 text-sm">
+        <DropdownMenuItem
+          onSelect={onResetColumns}
+          className="rounded-lg px-3 py-2 text-sm"
+        >
           Reset defaults
           <span className="ml-auto text-xs text-muted-foreground">status, id, updated</span>
         </DropdownMenuItem>
@@ -152,9 +151,6 @@ export function InboxIssueMetaLeading({
   return (
     <>
       {showStatus ? (
-<<<<<<< HEAD
-        <span className="hidden shrink-0 sm:inline-flex">{statusSlot ?? <StatusIcon status={issue.status} />}</span>
-=======
         <span className="hidden shrink-0 sm:inline-flex">
           {statusSlot ?? <StatusIcon status={issue.status} blockerAttention={issue.blockerAttention} />}
         </span>
@@ -163,7 +159,6 @@ export function InboxIssueMetaLeading({
         <span className="shrink-0 font-mono text-xs text-muted-foreground" aria-hidden="true">
           {checklistStepNumber}.
         </span>
->>>>>>> upstream/master
       ) : null}
       {showIdentifier ? (
         <span className="shrink-0 font-mono text-xs text-muted-foreground">
@@ -179,9 +174,19 @@ export function InboxIssueMetaLeading({
         >
           <span className="relative flex h-2 w-2">
             <span className="absolute inline-flex h-full w-full animate-pulse rounded-full bg-blue-400 opacity-75" />
-            <span className={cn("relative inline-flex h-2 w-2 rounded-full", "bg-blue-500")} />
+            <span
+              className={cn(
+                "relative inline-flex h-2 w-2 rounded-full",
+                "bg-blue-500",
+              )}
+            />
           </span>
-          <span className={cn("hidden text-[11px] font-medium sm:inline", "text-blue-600 dark:text-blue-400")}>
+          <span
+            className={cn(
+              "hidden text-[11px] font-medium sm:inline",
+              "text-blue-600 dark:text-blue-400",
+            )}
+          >
             Live
           </span>
         </span>
@@ -225,21 +230,24 @@ export function InboxIssueTrailingColumns({
   const userLabel = assigneeUserName ?? formatAssigneeUserLabel(issue.assigneeUserId, currentUserId) ?? "User";
 
   return (
-    <span className="grid items-center gap-2" style={{ gridTemplateColumns: issueTrailingGridTemplate(columns) }}>
+    <span
+      className="grid items-center gap-2"
+      style={{ gridTemplateColumns: issueTrailingGridTemplate(columns) }}
+    >
       {columns.map((column) => {
         if (column === "assignee") {
           if (assigneeContent) {
-            return (
-              <span key={column} className="min-w-0">
-                {assigneeContent}
-              </span>
-            );
+            return <span key={column} className="min-w-0">{assigneeContent}</span>;
           }
 
           if (issue.assigneeAgentId) {
             return (
               <span key={column} className="min-w-0 text-xs text-foreground">
-                <Identity name={assigneeName ?? issue.assigneeAgentId.slice(0, 8)} size="sm" className="min-w-0" />
+                <Identity
+                  name={assigneeName ?? issue.assigneeAgentId.slice(0, 8)}
+                  size="sm"
+                  className="min-w-0"
+                />
               </span>
             );
           }
@@ -273,7 +281,10 @@ export function InboxIssueTrailingColumns({
                 className="inline-flex min-w-0 items-center gap-2 text-xs font-medium"
                 style={{ color: pickTextColorForPillBg(accentColor, 0.12) }}
               >
-                <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: accentColor }} />
+                <span
+                  className="h-1.5 w-1.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: accentColor }}
+                />
                 <span className="truncate">{projectName}</span>
               </span>
             );
@@ -354,11 +365,7 @@ export function InboxIssueTrailingColumns({
           }
 
           return (
-            <span
-              key={column}
-              className="min-w-0 truncate text-xs text-muted-foreground"
-              title={parentTitle ?? undefined}
-            >
+            <span key={column} className="min-w-0 truncate text-xs text-muted-foreground" title={parentTitle ?? undefined}>
               {parentIdentifier ? (
                 <span className="font-mono">{parentIdentifier}</span>
               ) : (

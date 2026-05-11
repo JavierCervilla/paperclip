@@ -61,13 +61,10 @@ vi.mock("@mdxeditor/editor", async () => {
     mdxEditorMockState.suppressHtmlProcessingValues.push(Boolean(suppressHtmlProcessing));
     const [content, setContent] = React.useState(markdown);
     const editableRef = React.useRef<HTMLDivElement>(null);
-    const handle = React.useMemo(
-      () => ({
-        setMarkdown: (value: string) => setContent(value),
-        focus: () => editableRef.current?.focus(),
-      }),
-      [],
-    );
+    const handle = React.useMemo(() => ({
+      setMarkdown: (value: string) => setContent(value),
+      focus: () => editableRef.current?.focus(),
+    }), []);
 
     React.useEffect(() => {
       if (!suppressHtmlProcessing && containsHtmlLikeTag(markdown)) {
@@ -202,11 +199,23 @@ describe("MarkdownEditor", () => {
     const root = createRoot(container);
 
     await act(async () => {
-      root.render(<MarkdownEditor value="" onChange={() => {}} placeholder="Markdown body" />);
+      root.render(
+        <MarkdownEditor
+          value=""
+          onChange={() => {}}
+          placeholder="Markdown body"
+        />,
+      );
     });
 
     await act(async () => {
-      root.render(<MarkdownEditor value="Loaded plan body" onChange={() => {}} placeholder="Markdown body" />);
+      root.render(
+        <MarkdownEditor
+          value="Loaded plan body"
+          onChange={() => {}}
+          placeholder="Markdown body"
+        />,
+      );
     });
 
     await flush();
@@ -223,7 +232,13 @@ describe("MarkdownEditor", () => {
     const root = createRoot(container);
 
     await act(async () => {
-      root.render(<MarkdownEditor value="Loaded plan body" onChange={handleChange} placeholder="Markdown body" />);
+      root.render(
+        <MarkdownEditor
+          value="Loaded plan body"
+          onChange={handleChange}
+          placeholder="Markdown body"
+        />,
+      );
     });
 
     await flush();
@@ -316,7 +331,11 @@ describe("MarkdownEditor", () => {
 
     await act(async () => {
       root.render(
-        <MarkdownEditor value="Affected versions: <= v0.3.1" onChange={handleChange} placeholder="Markdown body" />,
+        <MarkdownEditor
+          value="Affected versions: <= v0.3.1"
+          onChange={handleChange}
+          placeholder="Markdown body"
+        />,
       );
     });
 
@@ -543,47 +562,43 @@ describe("MarkdownEditor", () => {
 
   it("keeps the same autocomplete session active while the slash query is unchanged", () => {
     const textNode = document.createTextNode("/agent");
-    expect(
-      isSameAutocompleteSession(
-        {
-          trigger: "skill",
-          marker: "/",
-          query: "agent",
-          textNode,
-          atPos: 0,
-          endPos: 6,
-        },
-        {
-          trigger: "skill",
-          marker: "/",
-          query: "agent",
-          textNode,
-          atPos: 0,
-          endPos: 6,
-        },
-      ),
-    ).toBe(true);
+    expect(isSameAutocompleteSession(
+      {
+        trigger: "skill",
+        marker: "/",
+        query: "agent",
+        textNode,
+        atPos: 0,
+        endPos: 6,
+      },
+      {
+        trigger: "skill",
+        marker: "/",
+        query: "agent",
+        textNode,
+        atPos: 0,
+        endPos: 6,
+      },
+    )).toBe(true);
 
-    expect(
-      isSameAutocompleteSession(
-        {
-          trigger: "skill",
-          marker: "/",
-          query: "agent",
-          textNode,
-          atPos: 0,
-          endPos: 6,
-        },
-        {
-          trigger: "skill",
-          marker: "/",
-          query: "agent-browser",
-          textNode,
-          atPos: 0,
-          endPos: 14,
-        },
-      ),
-    ).toBe(false);
+    expect(isSameAutocompleteSession(
+      {
+        trigger: "skill",
+        marker: "/",
+        query: "agent",
+        textNode,
+        atPos: 0,
+        endPos: 6,
+      },
+      {
+        trigger: "skill",
+        marker: "/",
+        query: "agent-browser",
+        textNode,
+        atPos: 0,
+        endPos: 14,
+      },
+    )).toBe(false);
   });
 
   it("finds skill anchors by mention metadata instead of visible text", () => {
@@ -681,14 +696,8 @@ describe("MarkdownEditor", () => {
     });
     await flush();
 
-<<<<<<< HEAD
-    const option = Array.from(document.body.querySelectorAll('button[type="button"]')).find((node) =>
-      node.textContent?.includes("Paperclip App"),
-    );
-=======
     const option = Array.from(document.body.querySelectorAll('button[type="button"]'))
       .find((node) => node.textContent?.includes("Paperclip App")) as HTMLButtonElement | undefined;
->>>>>>> upstream/master
     expect(option).toBeTruthy();
     return { option: option!, root };
   }

@@ -53,13 +53,7 @@ import { User, Hexagon, ArrowUpRight, Tag, Plus, GitBranch, FolderOpen, Check, E
 import { AgentIcon } from "./AgentIconPicker";
 import { InlineEntitySelector, type InlineEntityOption } from "./InlineEntitySelector";
 
-function TruncatedCopyable({
-  value,
-  icon: Icon,
-}: {
-  value: string;
-  icon: React.ComponentType<{ className?: string }>;
-}) {
+function TruncatedCopyable({ value, icon: Icon }: { value: string; icon: React.ComponentType<{ className?: string }> }) {
   const [copied, setCopied] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => () => clearTimeout(timerRef.current), []);
@@ -69,9 +63,7 @@ function TruncatedCopyable({
       setCopied(true);
       clearTimeout(timerRef.current);
       timerRef.current = setTimeout(() => setCopied(false), 1500);
-    } catch {
-      /* noop */
-    }
+    } catch { /* noop */ }
   }, [value]);
 
   return (
@@ -90,27 +82,18 @@ function TruncatedCopyable({
   );
 }
 
-function defaultProjectWorkspaceIdForProject(
-  project:
-    | {
-        workspaces?: Array<{ id: string; isPrimary: boolean }>;
-        executionWorkspacePolicy?: { defaultProjectWorkspaceId?: string | null } | null;
-      }
-    | null
-    | undefined,
-) {
+function defaultProjectWorkspaceIdForProject(project: {
+  workspaces?: Array<{ id: string; isPrimary: boolean }>;
+  executionWorkspacePolicy?: { defaultProjectWorkspaceId?: string | null } | null;
+} | null | undefined) {
   if (!project) return null;
-  return (
-    project.executionWorkspacePolicy?.defaultProjectWorkspaceId ??
-    project.workspaces?.find((workspace) => workspace.isPrimary)?.id ??
-    project.workspaces?.[0]?.id ??
-    null
-  );
+  return project.executionWorkspacePolicy?.defaultProjectWorkspaceId
+    ?? project.workspaces?.find((workspace) => workspace.isPrimary)?.id
+    ?? project.workspaces?.[0]?.id
+    ?? null;
 }
 
-function defaultExecutionWorkspaceModeForProject(
-  project: { executionWorkspacePolicy?: { enabled?: boolean; defaultMode?: string | null } | null } | null | undefined,
-) {
+function defaultExecutionWorkspaceModeForProject(project: { executionWorkspacePolicy?: { enabled?: boolean; defaultMode?: string | null } | null } | null | undefined) {
   const defaultMode = project?.executionWorkspacePolicy?.enabled ? project.executionWorkspacePolicy.defaultMode : null;
   if (defaultMode === "isolated_workspace" || defaultMode === "operator_branch") return defaultMode;
   if (defaultMode === "adapter_default") return "agent_default";
@@ -367,7 +350,9 @@ function PropertyPicker({
           {extra}
         </PropertyRow>
         {open && (
-          <div className={cn("rounded-md border border-border bg-popover p-1 mb-2", popoverClassName)}>{children}</div>
+          <div className={cn("rounded-md border border-border bg-popover p-1 mb-2", popoverClassName)}>
+            {children}
+          </div>
         )}
       </div>
     );
@@ -388,7 +373,13 @@ function PropertyPicker({
   );
 }
 
-export function IssueProperties({ issue, childIssues = [], onAddSubIssue, onUpdate, inline }: IssuePropertiesProps) {
+export function IssueProperties({
+  issue,
+  childIssues = [],
+  onAddSubIssue,
+  onUpdate,
+  inline,
+}: IssuePropertiesProps) {
   const { selectedCompanyId } = useCompany();
   const queryClient = useQueryClient();
   const companyId = issue.companyId ?? selectedCompanyId;
@@ -477,7 +468,9 @@ export function IssueProperties({ issue, childIssues = [], onAddSubIssue, onUpda
 
   const toggleLabel = (labelId: string) => {
     const ids = issue.labelIds ?? [];
-    const next = ids.includes(labelId) ? ids.filter((id) => id !== labelId) : [...ids, labelId];
+    const next = ids.includes(labelId)
+      ? ids.filter((id) => id !== labelId)
+      : [...ids, labelId];
     onUpdate({ labelIds: next });
   };
 
@@ -493,7 +486,7 @@ export function IssueProperties({ issue, childIssues = [], onAddSubIssue, onUpda
     return project?.name ?? id.slice(0, 8);
   };
   const currentProject = issue.projectId
-    ? (orderedProjects.find((project) => project.id === issue.projectId) ?? null)
+    ? orderedProjects.find((project) => project.id === issue.projectId) ?? null
     : null;
   const issueProject = issue.project ?? currentProject;
   const issueUsesMainWorkspace = useMemo(
@@ -538,11 +531,7 @@ export function IssueProperties({ issue, childIssues = [], onAddSubIssue, onUpda
   const recentAssigneeIds = useMemo(() => getRecentAssigneeIds(), [assigneeOpen]);
   const recentAssigneeSelectionIds = useMemo(() => getRecentAssigneeSelectionIds(), [assigneeOpen]);
   const sortedAgents = useMemo(
-    () =>
-      sortAgentsByRecency(
-        (agents ?? []).filter((a) => a.status !== "terminated"),
-        recentAssigneeIds,
-      ),
+    () => sortAgentsByRecency((agents ?? []).filter((a) => a.status !== "terminated"), recentAssigneeIds),
     [agents, recentAssigneeIds],
   );
   const recentAssigneeValues = useMemo(
@@ -559,9 +548,6 @@ export function IssueProperties({ issue, childIssues = [], onAddSubIssue, onUpda
     [companyMembers?.users, currentUserId, issue.createdByUserId],
   );
 
-<<<<<<< HEAD
-  const assignee = issue.assigneeAgentId ? agents?.find((a) => a.id === issue.assigneeAgentId) : null;
-=======
   const assignee = issue.assigneeAgentId
     ? agents?.find((a) => a.id === issue.assigneeAgentId)
     : null;
@@ -778,7 +764,6 @@ export function IssueProperties({ issue, childIssues = [], onAddSubIssue, onUpda
       </button>
     </div>
   );
->>>>>>> upstream/master
   const reviewerValues = stageParticipantValues(issue.executionPolicy, "review");
   const approverValues = stageParticipantValues(issue.executionPolicy, "approval");
   const userLabel = (userId: string | null | undefined) => formatAssigneeUserLabel(userId, currentUserId, userLabelMap);
@@ -817,22 +802,12 @@ export function IssueProperties({ issue, childIssues = [], onAddSubIssue, onUpda
     }
     return value;
   };
-  const reviewerTrigger =
-    reviewerValues.length > 0 ? (
-      <span className="text-sm break-words min-w-0">
-        {reviewerValues.map((value) => executionParticipantLabel(value)).join(", ")}
-      </span>
-    ) : (
-      <span className="text-sm text-muted-foreground">None</span>
-    );
-  const approverTrigger =
-    approverValues.length > 0 ? (
-      <span className="text-sm break-words min-w-0">
-        {approverValues.map((value) => executionParticipantLabel(value)).join(", ")}
-      </span>
-    ) : (
-      <span className="text-sm text-muted-foreground">None</span>
-    );
+  const reviewerTrigger = reviewerValues.length > 0
+    ? <span className="text-sm break-words min-w-0">{reviewerValues.map((value) => executionParticipantLabel(value)).join(", ")}</span>
+    : <span className="text-sm text-muted-foreground">None</span>;
+  const approverTrigger = approverValues.length > 0
+    ? <span className="text-sm break-words min-w-0">{approverValues.map((value) => executionParticipantLabel(value)).join(", ")}</span>
+    : <span className="text-sm text-muted-foreground">None</span>;
   const nextRunnableExecutionStage = (() => {
     if (issue.executionState?.status === "changes_requested" && issue.executionState.currentStageType) {
       return issue.executionState.currentStageType;
@@ -858,9 +833,9 @@ export function IssueProperties({ issue, childIssues = [], onAddSubIssue, onUpda
     const stageLabel = issue.executionState.currentStageType === "review" ? "Review" : "Approval";
     const participant = issue.executionState.currentParticipant;
     const participantLabel = participant
-      ? participant.type === "agent"
+      ? (participant.type === "agent"
         ? agentName(participant.agentId ?? null)
-        : userLabel(participant.userId ?? null)
+        : userLabel(participant.userId ?? null))
       : null;
     if (issue.executionState.status === "changes_requested") {
       return `${stageLabel} requested changes${participantLabel ? ` by ${participantLabel}` : ""}`;
@@ -877,46 +852,6 @@ export function IssueProperties({ issue, childIssues = [], onAddSubIssue, onUpda
     issue.executionPolicy?.monitor?.serviceName,
   ]);
 
-<<<<<<< HEAD
-  const labelsTrigger =
-    (issue.labels ?? []).length > 0 ? (
-      <div className="flex items-center gap-1 flex-wrap">
-        {(issue.labels ?? []).slice(0, 3).map((label) => (
-          <span
-            key={label.id}
-            className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium border"
-            style={{
-              borderColor: label.color,
-              backgroundColor: `${label.color}22`,
-              color: pickTextColorForPillBg(label.color, 0.13),
-            }}
-          >
-            {label.name}
-          </span>
-        ))}
-        {(issue.labels ?? []).length > 3 && (
-          <span className="text-xs text-muted-foreground">+{(issue.labels ?? []).length - 3}</span>
-        )}
-      </div>
-    ) : (
-      <>
-        <Tag className="h-3.5 w-3.5 text-muted-foreground" />
-        <span className="text-sm text-muted-foreground">No labels</span>
-      </>
-    );
-  const labelsExtra =
-    (issue.labelIds ?? []).length > 0 ? (
-      <button
-        type="button"
-        className="inline-flex items-center justify-center h-5 w-5 rounded hover:bg-accent/50 transition-colors text-muted-foreground hover:text-foreground"
-        onClick={() => setLabelsOpen(true)}
-        aria-label="Add label"
-        title="Add label"
-      >
-        <Plus className="h-3 w-3" />
-      </button>
-    ) : undefined;
-=======
   const updateMonitor = (nextMonitor: Issue["executionPolicy"] extends infer T
     ? T extends { monitor?: infer M | null } | null | undefined
       ? M | null
@@ -1258,7 +1193,6 @@ export function IssueProperties({ issue, childIssues = [], onAddSubIssue, onUpda
       <Plus className="h-3 w-3" />
     </button>
   ) : undefined;
->>>>>>> upstream/master
 
   const labelsContent = (
     <>
@@ -1282,7 +1216,7 @@ export function IssueProperties({ issue, childIssues = [], onAddSubIssue, onUpda
                 key={label.id}
                 className={cn(
                   "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 text-left",
-                  selected && "bg-accent",
+                  selected && "bg-accent"
                 )}
                 onClick={() => toggleLabel(label.id)}
               >
@@ -1389,76 +1323,12 @@ export function IssueProperties({ issue, childIssues = [], onAddSubIssue, onUpda
         autoFocus={!inline}
       />
       <div className="max-h-48 overflow-y-auto overscroll-contain">
-<<<<<<< HEAD
-        <button
-          className={cn(
-            "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
-            !issue.assigneeAgentId && !issue.assigneeUserId && "bg-accent",
-          )}
-          onClick={() => {
-            onUpdate({ assigneeAgentId: null, assigneeUserId: null });
-            setAssigneeOpen(false);
-          }}
-        >
-          No assignee
-        </button>
-        {currentUserId && (
-          <button
-            className={cn(
-              "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
-              issue.assigneeUserId === currentUserId && "bg-accent",
-            )}
-            onClick={() => {
-              onUpdate({ assigneeAgentId: null, assigneeUserId: currentUserId });
-              setAssigneeOpen(false);
-            }}
-          >
-            <User className="h-3 w-3 shrink-0 text-muted-foreground" />
-            Assign to me
-          </button>
-        )}
-        {issue.createdByUserId && issue.createdByUserId !== currentUserId && (
-          <button
-            className={cn(
-              "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
-              issue.assigneeUserId === issue.createdByUserId && "bg-accent",
-            )}
-            onClick={() => {
-              onUpdate({ assigneeAgentId: null, assigneeUserId: issue.createdByUserId });
-              setAssigneeOpen(false);
-            }}
-          >
-            <User className="h-3 w-3 shrink-0 text-muted-foreground" />
-            {creatorUserLabel ? `Assign to ${creatorUserLabel}` : "Assign to requester"}
-          </button>
-        )}
-        {sortedAgents
-          .filter((a) => {
-=======
         {assigneePickerOptions
           .filter((option) => {
->>>>>>> upstream/master
             if (!assigneeSearch.trim()) return true;
             const q = assigneeSearch.toLowerCase();
             return `${option.label} ${option.searchText}`.toLowerCase().includes(q);
           })
-<<<<<<< HEAD
-          .map((a) => (
-            <button
-              key={a.id}
-              className={cn(
-                "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
-                a.id === issue.assigneeAgentId && "bg-accent",
-              )}
-              onClick={() => {
-                trackRecentAssignee(a.id);
-                onUpdate({ assigneeAgentId: a.id, assigneeUserId: null });
-                setAssigneeOpen(false);
-              }}
-            >
-              <AgentIcon icon={a.icon} className="shrink-0 h-3 w-3 text-muted-foreground" />
-              {a.name}
-=======
           .map((option) => (
             <button
               key={option.id || "__none__"}
@@ -1485,7 +1355,6 @@ export function IssueProperties({ issue, childIssues = [], onAddSubIssue, onUpda
                 <User className="h-3 w-3 shrink-0 text-muted-foreground" />
               ) : null}
               {option.label}
->>>>>>> upstream/master
             </button>
           ))}
       </div>
@@ -1623,58 +1492,12 @@ export function IssueProperties({ issue, childIssues = [], onAddSubIssue, onUpda
         autoFocus={!inline}
       />
       <div className="max-h-48 overflow-y-auto overscroll-contain">
-<<<<<<< HEAD
-        <button
-          className={cn(
-            "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 whitespace-nowrap",
-            !issue.projectId && "bg-accent",
-          )}
-          onClick={() => {
-            onUpdate({
-              projectId: null,
-              projectWorkspaceId: null,
-              executionWorkspaceId: null,
-              executionWorkspacePreference: null,
-              executionWorkspaceSettings: null,
-            });
-            setProjectOpen(false);
-          }}
-        >
-          No project
-        </button>
-        {orderedProjects
-          .filter((p) => {
-=======
         {projectPickerOptions
           .filter((option) => {
->>>>>>> upstream/master
             if (!projectSearch.trim()) return true;
             const q = projectSearch.toLowerCase();
             return option.name.toLowerCase().includes(q);
           })
-<<<<<<< HEAD
-          .map((p) => (
-            <button
-              key={p.id}
-              className={cn(
-                "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 whitespace-nowrap",
-                p.id === issue.projectId && "bg-accent",
-              )}
-              onClick={() => {
-                const defaultMode = defaultExecutionWorkspaceModeForProject(p);
-                onUpdate({
-                  projectId: p.id,
-                  projectWorkspaceId: defaultProjectWorkspaceIdForProject(p),
-                  executionWorkspaceId: null,
-                  executionWorkspacePreference: defaultMode,
-                  executionWorkspaceSettings: p.executionWorkspacePolicy?.enabled ? { mode: defaultMode } : null,
-                });
-                setProjectOpen(false);
-              }}
-            >
-              <span className="shrink-0 h-3 w-3 rounded-sm" style={{ backgroundColor: p.color ?? "#6366f1" }} />
-              {p.name}
-=======
           .map((option) => (
             <button
               key={option.id || "__none__"}
@@ -1714,7 +1537,6 @@ export function IssueProperties({ issue, childIssues = [], onAddSubIssue, onUpda
                 />
               ) : null}
               {option.name}
->>>>>>> upstream/master
             </button>
           ))}
       </div>
@@ -1772,7 +1594,8 @@ export function IssueProperties({ issue, childIssues = [], onAddSubIssue, onUpda
       if (!parentSearch.trim()) return true;
       const query = parentSearch.toLowerCase();
       return (
-        (candidate.identifier ?? "").toLowerCase().includes(query) || candidate.title.toLowerCase().includes(query)
+        (candidate.identifier ?? "").toLowerCase().includes(query) ||
+        candidate.title.toLowerCase().includes(query)
       );
     })
     .sort((a, b) => {
@@ -1824,28 +1647,6 @@ export function IssueProperties({ issue, childIssues = [], onAddSubIssue, onUpda
       </div>
     </>
   );
-<<<<<<< HEAD
-  const blockedByTrigger =
-    blockedByIds.length > 0 ? (
-      <div className="flex items-center gap-1 flex-wrap min-w-0">
-        {(issue.blockedBy ?? []).slice(0, 2).map((relation) => (
-          <span
-            key={relation.id}
-            className="inline-flex max-w-full items-center rounded-full border border-border px-2 py-0.5 text-xs"
-          >
-            <span className="truncate">{relation.identifier ?? relation.title}</span>
-          </span>
-        ))}
-        {(issue.blockedBy ?? []).length > 2 && (
-          <span className="text-xs text-muted-foreground">+{(issue.blockedBy ?? []).length - 2}</span>
-        )}
-      </div>
-    ) : (
-      <span className="text-sm text-muted-foreground">No blockers</span>
-    );
-
-=======
->>>>>>> upstream/master
   const blockingIssues = issue.blocks ?? [];
   const blockerOptions = (allIssues ?? [])
     .filter((candidate) => candidate.id !== issue.id)
@@ -1853,7 +1654,8 @@ export function IssueProperties({ issue, childIssues = [], onAddSubIssue, onUpda
       if (!blockedBySearch.trim()) return true;
       const query = blockedBySearch.toLowerCase();
       return (
-        (candidate.identifier ?? "").toLowerCase().includes(query) || candidate.title.toLowerCase().includes(query)
+        (candidate.identifier ?? "").toLowerCase().includes(query) ||
+        candidate.title.toLowerCase().includes(query)
       );
     })
     .sort((a, b) => {
@@ -1928,30 +1730,27 @@ export function IssueProperties({ issue, childIssues = [], onAddSubIssue, onUpda
     <div className="space-y-4">
       <div className="space-y-1">
         <PropertyRow label="Status">
-<<<<<<< HEAD
-          <StatusIcon status={issue.status} onChange={(status) => onUpdate({ status })} showLabel />
-=======
           <StatusIcon
             status={issue.status}
             blockerAttention={issue.blockerAttention}
             onChange={(status) => onUpdate({ status })}
             showLabel
           />
->>>>>>> upstream/master
         </PropertyRow>
 
         <PropertyRow label="Priority">
-          <PriorityIcon priority={issue.priority} onChange={(priority) => onUpdate({ priority })} showLabel />
+          <PriorityIcon
+            priority={issue.priority}
+            onChange={(priority) => onUpdate({ priority })}
+            showLabel
+          />
         </PropertyRow>
 
         <PropertyPicker
           inline={inline}
           label="Labels"
           open={labelsOpen}
-          onOpenChange={(open) => {
-            setLabelsOpen(open);
-            if (!open) setLabelSearch("");
-          }}
+          onOpenChange={(open) => { setLabelsOpen(open); if (!open) setLabelSearch(""); }}
           triggerContent={labelsTrigger}
           triggerClassName="min-w-0 max-w-full"
           popoverClassName="w-64"
@@ -1964,23 +1763,18 @@ export function IssueProperties({ issue, childIssues = [], onAddSubIssue, onUpda
           inline={inline}
           label="Assignee"
           open={assigneeOpen}
-          onOpenChange={(open) => {
-            setAssigneeOpen(open);
-            if (!open) setAssigneeSearch("");
-          }}
+          onOpenChange={(open) => { setAssigneeOpen(open); if (!open) setAssigneeSearch(""); }}
           triggerContent={assigneeTrigger}
           popoverClassName="w-52"
-          extra={
-            issue.assigneeAgentId ? (
-              <Link
-                to={`/agents/${issue.assigneeAgentId}`}
-                className="inline-flex items-center justify-center h-5 w-5 rounded hover:bg-accent/50 transition-colors text-muted-foreground hover:text-foreground"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <ArrowUpRight className="h-3 w-3" />
-              </Link>
-            ) : undefined
-          }
+          extra={issue.assigneeAgentId ? (
+            <Link
+              to={`/agents/${issue.assigneeAgentId}`}
+              className="inline-flex items-center justify-center h-5 w-5 rounded hover:bg-accent/50 transition-colors text-muted-foreground hover:text-foreground"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <ArrowUpRight className="h-3 w-3" />
+            </Link>
+          ) : undefined}
         >
           {assigneeContent}
         </PropertyPicker>
@@ -2014,24 +1808,19 @@ export function IssueProperties({ issue, childIssues = [], onAddSubIssue, onUpda
           inline={inline}
           label="Project"
           open={projectOpen}
-          onOpenChange={(open) => {
-            setProjectOpen(open);
-            if (!open) setProjectSearch("");
-          }}
+          onOpenChange={(open) => { setProjectOpen(open); if (!open) setProjectSearch(""); }}
           triggerContent={projectTrigger}
           triggerClassName="min-w-0 max-w-full"
           popoverClassName="w-fit min-w-[11rem]"
-          extra={
-            issue.projectId ? (
-              <Link
-                to={projectLink(issue.projectId)!}
-                className="inline-flex items-center justify-center h-5 w-5 rounded hover:bg-accent/50 transition-colors text-muted-foreground hover:text-foreground"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <ArrowUpRight className="h-3 w-3" />
-              </Link>
-            ) : undefined
-          }
+          extra={issue.projectId ? (
+            <Link
+              to={projectLink(issue.projectId)!}
+              className="inline-flex items-center justify-center h-5 w-5 rounded hover:bg-accent/50 transition-colors text-muted-foreground hover:text-foreground"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <ArrowUpRight className="h-3 w-3" />
+            </Link>
+          ) : undefined}
         >
           {projectContent}
         </PropertyPicker>
@@ -2102,19 +1891,8 @@ export function IssueProperties({ issue, childIssues = [], onAddSubIssue, onUpda
           <div className="flex flex-wrap items-center gap-1.5">
             {childIssues.length > 0
               ? childIssues.map((child) => (
-<<<<<<< HEAD
-                  <Link
-                    key={child.id}
-                    to={`/issues/${child.identifier ?? child.id}`}
-                    className="inline-flex items-center rounded-full border border-border px-2 py-0.5 text-xs hover:bg-accent/50"
-                  >
-                    {child.identifier ?? child.title}
-                  </Link>
-                ))
-=======
                 <IssueReferencePill key={child.id} issue={child} />
               ))
->>>>>>> upstream/master
               : null}
             {onAddSubIssue ? (
               <button
@@ -2143,16 +1921,17 @@ export function IssueProperties({ issue, childIssues = [], onAddSubIssue, onUpda
           inline={inline}
           label="Reviewers"
           open={reviewersOpen}
-          onOpenChange={(open) => {
-            setReviewersOpen(open);
-            if (!open) setReviewerSearch("");
-          }}
+          onOpenChange={(open) => { setReviewersOpen(open); if (!open) setReviewerSearch(""); }}
           triggerContent={reviewerTrigger}
           triggerClassName="min-w-0 max-w-full"
           popoverClassName="w-56"
         >
-          {executionParticipantsContent("review", reviewerValues, reviewerSearch, setReviewerSearch, () =>
-            updateExecutionPolicy([], approverValues),
+          {executionParticipantsContent(
+            "review",
+            reviewerValues,
+            reviewerSearch,
+            setReviewerSearch,
+            () => updateExecutionPolicy([], approverValues),
           )}
         </PropertyPicker>
         {nextRunnableExecutionStage === "review" && reviewerValues.length > 0 ? runExecutionButton("review") : null}
@@ -2161,16 +1940,17 @@ export function IssueProperties({ issue, childIssues = [], onAddSubIssue, onUpda
           inline={inline}
           label="Approvers"
           open={approversOpen}
-          onOpenChange={(open) => {
-            setApproversOpen(open);
-            if (!open) setApproverSearch("");
-          }}
+          onOpenChange={(open) => { setApproversOpen(open); if (!open) setApproverSearch(""); }}
           triggerContent={approverTrigger}
           triggerClassName="min-w-0 max-w-full"
           popoverClassName="w-56"
         >
-          {executionParticipantsContent("approval", approverValues, approverSearch, setApproverSearch, () =>
-            updateExecutionPolicy(reviewerValues, []),
+          {executionParticipantsContent(
+            "approval",
+            approverValues,
+            approverSearch,
+            setApproverSearch,
+            () => updateExecutionPolicy(reviewerValues, []),
           )}
         </PropertyPicker>
         {nextRunnableExecutionStage === "approval" && approverValues.length > 0 ? runExecutionButton("approval") : null}
@@ -2216,13 +1996,7 @@ export function IssueProperties({ issue, childIssues = [], onAddSubIssue, onUpda
         )}
       </div>
 
-<<<<<<< HEAD
-      {issue.currentExecutionWorkspace?.branchName ||
-      issue.currentExecutionWorkspace?.cwd ||
-      issue.executionWorkspaceId ? (
-=======
       {liveWorkspaceService || issue.currentExecutionWorkspace?.branchName || issue.currentExecutionWorkspace?.cwd || issue.executionWorkspaceId ? (
->>>>>>> upstream/master
         <>
           <Separator />
           <div className="space-y-1">
@@ -2252,12 +2026,18 @@ export function IssueProperties({ issue, childIssues = [], onAddSubIssue, onUpda
             )}
             {issue.currentExecutionWorkspace?.branchName && (
               <PropertyRow label="Branch">
-                <TruncatedCopyable value={issue.currentExecutionWorkspace.branchName} icon={GitBranch} />
+                <TruncatedCopyable
+                  value={issue.currentExecutionWorkspace.branchName}
+                  icon={GitBranch}
+                />
               </PropertyRow>
             )}
             {issue.currentExecutionWorkspace?.cwd && (
               <PropertyRow label="Folder">
-                <TruncatedCopyable value={issue.currentExecutionWorkspace.cwd} icon={FolderOpen} />
+                <TruncatedCopyable
+                  value={issue.currentExecutionWorkspace.cwd}
+                  icon={FolderOpen}
+                />
               </PropertyRow>
             )}
           </div>
@@ -2270,7 +2050,10 @@ export function IssueProperties({ issue, childIssues = [], onAddSubIssue, onUpda
         {(issue.createdByAgentId || issue.createdByUserId) && (
           <PropertyRow label="Created by">
             {issue.createdByAgentId ? (
-              <Link to={`/agents/${issue.createdByAgentId}`} className="hover:underline">
+              <Link
+                to={`/agents/${issue.createdByAgentId}`}
+                className="hover:underline"
+              >
                 <Identity name={agentName(issue.createdByAgentId) ?? issue.createdByAgentId.slice(0, 8)} size="sm" />
               </Link>
             ) : (

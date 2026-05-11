@@ -62,16 +62,12 @@ export function CopyText({
       <button
         ref={triggerRef}
         type="button"
-<<<<<<< HEAD
-        className={cn("cursor-copy hover:text-foreground transition-colors", className)}
-=======
         aria-label={ariaLabel}
         title={title}
         className={cn(
           "cursor-copy hover:text-foreground transition-colors",
           className,
         )}
->>>>>>> upstream/master
         onClick={handleClick}
       >
         {children ?? text}

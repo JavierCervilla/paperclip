@@ -6,7 +6,10 @@ import { formatAssigneeUserLabel } from "../lib/assignees";
 import { buildCompanyUserInlineOptions, buildCompanyUserLabelMap } from "../lib/company-members";
 import { queryKeys } from "../lib/queryKeys";
 import { sortAgentsByRecency, getRecentAssigneeIds } from "../lib/recent-assignees";
-import { buildExecutionPolicy, stageParticipantValues } from "../lib/issue-execution-policy";
+import {
+  buildExecutionPolicy,
+  stageParticipantValues,
+} from "../lib/issue-execution-policy";
 import { cn } from "../lib/utils";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { User, Eye, ShieldCheck } from "lucide-react";
@@ -54,12 +57,8 @@ export function ExecutionParticipantPicker({
     [companyMembers?.users, currentUserId, issue.createdByUserId],
   );
 
-<<<<<<< HEAD
-  const userLabel = (userId: string | null | undefined) => formatAssigneeUserLabel(userId, currentUserId);
-=======
   const userLabel = (userId: string | null | undefined) =>
     formatAssigneeUserLabel(userId, currentUserId, userLabelMap);
->>>>>>> upstream/master
   const creatorUserLabel = userLabel(issue.createdByUserId);
 
   const agentName = (id: string) => {
@@ -84,7 +83,9 @@ export function ExecutionParticipantPicker({
   };
 
   const toggle = (value: string) => {
-    const next = values.includes(value) ? values.filter((v) => v !== value) : [...values, value];
+    const next = values.includes(value)
+      ? values.filter((v) => v !== value)
+      : [...values, value];
     updatePolicy(next);
   };
 
@@ -92,13 +93,7 @@ export function ExecutionParticipantPicker({
   const Icon = stageType === "review" ? Eye : ShieldCheck;
 
   return (
-    <Popover
-      open={open}
-      onOpenChange={(o) => {
-        setOpen(o);
-        if (!o) setSearch("");
-      }}
-    >
+    <Popover open={open} onOpenChange={(o) => { setOpen(o); if (!o) setSearch(""); }}>
       <PopoverTrigger asChild>
         <button
           className={cn(
@@ -110,7 +105,9 @@ export function ExecutionParticipantPicker({
         >
           <Icon className="h-3 w-3" />
           {values.length > 0 ? (
-            <span className="truncate max-w-[100px]">{values.map(participantLabel).join(", ")}</span>
+            <span className="truncate max-w-[100px]">
+              {values.map(participantLabel).join(", ")}
+            </span>
           ) : (
             <span>{label}</span>
           )}

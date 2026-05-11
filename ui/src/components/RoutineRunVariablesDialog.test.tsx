@@ -42,21 +42,10 @@ vi.mock("./IssueWorkspaceCard", async () => {
         if (issueWorkspaceDraftCalls > 20) {
           throw new Error("IssueWorkspaceCard onDraftChange looped");
         }
-<<<<<<< HEAD
-        onDraftChange?.(
-          {
-            executionWorkspaceId: null,
-            executionWorkspacePreference: "shared_workspace",
-            executionWorkspaceSettings: { mode: "shared_workspace" },
-          },
-          { canSave: true },
-        );
-=======
         onDraftChange?.(issueWorkspaceDraft, {
           canSave: true,
           workspaceBranchName: issueWorkspaceBranchName,
         });
->>>>>>> upstream/master
       }, [onDraftChange]);
 
       return <div data-testid="workspace-card">Workspace card</div>;
@@ -132,7 +121,6 @@ function createAgent(): Agent {
     pauseReason: null,
     pausedAt: null,
     permissions: { canCreateAgents: false },
-    workspaceConfig: {},
   };
 }
 

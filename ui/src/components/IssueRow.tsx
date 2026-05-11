@@ -127,14 +127,8 @@ export function IssueRow({
         {parkedBlockerIndicator}
       </span>
       <span className="flex min-w-0 flex-1 flex-col gap-1 sm:contents">
-<<<<<<< HEAD
-        <span className="line-clamp-2 text-sm sm:order-2 sm:min-w-0 sm:flex-1 sm:truncate sm:line-clamp-none">
-          {issue.title}
-          {titleSuffix}
-=======
         <span className={cn("line-clamp-2 text-sm sm:order-2 sm:min-w-0 sm:flex-1 sm:truncate sm:line-clamp-none", titleClassName)}>
           {issue.title}{titleSuffix}
->>>>>>> upstream/master
         </span>
         {checklistDependencyChips ? (
           <span className="flex flex-wrap gap-1 sm:order-3 sm:ml-[calc(theme(spacing.3)+theme(spacing.2))]">
@@ -142,23 +136,21 @@ export function IssueRow({
           </span>
         ) : null}
         <span className="flex items-center gap-2 sm:order-1 sm:shrink-0">
-          {desktopLeadingSpacer ? <span className="hidden w-3.5 shrink-0 sm:block" /> : null}
+          {desktopLeadingSpacer ? (
+            <span className="hidden w-3.5 shrink-0 sm:block" />
+          ) : null}
           {desktopMetaLeading ?? (
             <>
               <span className="hidden shrink-0 items-center gap-1 sm:inline-flex">
                 <StatusIcon status={issue.status} blockerAttention={issue.blockerAttention} className={selectedStatusClass} />
                 {productivityReviewIndicator}
               </span>
-<<<<<<< HEAD
-              <span className="shrink-0 font-mono text-xs text-muted-foreground">{identifier}</span>
-=======
               {checklistStep}
               <span className="shrink-0 font-mono text-xs text-muted-foreground">
                 {identifier}
               </span>
               {planningModeIndicator}
               {parkedBlockerIndicator}
->>>>>>> upstream/master
             </>
           )}
           {mobileMeta ? (
@@ -171,10 +163,12 @@ export function IssueRow({
           ) : null}
         </span>
       </span>
-      {desktopTrailing || trailingMeta ? (
+      {(desktopTrailing || trailingMeta) ? (
         <span className="ml-auto hidden shrink-0 items-center gap-2 sm:order-3 sm:flex sm:gap-3">
           {desktopTrailing}
-          {trailingMeta ? <span className="text-xs text-muted-foreground">{trailingMeta}</span> : null}
+          {trailingMeta ? (
+            <span className="text-xs text-muted-foreground">{trailingMeta}</span>
+          ) : null}
         </span>
       ) : null}
       {showUnreadSlot ? (

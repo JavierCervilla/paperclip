@@ -15,11 +15,7 @@ vi.mock("./MarkdownBody", () => ({
 }));
 
 vi.mock("./MarkdownEditor", () => ({
-  MarkdownEditor: ({
-    value,
-    onChange,
-    placeholder,
-  }: {
+  MarkdownEditor: ({ value, onChange, placeholder }: {
     value: string;
     onChange: (value: string) => void;
     placeholder?: string;
@@ -50,16 +46,8 @@ vi.mock("./ApprovalCard", () => ({
     <div>
       <div>{approval.type}</div>
       <div>{String(approval.payload.title ?? "")}</div>
-      {onApprove ? (
-        <button type="button" onClick={onApprove}>
-          Approve
-        </button>
-      ) : null}
-      {onReject ? (
-        <button type="button" onClick={onReject}>
-          Reject
-        </button>
-      ) : null}
+      {onApprove ? <button type="button" onClick={onApprove}>Approve</button> : null}
+      {onReject ? <button type="button" onClick={onReject}>Reject</button> : null}
     </div>
   ),
 }));
@@ -123,7 +111,6 @@ describe("CommentThread", () => {
       permissions: { canCreateAgents: false },
       lastHeartbeatAt: null,
       metadata: null,
-      workspaceConfig: {},
       createdAt: new Date("2026-03-11T00:00:00.000Z"),
       updatedAt: new Date("2026-03-11T00:00:00.000Z"),
     };
@@ -133,16 +120,14 @@ describe("CommentThread", () => {
         <MemoryRouter>
           <CommentThread
             comments={[]}
-            linkedRuns={[
-              {
-                runId: "run-12345678abcd",
-                status: "succeeded",
-                agentId: "agent-1",
-                createdAt: "2026-03-11T07:00:00.000Z",
-                startedAt: "2026-03-11T08:00:00.000Z",
-                finishedAt: "2026-03-11T10:00:00.000Z",
-              },
-            ]}
+            linkedRuns={[{
+              runId: "run-12345678abcd",
+              status: "succeeded",
+              agentId: "agent-1",
+              createdAt: "2026-03-11T07:00:00.000Z",
+              startedAt: "2026-03-11T08:00:00.000Z",
+              finishedAt: "2026-03-11T10:00:00.000Z",
+            }]}
             agentMap={new Map([["agent-1", agent]])}
             onAdd={async () => {}}
           />
@@ -159,9 +144,7 @@ describe("CommentThread", () => {
     expect(container.textContent).toContain("succeeded");
     expect(container.textContent).toContain("2h ago");
     expect(container.textContent).not.toContain("4h ago");
-    const runLink = container.querySelector(
-      'a[href="/agents/agent-1/runs/run-12345678abcd"]',
-    ) as HTMLAnchorElement | null;
+    const runLink = container.querySelector('a[href="/agents/agent-1/runs/run-12345678abcd"]') as HTMLAnchorElement | null;
     expect(runLink?.textContent).toContain("run-1234");
     expect(runLink?.className).toContain("rounded-md");
     expect(runLink?.className).toContain("px-2");
@@ -177,7 +160,11 @@ describe("CommentThread", () => {
     act(() => {
       root.render(
         <MemoryRouter>
-          <CommentThread comments={[]} composerDisabledReason="Workspace is closed." onAdd={async () => {}} />
+          <CommentThread
+            comments={[]}
+            composerDisabledReason="Workspace is closed."
+            onAdd={async () => {}}
+          />
         </MemoryRouter>,
       );
     });
@@ -241,7 +228,12 @@ describe("CommentThread", () => {
     act(() => {
       root.render(
         <MemoryRouter>
-          <CommentThread comments={[]} issueStatus="done" currentAssigneeValue="agent:agent-1" onAdd={onAdd} />
+          <CommentThread
+            comments={[]}
+            issueStatus="done"
+            currentAssigneeValue="agent:agent-1"
+            onAdd={onAdd}
+          />
         </MemoryRouter>,
       );
     });
@@ -256,7 +248,10 @@ describe("CommentThread", () => {
     expect(submitButton).toBeDefined();
 
     act(() => {
-      const valueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set;
+      const valueSetter = Object.getOwnPropertyDescriptor(
+        window.HTMLTextAreaElement.prototype,
+        "value",
+      )?.set;
       valueSetter?.call(editor, "Please pick this back up");
       editor?.dispatchEvent(new Event("input", { bubbles: true }));
     });
@@ -295,7 +290,6 @@ describe("CommentThread", () => {
       permissions: { canCreateAgents: false },
       lastHeartbeatAt: null,
       metadata: null,
-      workspaceConfig: {},
       createdAt: new Date("2026-03-11T00:00:00.000Z"),
       updatedAt: new Date("2026-03-11T00:00:00.000Z"),
     };
@@ -351,20 +345,6 @@ describe("CommentThread", () => {
       root.render(
         <MemoryRouter>
           <CommentThread
-<<<<<<< HEAD
-            comments={[
-              {
-                id: "comment-1",
-                companyId: "company-1",
-                issueId: "issue-1",
-                authorAgentId: null,
-                authorUserId: "user-1",
-                body: "Hello from the comment body",
-                createdAt: new Date("2026-03-11T11:00:00.000Z"),
-                updatedAt: new Date("2026-03-11T11:00:00.000Z"),
-              },
-            ]}
-=======
             comments={[{
               id: "comment-1",
               companyId: "company-1",
@@ -378,7 +358,6 @@ describe("CommentThread", () => {
               createdAt: new Date("2026-03-11T11:00:00.000Z"),
               updatedAt: new Date("2026-03-11T11:00:00.000Z"),
             }]}
->>>>>>> upstream/master
             onAdd={async () => {}}
           />
         </MemoryRouter>,

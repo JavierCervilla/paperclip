@@ -439,7 +439,7 @@ function MermaidDiagramBlock({ source, darkMode }: { source: string; darkMode: b
 
   useEffect(() => {
     let active = true;
-    setSvg(null); // eslint-disable-line react-hooks/set-state-in-effect
+    setSvg(null);
     setError(null);
 
     loadMermaid()
@@ -457,7 +457,10 @@ function MermaidDiagramBlock({ source, darkMode }: { source: string; darkMode: b
       })
       .catch((err) => {
         if (!active) return;
-        const message = err instanceof Error && err.message ? err.message : "Failed to render Mermaid diagram.";
+        const message =
+          err instanceof Error && err.message
+            ? err.message
+            : "Failed to render Mermaid diagram.";
         setError(message);
       });
 
@@ -545,15 +548,7 @@ export function MarkdownBody({
       if (mermaidSource) {
         return <MermaidDiagramBlock source={mermaidSource} darkMode={theme === "dark"} />;
       }
-<<<<<<< HEAD
-      return (
-        <pre {...preProps} style={mergeScrollableBlockStyle(preProps.style as React.CSSProperties | undefined)}>
-          {preChildren}
-        </pre>
-      );
-=======
       return <CodeBlock preProps={preProps}>{preChildren}</CodeBlock>;
->>>>>>> upstream/master
     },
     code: ({ node: _node, style: codeStyle, children: codeChildren, ...codeProps }) => (
       <code {...codeProps} style={mergeWrapStyle(codeStyle as React.CSSProperties | undefined)}>
@@ -587,14 +582,6 @@ export function MarkdownBody({
 
       const parsed = href ? parseMentionChipHref(href) : null;
       if (parsed) {
-<<<<<<< HEAD
-        const targetHref =
-          parsed.kind === "project"
-            ? `/projects/${parsed.projectId}`
-            : parsed.kind === "skill"
-              ? `/skills/${parsed.skillId}`
-              : `/agents/${parsed.agentId}`;
-=======
         const targetHref = parsed.kind === "project"
           ? `/projects/${parsed.projectId}`
           : parsed.kind === "issue"
@@ -604,7 +591,6 @@ export function MarkdownBody({
             : parsed.kind === "user"
               ? "/company/settings/access"
             : `/agents/${parsed.agentId}`;
->>>>>>> upstream/master
         return (
           <a
             href={targetHref}
@@ -614,10 +600,7 @@ export function MarkdownBody({
               parsed.kind === "project" && "paperclip-project-mention-chip",
             )}
             data-mention-kind={parsed.kind}
-            style={{
-              ...mergeWrapStyle(linkStyle as React.CSSProperties | undefined),
-              ...mentionChipInlineStyle(parsed),
-            }}
+            style={{ ...mergeWrapStyle(linkStyle as React.CSSProperties | undefined), ...mentionChipInlineStyle(parsed) }}
           >
             {linkChildren}
           </a>
@@ -653,19 +636,8 @@ export function MarkdownBody({
           {...imgProps}
           src={finalSrc}
           alt={alt ?? ""}
-          onClick={
-            onImageClick && finalSrc
-              ? (e) => {
-                  e.preventDefault();
-                  onImageClick(finalSrc);
-                }
-              : undefined
-          }
-          style={
-            onImageClick
-              ? { cursor: "pointer", ...(imgProps.style as React.CSSProperties | undefined) }
-              : (imgProps.style as React.CSSProperties | undefined)
-          }
+          onClick={onImageClick && finalSrc ? (e) => { e.preventDefault(); onImageClick(finalSrc); } : undefined}
+          style={onImageClick ? { cursor: "pointer", ...(imgProps.style as React.CSSProperties | undefined) } : imgProps.style as React.CSSProperties | undefined}
         />
       );
     };
@@ -680,7 +652,11 @@ export function MarkdownBody({
       )}
       style={mergeWrapStyle(style)}
     >
-      <Markdown remarkPlugins={remarkPlugins} components={components} urlTransform={safeMarkdownUrlTransform}>
+      <Markdown
+        remarkPlugins={remarkPlugins}
+        components={components}
+        urlTransform={safeMarkdownUrlTransform}
+      >
         {children}
       </Markdown>
     </div>

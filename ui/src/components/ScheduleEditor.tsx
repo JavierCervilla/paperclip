@@ -152,16 +152,6 @@ export function parseCronToPreset(cron: string): {
   return { preset: "custom", ...defaults };
 }
 
-<<<<<<< HEAD
-function buildCron(
-  preset: SchedulePreset,
-  hour: string,
-  minute: string,
-  dayOfWeek: string,
-  dayOfMonth: string,
-): string {
-  switch (preset) {
-=======
 // ---------------------------------------------------------------------------
 // Richer internal parser that can handle multi-value fields
 // ---------------------------------------------------------------------------
@@ -384,7 +374,6 @@ function buildCronFromState(s: EditorState): string {
   const isWeekdayRangeSelection = (days: number[]): boolean =>
     days.length === 5 && days.every((day, index) => day === index + 1);
   switch (s.preset) {
->>>>>>> upstream/master
     case "every_minute":
       return "* * * * *";
     case "every_n_minutes": {
@@ -647,16 +636,6 @@ function DayOfMonthPicker({
 // ScheduleEditor component (rich)
 // ---------------------------------------------------------------------------
 
-<<<<<<< HEAD
-export function ScheduleEditor({ value, onChange }: { value: string; onChange: (cron: string) => void }) {
-  const parsed = useMemo(() => parseCronToPreset(value), [value]);
-  const [preset, setPreset] = useState<SchedulePreset>(parsed.preset);
-  const [hour, setHour] = useState(parsed.hour);
-  const [minute, setMinute] = useState(parsed.minute);
-  const [dayOfWeek, setDayOfWeek] = useState(parsed.dayOfWeek);
-  const [dayOfMonth, setDayOfMonth] = useState(parsed.dayOfMonth);
-  const [customCron, setCustomCron] = useState(preset === "custom" ? value : "");
-=======
 export function ScheduleEditor({
   value,
   onChange,
@@ -665,7 +644,6 @@ export function ScheduleEditor({
   onChange: (cron: string) => void;
 }) {
   const [state, setState] = useState<EditorState>(() => parseCronToEditorState(value));
->>>>>>> upstream/master
 
   // Sync when external value changes and isn't the same cron we just emitted.
   useEffect(() => {
@@ -909,7 +887,9 @@ export function ScheduleEditor({
             placeholder="0 10 * * *"
             className="font-mono text-sm"
           />
-          <p className="text-xs text-muted-foreground">Five fields: minute hour day-of-month month day-of-week</p>
+          <p className="text-xs text-muted-foreground">
+            Five fields: minute hour day-of-month month day-of-week
+          </p>
         </div>
       )}
 

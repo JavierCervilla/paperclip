@@ -90,13 +90,9 @@ export function ActiveAgentsPanel({
 
   return (
     <div>
-<<<<<<< HEAD
-      <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Agents</h3>
-=======
       <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
         {title}
       </h3>
->>>>>>> upstream/master
       {runs.length === 0 ? (
         <div className="rounded-xl border border-border p-4">
           <p className="text-sm text-muted-foreground">{emptyMessage}</p>
@@ -146,16 +142,6 @@ const AgentRunCard = memo(function AgentRunCard({
   className?: string;
 }) {
   return (
-<<<<<<< HEAD
-    <div
-      className={cn(
-        "flex h-[320px] flex-col overflow-hidden rounded-xl border shadow-sm",
-        isActive
-          ? "border-cyan-500/25 bg-cyan-500/[0.04] shadow-[0_16px_40px_rgba(6,182,212,0.08)]"
-          : "border-border bg-background/70",
-      )}
-    >
-=======
     <div className={cn(
       "flex h-[320px] flex-col overflow-hidden rounded-xl border shadow-sm",
       isActive
@@ -163,7 +149,6 @@ const AgentRunCard = memo(function AgentRunCard({
         : "border-border bg-background/70",
       className,
     )}>
->>>>>>> upstream/master
       <div className="border-b border-border/60 px-3 py-3">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
@@ -179,13 +164,7 @@ const AgentRunCard = memo(function AgentRunCard({
               <Identity name={run.agentName} size="sm" className="[&>span:last-child]:!text-[11px]" />
             </div>
             <div className="mt-2 flex items-center gap-2 text-[11px] text-muted-foreground">
-              <span>
-                {isActive
-                  ? "Live now"
-                  : run.finishedAt
-                    ? `Finished ${relativeTime(run.finishedAt)}`
-                    : `Started ${relativeTime(run.createdAt)}`}
-              </span>
+              <span>{isActive ? "Live now" : run.finishedAt ? `Finished ${relativeTime(run.finishedAt)}` : `Started ${relativeTime(run.createdAt)}`}</span>
             </div>
           </div>
 
@@ -205,11 +184,7 @@ const AgentRunCard = memo(function AgentRunCard({
                 "line-clamp-2 hover:underline",
                 isActive ? "text-cyan-700 dark:text-cyan-300" : "text-muted-foreground hover:text-foreground",
               )}
-              title={
-                issue?.title
-                  ? `${issue?.identifier ?? run.issueId.slice(0, 8)} - ${issue.title}`
-                  : (issue?.identifier ?? run.issueId.slice(0, 8))
-              }
+              title={issue?.title ? `${issue?.identifier ?? run.issueId.slice(0, 8)} - ${issue.title}` : issue?.identifier ?? run.issueId.slice(0, 8)}
             >
               {issue?.identifier ?? run.issueId.slice(0, 8)}
               {issue?.title ? ` - ${issue.title}` : ""}
@@ -219,7 +194,12 @@ const AgentRunCard = memo(function AgentRunCard({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
-        <RunChatSurface run={run} transcript={transcript} hasOutput={hasOutput} companyId={companyId} />
+        <RunChatSurface
+          run={run}
+          transcript={transcript}
+          hasOutput={hasOutput}
+          companyId={companyId}
+        />
       </div>
     </div>
   );

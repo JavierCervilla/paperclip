@@ -21,35 +21,17 @@ interface RunChatSurfaceProps {
   companyId?: string | null;
 }
 
-<<<<<<< HEAD
-export function RunChatSurface({ run, transcript, hasOutput, companyId }: RunChatSurfaceProps) {
-=======
 export const RunChatSurface = memo(function RunChatSurface({
   run,
   transcript,
   hasOutput,
   companyId,
 }: RunChatSurfaceProps) {
->>>>>>> upstream/master
   const active = isRunActive(run);
   const liveRuns = useMemo(() => (active ? [run] : EMPTY_LIVE_RUNS), [active, run]);
   const linkedRuns = useMemo<IssueChatLinkedRun[]>(
     () =>
       active
-<<<<<<< HEAD
-        ? []
-        : [
-            {
-              runId: run.id,
-              status: run.status,
-              agentId: run.agentId,
-              agentName: run.agentName,
-              createdAt: run.createdAt,
-              startedAt: run.startedAt,
-              finishedAt: run.finishedAt,
-            },
-          ],
-=======
         ? EMPTY_LINKED_RUNS
         : [{
             runId: run.id,
@@ -60,7 +42,6 @@ export const RunChatSurface = memo(function RunChatSurface({
             startedAt: run.startedAt,
             finishedAt: run.finishedAt,
           }],
->>>>>>> upstream/master
     [active, run],
   );
   const transcriptsByRunId = useMemo(

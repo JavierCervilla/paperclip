@@ -86,9 +86,6 @@ function parsePersistedLogContent(
   return parsed;
 }
 
-<<<<<<< HEAD
-export function useLiveRunTranscripts({ runs, companyId, maxChunksPerRun = 200 }: UseLiveRunTranscriptsOptions) {
-=======
 export function useLiveRunTranscripts({
   runs,
   companyId,
@@ -97,7 +94,6 @@ export function useLiveRunTranscripts({
   logReadLimitBytes = LOG_READ_LIMIT_BYTES,
   enableRealtimeUpdates = true,
 }: UseLiveRunTranscriptsOptions) {
->>>>>>> upstream/master
   const runsKey = useMemo(
     () =>
       runs
@@ -140,11 +136,7 @@ export function useLiveRunTranscripts({
     [normalizedRuns],
   );
   const runIdsKey = useMemo(
-    () =>
-      normalizedRuns
-        .map((run) => run.id)
-        .sort((a, b) => a.localeCompare(b))
-        .join(","),
+    () => normalizedRuns.map((run) => run.id).sort((a, b) => a.localeCompare(b)).join(","),
     [normalizedRuns],
   );
 
@@ -260,20 +252,11 @@ export function useLiveRunTranscripts({
 
     void readAll();
     const activeRuns = normalizedRuns.filter((run) => !isTerminalStatus(run.status));
-<<<<<<< HEAD
-    const interval =
-      activeRuns.length > 0
-        ? window.setInterval(() => {
-            void Promise.all(activeRuns.map((run) => readRunLog(run)));
-          }, LOG_POLL_INTERVAL_MS)
-        : null;
-=======
     const interval = activeRuns.length > 0 && logPollIntervalMs > 0
       ? window.setInterval(() => {
           void Promise.all(activeRuns.map((run) => readRunLog(run)));
         }, logPollIntervalMs)
       : null;
->>>>>>> upstream/master
 
     return () => {
       cancelled = true;
@@ -327,14 +310,12 @@ export function useLiveRunTranscripts({
               : readString(payload["stream"]) === "system"
                 ? "system"
                 : "stdout";
-          appendChunks(runId, [
-            {
-              ts,
-              stream,
-              chunk,
-              dedupeKey: `log:${runId}:${ts}:${stream}:${chunk}`,
-            },
-          ]);
+          appendChunks(runId, [{
+            ts,
+            stream,
+            chunk,
+            dedupeKey: `log:${runId}:${ts}:${stream}:${chunk}`,
+          }]);
           return;
         }
 
@@ -342,27 +323,23 @@ export function useLiveRunTranscripts({
           const seq = typeof payload["seq"] === "number" ? payload["seq"] : null;
           const eventType = readString(payload["eventType"]) ?? "event";
           const messageText = readString(payload["message"]) ?? eventType;
-          appendChunks(runId, [
-            {
-              ts: event.createdAt,
-              stream: eventType === "error" ? "stderr" : "system",
-              chunk: messageText,
-              dedupeKey: `socket:event:${runId}:${seq ?? `${eventType}:${messageText}:${event.createdAt}`}`,
-            },
-          ]);
+          appendChunks(runId, [{
+            ts: event.createdAt,
+            stream: eventType === "error" ? "stderr" : "system",
+            chunk: messageText,
+            dedupeKey: `socket:event:${runId}:${seq ?? `${eventType}:${messageText}:${event.createdAt}`}`,
+          }]);
           return;
         }
 
         if (event.type === "heartbeat.run.status") {
           const status = readString(payload["status"]) ?? "updated";
-          appendChunks(runId, [
-            {
-              ts: event.createdAt,
-              stream: isTerminalStatus(status) && status !== "succeeded" ? "stderr" : "system",
-              chunk: `run ${status}`,
-              dedupeKey: `socket:status:${runId}:${status}:${readString(payload["finishedAt"]) ?? ""}`,
-            },
-          ]);
+          appendChunks(runId, [{
+            ts: event.createdAt,
+            stream: isTerminalStatus(status) && status !== "succeeded" ? "stderr" : "system",
+            chunk: `run ${status}`,
+            dedupeKey: `socket:status:${runId}:${status}:${readString(payload["finishedAt"]) ?? ""}`,
+          }]);
         }
       };
 

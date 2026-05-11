@@ -12,8 +12,6 @@ import {
   Repeat,
   GitBranch,
   Settings,
-  Activity,
-  KeyRound,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { NavLink } from "@/lib/router";
@@ -57,16 +55,6 @@ export function Sidebar() {
     <aside className="w-full h-full min-h-0 border-r border-border bg-background flex flex-col">
       {/* Top bar: Company name (bold) + Search — aligned with top sections (no visible border) */}
       <div className="flex items-center gap-1 px-3 h-12 shrink-0">
-<<<<<<< HEAD
-        {selectedCompany?.brandColor && (
-          <div className="w-4 h-4 rounded-sm shrink-0 ml-1" style={{ backgroundColor: selectedCompany.brandColor }} />
-        )}
-        <span className="flex-1 text-sm font-bold text-foreground truncate pl-1">
-          {selectedCompany?.name ?? "Select company"}
-        </span>
-        <Button variant="ghost" size="icon-sm" className="text-muted-foreground shrink-0" onClick={openSearch}>
-          <Search className="h-4 w-4" />
-=======
         <SidebarCompanyMenu />
         <Button
           asChild
@@ -79,7 +67,6 @@ export function Sidebar() {
           <NavLink to="/search">
             <Search className="h-4 w-4" />
           </NavLink>
->>>>>>> upstream/master
         </Button>
       </div>
 
@@ -129,8 +116,6 @@ export function Sidebar() {
           <SidebarNavItem to="/skills" label="Skills" icon={Boxes} />
           <SidebarNavItem to="/costs" label="Costs" icon={DollarSign} />
           <SidebarNavItem to="/activity" label="Activity" icon={History} />
-          <SidebarNavItem to="/heartbeat-monitoring" label="Heartbeats" icon={Activity} />
-          <SidebarNavItem to="/company/secrets" label="Secrets" icon={KeyRound} />
           <SidebarNavItem to="/company/settings" label="Settings" icon={Settings} />
         </SidebarSection>
 

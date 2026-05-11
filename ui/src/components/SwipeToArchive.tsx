@@ -108,7 +108,8 @@ export function SwipeToArchive({
 
   const handleTouchEnd = () => {
     if (disabled || isCollapsing) return;
-    const shouldCommit = widthRef.current > 0 && Math.abs(offsetX) >= widthRef.current * COMMIT_THRESHOLD;
+    const shouldCommit =
+      widthRef.current > 0 && Math.abs(offsetX) >= widthRef.current * COMMIT_THRESHOLD;
     if (shouldCommit) {
       commitArchive();
       return;
@@ -116,7 +117,7 @@ export function SwipeToArchive({
     reset();
   };
 
-  const archiveReveal = widthRef.current > 0 ? Math.min(Math.abs(offsetX) / widthRef.current, 1) : 0; // eslint-disable-line react-hooks/refs
+  const archiveReveal = widthRef.current > 0 ? Math.min(Math.abs(offsetX) / widthRef.current, 1) : 0;
 
   return (
     <div
@@ -150,14 +151,10 @@ export function SwipeToArchive({
       </div>
       <div
         data-inbox-row-surface
-<<<<<<< HEAD
-        className={cn("relative will-change-transform", selected ? "bg-zinc-100 dark:bg-zinc-800" : "bg-card")}
-=======
         className={cn(
           "relative will-change-transform",
           selected ? "bg-zinc-100 dark:bg-zinc-800" : "bg-background",
         )}
->>>>>>> upstream/master
         style={{
           transform: `translate3d(${offsetX}px, 0, 0)`,
           transition: isDragging ? "none" : "transform 180ms ease-out",

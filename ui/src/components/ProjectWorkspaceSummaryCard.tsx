@@ -29,7 +29,11 @@ interface ProjectWorkspaceSummaryCardProps {
     workspaceId: string;
     action: "start" | "stop" | "restart";
   }) => void;
-  onCloseWorkspace: (input: { id: string; name: string; status: ExecutionWorkspace["status"] }) => void;
+  onCloseWorkspace: (input: {
+    id: string;
+    name: string;
+    status: ExecutionWorkspace["status"];
+  }) => void;
 }
 
 export function ProjectWorkspaceSummaryCard({
@@ -122,20 +126,16 @@ export function ProjectWorkspaceSummaryCard({
                 {hasRunningServices ? "Stop services" : "Start services"}
               </Button>
             ) : null}
-            {summary.kind === "execution_workspace" &&
-            summary.executionWorkspaceId &&
-            summary.executionWorkspaceStatus ? (
+            {summary.kind === "execution_workspace" && summary.executionWorkspaceId && summary.executionWorkspaceStatus ? (
               <Button
                 variant="ghost"
                 size="sm"
                 className="h-9 px-3 text-xs text-muted-foreground"
-                onClick={() =>
-                  onCloseWorkspace({
-                    id: summary.executionWorkspaceId!,
-                    name: summary.workspaceName,
-                    status: summary.executionWorkspaceStatus!,
-                  })
-                }
+                onClick={() => onCloseWorkspace({
+                  id: summary.executionWorkspaceId!,
+                  name: summary.workspaceName,
+                  status: summary.executionWorkspaceStatus!,
+                })}
               >
                 {summary.executionWorkspaceStatus === "cleanup_failed" ? "Retry close" : "Close workspace"}
               </Button>
@@ -186,16 +186,10 @@ export function ProjectWorkspaceSummaryCard({
                       copiedLabel="Path copied"
                     >
                       {truncatePath(summary.cwd)}
-<<<<<<< HEAD
-                    </span>
-                    <CopyText
-                      text={summary.cwd}
-=======
                     </CopyText>
                     <CopyText
                       text={summary.cwd}
                       ariaLabel="Copy path"
->>>>>>> upstream/master
                       className="mt-0.5 shrink-0 text-muted-foreground hover:text-foreground"
                       copiedLabel="Path copied"
                     >

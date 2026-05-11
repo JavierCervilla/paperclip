@@ -1,10 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { NavLink, useLocation } from "@/lib/router";
 import { useQuery } from "@tanstack/react-query";
-<<<<<<< HEAD
-import { ChevronRight, Plus } from "lucide-react";
-import { DndContext, MouseSensor, closestCenter, type DragEndEvent, useSensor, useSensors } from "@dnd-kit/core";
-=======
 import { FolderOpen, Plus } from "lucide-react";
 import {
   DndContext,
@@ -14,7 +10,6 @@ import {
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
->>>>>>> upstream/master
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useCompany } from "../context/CompanyContext";
@@ -27,11 +22,7 @@ import { queryKeys } from "../lib/queryKeys";
 import { cn, projectRouteRef } from "../lib/utils";
 import { useProjectOrder } from "../hooks/useProjectOrder";
 import { BudgetSidebarMarker } from "./BudgetSidebarMarker";
-<<<<<<< HEAD
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-=======
 import { SidebarSection, type SidebarSectionRadioChoice } from "./SidebarSection";
->>>>>>> upstream/master
 import { PluginSlotMount, usePluginSlots } from "@/plugins/slots";
 import {
   getProjectSortModeStorageKey,
@@ -59,12 +50,6 @@ type ProjectItemProps = {
   project: Project;
   projectSidebarSlots: ProjectSidebarSlot[];
   setSidebarOpen: (open: boolean) => void;
-<<<<<<< HEAD
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: project.id });
-
-  const routeRef = projectRouteRef(project);
-=======
   isDragging?: boolean;
 };
 
@@ -159,7 +144,6 @@ function SortableProjectItem(props: ProjectItemProps) {
     transition,
     isDragging,
   } = useSortable({ id: props.project.id });
->>>>>>> upstream/master
 
   return (
     <div
@@ -173,52 +157,7 @@ function SortableProjectItem(props: ProjectItemProps) {
       {...attributes}
       {...listeners}
     >
-<<<<<<< HEAD
-      <div className="flex flex-col gap-0.5">
-        <NavLink
-          to={`/projects/${routeRef}/issues`}
-          state={SIDEBAR_SCROLL_RESET_STATE}
-          onClick={(e) => {
-            if (isDragging) {
-              e.preventDefault();
-              return;
-            }
-            if (isMobile) setSidebarOpen(false);
-          }}
-          className={cn(
-            "flex items-center gap-2.5 px-3 py-1.5 text-[13px] font-medium transition-colors",
-            activeProjectRef === routeRef || activeProjectRef === project.id
-              ? "bg-accent text-foreground"
-              : "text-foreground/80 hover:bg-accent/50 hover:text-foreground",
-          )}
-        >
-          <span className="shrink-0 h-3.5 w-3.5 rounded-sm" style={{ backgroundColor: project.color ?? "#6366f1" }} />
-          <span className="flex-1 truncate">{project.name}</span>
-          {project.pauseReason === "budget" ? <BudgetSidebarMarker title="Project paused by budget" /> : null}
-        </NavLink>
-        {projectSidebarSlots.length > 0 && (
-          <div className="ml-5 flex flex-col gap-0.5">
-            {projectSidebarSlots.map((slot) => (
-              <PluginSlotMount
-                key={`${project.id}:${slot.pluginKey}:${slot.id}`}
-                slot={slot}
-                context={{
-                  companyId,
-                  companyPrefix,
-                  projectId: project.id,
-                  projectRef: routeRef,
-                  entityId: project.id,
-                  entityType: "project",
-                }}
-                missingBehavior="placeholder"
-              />
-            ))}
-          </div>
-        )}
-      </div>
-=======
       <ProjectItem {...props} isDragging={isDragging} />
->>>>>>> upstream/master
     </div>
   );
 }
@@ -256,7 +195,10 @@ export function SidebarProjects() {
     return readProjectSortMode(sortModeStorageKey);
   });
 
-  const visibleProjects = useMemo(() => (projects ?? []).filter((project: Project) => !project.archivedAt), [projects]);
+  const visibleProjects = useMemo(
+    () => (projects ?? []).filter((project: Project) => !project.archivedAt),
+    [projects],
+  );
   const { orderedProjects, persistOrder } = useProjectOrder({
     projects: visibleProjects,
     companyId: selectedCompanyId,
@@ -348,39 +290,6 @@ export function SidebarProjects() {
   );
 
   return (
-<<<<<<< HEAD
-    <Collapsible open={open} onOpenChange={setOpen}>
-      <div className="group">
-        <div className="flex items-center px-3 py-1.5">
-          <CollapsibleTrigger className="flex items-center gap-1 flex-1 min-w-0">
-            <ChevronRight
-              className={cn(
-                "h-3 w-3 text-muted-foreground/60 transition-transform opacity-0 group-hover:opacity-100",
-                open && "rotate-90",
-              )}
-            />
-            <span className="text-[10px] font-medium uppercase tracking-widest font-mono text-muted-foreground/60">
-              Projects
-            </span>
-          </CollapsibleTrigger>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              openNewProject();
-            }}
-            className="flex items-center justify-center h-4 w-4 rounded text-muted-foreground/60 hover:text-foreground hover:bg-accent/50 transition-colors"
-            aria-label="New project"
-          >
-            <Plus className="h-3 w-3" />
-          </button>
-        </div>
-      </div>
-
-      <CollapsibleContent>
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-          <SortableContext items={orderedProjects.map((project) => project.id)} strategy={verticalListSortingStrategy}>
-            <div className="flex flex-col gap-0.5 mt-0.5">
-=======
     <SidebarSection
       label="Projects"
       collapsible={{ open, onOpenChange: setOpen }}
@@ -412,7 +321,6 @@ export function SidebarProjects() {
             strategy={verticalListSortingStrategy}
           >
             <div className="flex flex-col gap-0.5">
->>>>>>> upstream/master
               {orderedProjects.map((project: Project) => (
                 <SortableProjectItem
                   key={project.id}

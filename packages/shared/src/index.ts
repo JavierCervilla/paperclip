@@ -727,8 +727,7 @@ export {
   testAdapterEnvironmentSchema,
   agentPermissionsSchema,
   updateAgentPermissionsSchema,
-  updateAgentWorkspaceConfigSchema,
-  agentWorkspaceConfigSchema,
+  agentRuntimeConfigSchema,
   type CreateAgent,
   type CreateAgentHire,
   type UpdateAgent,
@@ -741,8 +740,6 @@ export {
   type ResetAgentSession,
   type TestAdapterEnvironment,
   type UpdateAgentPermissions,
-  type UpdateAgentWorkspaceConfig,
-  type AgentWorkspaceConfigInput,
   createProjectSchema,
   updateProjectSchema,
   createProjectWorkspaceSchema,
@@ -1023,10 +1020,6 @@ export {
   type PluginStateScopeKey,
   type SetPluginState,
   type ListPluginState,
-  createWebhookSchema,
-  updateWebhookSchema,
-  type CreateWebhook,
-  type UpdateWebhook,
 } from "./validators/index.js";
 
 export { API_PREFIX, API } from "./api.js";

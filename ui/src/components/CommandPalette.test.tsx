@@ -74,16 +74,6 @@ vi.mock("@/components/ui/command", () => ({
   CommandDialog: ({ open, children }: { open: boolean; children: ReactNode }) => (open ? <div>{children}</div> : null),
   CommandEmpty: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   CommandGroup: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-<<<<<<< HEAD
-  CommandInput: ({ value, onValueChange }: { value: string; onValueChange: (value: string) => void }) => (
-    <div>
-      <input aria-label="Command search" value={value} onChange={(event) => onValueChange(event.currentTarget.value)} />
-      <button type="button" aria-label="Set query" onClick={() => onValueChange("pull/3303")} />
-    </div>
-  ),
-  CommandItem: ({ children, onSelect }: { children: ReactNode; onSelect?: () => void }) => (
-    <button onClick={onSelect}>{children}</button>
-=======
   CommandInput: ({
     value,
     onValueChange,
@@ -115,7 +105,6 @@ vi.mock("@/components/ui/command", () => ({
     <button data-testid={testId} onClick={onSelect}>
       {children}
     </button>
->>>>>>> upstream/master
   ),
   CommandList: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   CommandSeparator: () => <hr />,
@@ -155,7 +144,11 @@ function renderWithQueryClient(node: ReactNode, container: HTMLDivElement) {
   });
 
   act(() => {
-    root.render(<QueryClientProvider client={queryClient}>{node}</QueryClientProvider>);
+    root.render(
+      <QueryClientProvider client={queryClient}>
+        {node}
+      </QueryClientProvider>,
+    );
   });
 
   return { root, queryClient };

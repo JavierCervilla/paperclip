@@ -65,9 +65,6 @@ export function InlineEditor({
   const markdownRef = useRef<MarkdownEditorRef>(null);
   const autosaveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const blurCommitFrameRef = useRef<(() => void) | null>(null);
-<<<<<<< HEAD
-  const { state: autosaveState, markDirty, reset, runSave } = useAutosaveIndicator();
-=======
   const pendingFocusFrameRef = useRef<number | null>(null);
   const justEnteredEditRef = useRef(false);
   const hasBeenFocusedRef = useRef(false);
@@ -77,7 +74,6 @@ export function InlineEditor({
     reset,
     runSave,
   } = useAutosaveIndicator();
->>>>>>> upstream/master
 
   useEffect(() => {
     const previousValue = lastPropValueRef.current;
@@ -157,22 +153,21 @@ export function InlineEditor({
   }, [multiline, multilineEditing, multilineFocused, autosaveState]);
 
 
-  const commit = useCallback(
-    async (nextValue = draft) => {
-      const valueToSave = nextValue.trim();
-      const valueChanged = valueToSave !== value;
-      const shouldSave = nullable ? valueChanged : Boolean(valueToSave && valueChanged);
-      if (shouldSave) {
-        await Promise.resolve(onSave(valueToSave));
-      } else {
-        setDraft(value);
-      }
-      if (!multiline) {
-        setEditing(false);
-      }
-    },
-    [draft, multiline, nullable, onSave, value],
-  );
+  const commit = useCallback(async (nextValue = draft) => {
+    const valueToSave = nextValue.trim();
+    const valueChanged = valueToSave !== value;
+    const shouldSave = nullable
+      ? valueChanged
+      : Boolean(valueToSave && valueChanged);
+    if (shouldSave) {
+      await Promise.resolve(onSave(valueToSave));
+    } else {
+      setDraft(value);
+    }
+    if (!multiline) {
+      setEditing(false);
+    }
+  }, [draft, multiline, nullable, onSave, value]);
 
   /** Multiline blur/submit: show autosave indicator when persisting */
   const finalizeMultilineBlurOrSubmit = useCallback(() => {
@@ -196,20 +191,17 @@ export function InlineEditor({
     blurCommitFrameRef.current = null;
   }, []);
 
-  const scheduleBlurCommit = useCallback(
-    (container: HTMLDivElement) => {
-      cancelPendingBlurCommit();
-      blurCommitFrameRef.current = queueContainedBlurCommit(container, () => {
-        blurCommitFrameRef.current = null;
-        if (autosaveDebounceRef.current) {
-          clearTimeout(autosaveDebounceRef.current);
-        }
-        setMultilineFocused(false);
-        finalizeMultilineBlurOrSubmit();
-      });
-    },
-    [cancelPendingBlurCommit, finalizeMultilineBlurOrSubmit],
-  );
+  const scheduleBlurCommit = useCallback((container: HTMLDivElement) => {
+    cancelPendingBlurCommit();
+    blurCommitFrameRef.current = queueContainedBlurCommit(container, () => {
+      blurCommitFrameRef.current = null;
+      if (autosaveDebounceRef.current) {
+        clearTimeout(autosaveDebounceRef.current);
+      }
+      setMultilineFocused(false);
+      finalizeMultilineBlurOrSubmit();
+    });
+  }, [cancelPendingBlurCommit, finalizeMultilineBlurOrSubmit]);
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === "Enter" && !multiline) {
@@ -371,6 +363,7 @@ export function InlineEditor({
   }
 
   if (editing) {
+
     return (
       <textarea
         ref={inputRef}
@@ -384,7 +377,11 @@ export function InlineEditor({
           void commit();
         }}
         onKeyDown={handleKeyDown}
-        className={cn("w-full bg-transparent rounded outline-none resize-none overflow-hidden", pad, className)}
+        className={cn(
+          "w-full bg-transparent rounded outline-none resize-none overflow-hidden",
+          pad,
+          className
+        )}
       />
     );
   }

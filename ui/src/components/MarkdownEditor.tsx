@@ -96,7 +96,9 @@ function convertHtmlImagesToMarkdown(text: string): string {
     const title = readHtmlAttribute(attrs, "title");
     const escapedAlt = alt.replace(/[[\]]/g, "\\$&");
     const escapedTitle = title?.replace(/"/g, '\\"');
-    return escapedTitle ? `![${escapedAlt}](${src} "${escapedTitle}")` : `![${escapedAlt}](${src})`;
+    return escapedTitle
+      ? `![${escapedAlt}](${src} "${escapedTitle}")`
+      : `![${escapedAlt}](${src})`;
   });
 }
 
@@ -126,9 +128,6 @@ function hasMeaningfulEditorContent(node: Node | null): boolean {
   return Array.from(element.childNodes).some((child) => hasMeaningfulEditorContent(child));
 }
 
-<<<<<<< HEAD
-function isRichEditorDomEmpty(editable: HTMLElement, expectedValue: string, placeholder?: string): boolean {
-=======
 function hasMarkdownImage(value: string): boolean {
   return /!\[[\s\S]*?\]\([^)]+\)/.test(value);
 }
@@ -138,7 +137,6 @@ function isRichEditorDomEmpty(
   expectedValue: string,
   placeholder?: string,
 ): boolean {
->>>>>>> upstream/master
   const expectedText = expectedValue.trim();
   if (!expectedText) return false;
   const expectedHasImage = hasMarkdownImage(expectedText);
@@ -150,16 +148,12 @@ function isRichEditorDomEmpty(
   }
 
   const normalizedPlaceholder = placeholder?.trim();
-<<<<<<< HEAD
-  if (normalizedPlaceholder && visibleText === normalizedPlaceholder && expectedText !== normalizedPlaceholder) {
-=======
   if (
     normalizedPlaceholder
     && visibleText === normalizedPlaceholder
     && expectedText !== normalizedPlaceholder
   ) {
     if (expectedHasImage) return false;
->>>>>>> upstream/master
     return true;
   }
 
@@ -393,13 +387,18 @@ function getMentionMenuSize(optionCount: number): MentionMenuSize {
   const visibleRows = Math.max(1, Math.min(optionCount, 8));
   return {
     width: MENTION_MENU_WIDTH,
-    height: Math.min(MENTION_MENU_HEIGHT, visibleRows * MENTION_MENU_ROW_HEIGHT + MENTION_MENU_CHROME_HEIGHT),
+    height: Math.min(
+      MENTION_MENU_HEIGHT,
+      visibleRows * MENTION_MENU_ROW_HEIGHT + MENTION_MENU_CHROME_HEIGHT,
+    ),
   };
 }
 
 function nodeInsideCodeLike(container: HTMLElement, node: Node | null): boolean {
   if (!node || !container.contains(node)) return false;
-  const el = node.nodeType === Node.ELEMENT_NODE ? (node as HTMLElement) : node.parentElement;
+  const el = node.nodeType === Node.ELEMENT_NODE
+    ? (node as HTMLElement)
+    : node.parentElement;
   return Boolean(el?.closest("pre, code"));
 }
 
@@ -447,14 +446,12 @@ export function isSameAutocompleteSession(
   right: Pick<MentionState, "trigger" | "marker" | "query" | "textNode" | "atPos" | "endPos"> | null,
 ): boolean {
   if (!left || !right) return false;
-  return (
-    left.trigger === right.trigger &&
-    left.marker === right.marker &&
-    left.query === right.query &&
-    left.textNode === right.textNode &&
-    left.atPos === right.atPos &&
-    left.endPos === right.endPos
-  );
+  return left.trigger === right.trigger
+    && left.marker === right.marker
+    && left.query === right.query
+    && left.textNode === right.textNode
+    && left.atPos === right.atPos
+    && left.endPos === right.endPos;
 }
 
 function autocompleteOptionMatchesLink(option: AutocompleteOption, href: string): boolean {
@@ -489,19 +486,17 @@ export function findClosestAutocompleteAnchor(
   if (!origin) return matchingMentions[0] ?? null;
 
   const containerRect = editable.getBoundingClientRect();
-  return (
-    matchingMentions.sort((a, b) => {
-      const rectA = a.getBoundingClientRect();
-      const rectB = b.getBoundingClientRect();
-      const leftA = rectA.left - containerRect.left;
-      const topA = rectA.top - containerRect.top;
-      const leftB = rectB.left - containerRect.left;
-      const topB = rectB.top - containerRect.top;
-      const distA = Math.hypot(leftA - origin.left, topA - origin.top);
-      const distB = Math.hypot(leftB - origin.left, topB - origin.top);
-      return distA - distB;
-    })[0] ?? null
-  );
+  return matchingMentions.sort((a, b) => {
+    const rectA = a.getBoundingClientRect();
+    const rectB = b.getBoundingClientRect();
+    const leftA = rectA.left - containerRect.left;
+    const topA = rectA.top - containerRect.top;
+    const leftB = rectB.left - containerRect.left;
+    const topB = rectB.top - containerRect.top;
+    const distA = Math.hypot(leftA - origin.left, topA - origin.top);
+    const distB = Math.hypot(leftB - origin.left, topB - origin.top);
+    return distA - distB;
+  })[0] ?? null;
 }
 
 export function placeCaretAfterMentionAnchor(target: HTMLAnchorElement): boolean {
@@ -546,24 +541,6 @@ function applyMention(markdown: string, state: MentionState, option: Autocomplet
 
 /* ---- Component ---- */
 
-<<<<<<< HEAD
-export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(function MarkdownEditor(
-  {
-    value,
-    onChange,
-    placeholder,
-    className,
-    contentClassName,
-    onBlur,
-    imageUploadHandler,
-    onDropFile,
-    bordered = true,
-    mentions,
-    onSubmit,
-  }: MarkdownEditorProps,
-  forwardedRef,
-) {
-=======
 export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(function MarkdownEditor({
   value,
   onChange,
@@ -579,7 +556,6 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
   onSubmit,
   readOnly = false,
 }: MarkdownEditorProps, forwardedRef) {
->>>>>>> upstream/master
   const editorValue = useMemo(() => prepareMarkdownForEditor(value), [value]);
   const { slashCommands } = useEditorAutocomplete();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -610,10 +586,10 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
   const [mentionIndex, setMentionIndex] = useState(0);
   const skillEnterArmedRef = useRef(false);
   const autocompleteSelectionHandledRef = useRef(false);
-  const mentionActive =
-    mentionState !== null &&
-    ((mentionState.trigger === "mention" && Boolean(mentions?.length)) ||
-      (mentionState.trigger === "skill" && slashCommands.length > 0));
+  const mentionActive = mentionState !== null && (
+    (mentionState.trigger === "mention" && Boolean(mentions?.length))
+    || (mentionState.trigger === "skill" && slashCommands.length > 0)
+  );
   const mentionOptionByKey = useMemo(() => {
     const map = new Map<string, MentionOption>();
     for (const mention of mentions ?? []) {
@@ -659,19 +635,15 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
     return mentions.filter((m) => m.name.toLowerCase().includes(q)).slice(0, 8);
   }, [mentionState, mentions, slashCommands]);
 
-  useImperativeHandle(
-    forwardedRef,
-    () => ({
-      focus: () => {
-        if (richEditorError) {
-          fallbackTextareaRef.current?.focus();
-          return;
-        }
-        ref.current?.focus(undefined, { defaultSelection: "rootEnd" });
-      },
-    }),
-    [richEditorError],
-  );
+  useImperativeHandle(forwardedRef, () => ({
+    focus: () => {
+      if (richEditorError) {
+        fallbackTextareaRef.current?.focus();
+        return;
+      }
+      ref.current?.focus(undefined, { defaultSelection: "rootEnd" });
+    },
+  }), [richEditorError]);
 
   const autoSizeFallbackTextarea = useCallback((element: HTMLTextAreaElement | null) => {
     if (!element) return;
@@ -840,13 +812,21 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
       return;
     }
     const result = detectMention(containerRef.current);
-    if (result && result.trigger === "mention" && (!mentions || mentions.length === 0)) {
+    if (
+      result
+      && result.trigger === "mention"
+      && (!mentions || mentions.length === 0)
+    ) {
       mentionStateRef.current = null;
       skillEnterArmedRef.current = false;
       setMentionState(null);
       return;
     }
-    if (result && result.trigger === "skill" && slashCommands.length === 0) {
+    if (
+      result
+      && result.trigger === "skill"
+      && slashCommands.length === 0
+    ) {
       mentionStateRef.current = null;
       skillEnterArmedRef.current = false;
       setMentionState(null);
@@ -960,24 +940,18 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
     [decorateProjectMentions, onChange],
   );
 
-  const handleAutocompletePress = useCallback(
-    (
-      event:
-        | ReactMouseEvent<HTMLButtonElement>
-        | ReactPointerEvent<HTMLButtonElement>
-        | ReactTouchEvent<HTMLButtonElement>,
-      option: AutocompleteOption,
-    ) => {
-      event.preventDefault();
-      event.stopPropagation();
-      if (autocompleteSelectionHandledRef.current) return;
-      const handled = selectMention(option);
-      if (handled) {
-        autocompleteSelectionHandledRef.current = true;
-      }
-    },
-    [selectMention],
-  );
+  const handleAutocompletePress = useCallback((
+    event: ReactMouseEvent<HTMLButtonElement> | ReactPointerEvent<HTMLButtonElement> | ReactTouchEvent<HTMLButtonElement>,
+    option: AutocompleteOption,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (autocompleteSelectionHandledRef.current) return;
+    const handled = selectMention(option);
+    if (handled) {
+      autocompleteSelectionHandledRef.current = true;
+    }
+  }, [selectMention]);
 
   // Touch handling for the mention menu. We deliberately do NOT preventDefault
   // on touchstart so the browser can still scroll the menu vertically; instead
@@ -1037,7 +1011,11 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
   }, []);
 
   const mentionMenuPosition = mentionState
-    ? computeMentionMenuPosition(mentionState, getMentionMenuViewport(), getMentionMenuSize(filteredMentions.length))
+    ? computeMentionMenuPosition(
+        mentionState,
+        getMentionMenuViewport(),
+        getMentionMenuSize(filteredMentions.length),
+      )
     : null;
 
   if (richEditorError) {
@@ -1141,7 +1119,11 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
               return;
             }
             if (
-              shouldAcceptAutocompleteKey(e.key, mentionStateRef.current?.trigger ?? null, skillEnterArmedRef.current)
+              shouldAcceptAutocompleteKey(
+                e.key,
+                mentionStateRef.current?.trigger ?? null,
+                skillEnterArmedRef.current,
+              )
             ) {
               e.preventDefault();
               e.stopPropagation();
@@ -1177,7 +1159,9 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
         const files = evt.dataTransfer?.files;
         if (!files || files.length === 0) return;
         const allFiles = Array.from(files);
-        const nonImageFiles = allFiles.filter((f) => !f.type.startsWith("image/"));
+        const nonImageFiles = allFiles.filter(
+          (f) => !f.type.startsWith("image/"),
+        );
         if (nonImageFiles.length === 0) return;
         // If all dropped files are non-image, prevent default so MDXEditor
         // doesn't try to handle them. If mixed, let images flow through to
@@ -1235,12 +1219,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
       />
 
       {/* Mention dropdown — rendered via portal so it isn't clipped by overflow containers */}
-<<<<<<< HEAD
-      {mentionActive &&
-        filteredMentions.length > 0 &&
-=======
       {mentionActive && filteredMentions.length > 0 && mentionMenuPosition &&
->>>>>>> upstream/master
         createPortal(
           <div
             className="fixed z-[9999] min-w-[180px] max-w-[calc(100vw-16px)] max-h-[208px] overflow-y-auto rounded-md border border-border bg-popover shadow-md"
@@ -1287,11 +1266,16 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
                 ) : option.kind === "user" ? (
                   <User className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                 ) : (
-                  <AgentIcon icon={option.agentIcon} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  <AgentIcon
+                    icon={option.agentIcon}
+                    className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                  />
                 )}
                 <span>{option.kind === "skill" ? `/${option.slug}` : option.name}</span>
                 {option.kind === "project" && option.projectId && (
-                  <span className="ml-auto text-[10px] uppercase tracking-wide text-muted-foreground">Project</span>
+                  <span className="ml-auto text-[10px] uppercase tracking-wide text-muted-foreground">
+                    Project
+                  </span>
                 )}
                 {option.kind === "user" && (
                   <span className="ml-auto text-[10px] uppercase tracking-wide text-muted-foreground">
@@ -1299,7 +1283,9 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
                   </span>
                 )}
                 {option.kind === "skill" && (
-                  <span className="ml-auto text-[10px] uppercase tracking-wide text-muted-foreground">Skill</span>
+                  <span className="ml-auto text-[10px] uppercase tracking-wide text-muted-foreground">
+                    Skill
+                  </span>
                 )}
               </button>
             ))}
@@ -1317,7 +1303,9 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
           Drop {onDropFile ? "file" : "image"} to upload
         </div>
       )}
-      {uploadError && <p className="px-3 pb-2 text-xs text-destructive">{uploadError}</p>}
+      {uploadError && (
+        <p className="px-3 pb-2 text-xs text-destructive">{uploadError}</p>
+      )}
     </div>
   );
 });

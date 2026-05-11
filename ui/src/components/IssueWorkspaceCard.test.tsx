@@ -22,15 +22,8 @@ vi.mock("../context/CompanyContext", () => ({
 }));
 
 vi.mock("@/lib/router", () => ({
-<<<<<<< HEAD
-  Link: ({ children, to, ...props }: ComponentProps<"a"> & { to: string }) => (
-    <a href={to} {...props}>
-      {children}
-    </a>
-=======
   Link: ({ children, className, ...props }: ComponentProps<"a">) => (
     <a className={className} {...props}>{children}</a>
->>>>>>> upstream/master
   ),
 }));
 
