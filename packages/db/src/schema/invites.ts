@@ -15,6 +15,8 @@ export const invites = pgTable(
     invitedByUserId: text("invited_by_user_id"),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
     acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    sendError: text("send_error"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
