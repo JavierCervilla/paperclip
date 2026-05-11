@@ -86,6 +86,13 @@ describeEmbeddedPostgres("companySkillService.list", () => {
       editable: true,
     });
   });
+
+  it("rejects skill inventory refresh for a missing company", async () => {
+    await expect(svc.list(randomUUID())).rejects.toMatchObject({
+      status: 404,
+      message: "Company not found",
+    });
+  });
 });
 
 describeEmbeddedPostgres("companySkillService bundled discovery", () => {

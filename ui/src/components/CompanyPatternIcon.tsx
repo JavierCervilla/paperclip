@@ -13,6 +13,7 @@ interface CompanyPatternIconProps {
   logoUrl?: string | null;
   brandColor?: string | null;
   className?: string;
+  logoFit?: "cover" | "contain";
 }
 
 function hashString(value: string): number {
@@ -152,7 +153,17 @@ function makeCompanyPatternDataUrl(seed: string, brandColor?: string | null, log
   return canvas.toDataURL("image/png");
 }
 
+<<<<<<< HEAD
 export function CompanyPatternIcon({ companyName, logoUrl, brandColor, className }: CompanyPatternIconProps) {
+=======
+export function CompanyPatternIcon({
+  companyName,
+  logoUrl,
+  brandColor,
+  className,
+  logoFit = "cover",
+}: CompanyPatternIconProps) {
+>>>>>>> upstream/master
   const initial = companyName.trim().charAt(0).toUpperCase() || "?";
   const [imageError, setImageError] = useState(false);
   const logo = !imageError && typeof logoUrl === "string" && logoUrl.trim().length > 0 ? logoUrl : null;
@@ -176,7 +187,10 @@ export function CompanyPatternIcon({ companyName, logoUrl, brandColor, className
           src={logo}
           alt={`${companyName} logo`}
           onError={() => setImageError(true)}
-          className="absolute inset-0 h-full w-full object-cover"
+          className={cn(
+            "absolute inset-0 h-full w-full",
+            logoFit === "contain" ? "object-contain" : "object-cover",
+          )}
         />
       ) : patternDataUrl ? (
         <img

@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { BookOpen, Moon, Settings, Sun } from "lucide-react";
-import { Link, Outlet, useLocation, useNavigate, useNavigationType, useParams } from "@/lib/router";
-import { CompanyRail } from "./CompanyRail";
+import { Outlet, useLocation, useNavigate, useNavigationType, useParams } from "@/lib/router";
 import { Sidebar } from "./Sidebar";
 import { InstanceSidebar } from "./InstanceSidebar";
+import { CompanySettingsSidebar } from "./CompanySettingsSidebar";
 import { BreadcrumbBar } from "./BreadcrumbBar";
 import { PropertiesPanel } from "./PropertiesPanel";
 import { CommandPalette } from "./CommandPalette";
@@ -17,12 +16,13 @@ import { ToastViewport } from "./ToastViewport";
 import { MobileBottomNav } from "./MobileBottomNav";
 import { WorktreeBanner } from "./WorktreeBanner";
 import { DevRestartBanner } from "./DevRestartBanner";
-import { useDialog } from "../context/DialogContext";
+import { ResizableSidebarPane } from "./ResizableSidebarPane";
+import { SidebarAccountMenu } from "./SidebarAccountMenu";
+import { useDialogActions } from "../context/DialogContext";
 import { GeneralSettingsProvider } from "../context/GeneralSettingsContext";
 import { usePanel } from "../context/PanelContext";
 import { useCompany } from "../context/CompanyContext";
 import { useSidebar } from "../context/SidebarContext";
-import { useTheme } from "../context/ThemeContext";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
 import { useCompanyPageMemory } from "../hooks/useCompanyPageMemory";
 import { healthApi } from "../api/health";
@@ -31,17 +31,23 @@ import { shouldSyncCompanySelectionFromRoute } from "../lib/company-selection";
 import { DEFAULT_INSTANCE_SETTINGS_PATH, normalizeRememberedInstanceSettingsPath } from "../lib/instance-settings";
 import {
   resetNavigationScroll,
-  SIDEBAR_SCROLL_RESET_STATE,
   shouldResetScrollOnNavigation,
 } from "../lib/navigation-scroll";
 import { queryKeys } from "../lib/queryKeys";
 import { scheduleMainContentFocus } from "../lib/main-content-focus";
 import { cn } from "../lib/utils";
 import { NotFoundPage } from "../pages/NotFound";
-import { Button } from "@/components/ui/button";
-import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+import { PluginSlotMount, resolveRouteSidebarSlot, usePluginSlots } from "../plugins/slots";
 
 const INSTANCE_SETTINGS_MEMORY_KEY = "paperclip.lastInstanceSettingsPath";
+
+function getCompanyRouteSegment(pathname: string, companyPrefix: string | undefined): string | null {
+  if (!companyPrefix) return null;
+  const segments = pathname.split("/").filter(Boolean);
+  if (segments.length < 2) return null;
+  if (segments[0]?.toUpperCase() !== companyPrefix.toUpperCase()) return null;
+  return segments[1]?.toLowerCase() ?? null;
+}
 
 function readRememberedInstanceSettingsPath(): string {
   if (typeof window === "undefined") return DEFAULT_INSTANCE_SETTINGS_PATH;
@@ -54,7 +60,7 @@ function readRememberedInstanceSettingsPath(): string {
 
 export function Layout() {
   const { sidebarOpen, setSidebarOpen, toggleSidebar, isMobile } = useSidebar();
-  const { openNewIssue, openOnboarding } = useDialog();
+  const { openNewIssue, openOnboarding } = useDialogActions();
   const { togglePanelVisible } = usePanel();
   const {
     companies,
@@ -64,12 +70,12 @@ export function Layout() {
     selectionSource,
     setSelectedCompanyId,
   } = useCompany();
-  const { theme, toggleTheme } = useTheme();
   const { companyPrefix } = useParams<{ companyPrefix: string }>();
   const navigate = useNavigate();
   const location = useLocation();
   const navigationType = useNavigationType();
   const isInstanceSettingsRoute = location.pathname.startsWith("/instance/");
+  const isCompanySettingsRoute = location.pathname.includes("/company/settings");
   const onboardingTriggered = useRef(false);
   const lastMainScrollTop = useRef(0);
   const previousPathname = useRef<string | null>(null);
@@ -79,7 +85,6 @@ export function Layout() {
     readRememberedInstanceSettingsPath(),
   );
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  const nextTheme = theme === "dark" ? "light" : "dark";
   const matchedCompany = useMemo(() => {
     if (!companyPrefix) return null;
     const requestedPrefix = companyPrefix.toUpperCase();
@@ -87,6 +92,38 @@ export function Layout() {
   }, [companies, companyPrefix]);
   const hasUnknownCompanyPrefix =
     Boolean(companyPrefix) && !companiesLoading && companies.length > 0 && !matchedCompany;
+  const pluginRoutePath = useMemo(
+    () => getCompanyRouteSegment(location.pathname, companyPrefix),
+    [companyPrefix, location.pathname],
+  );
+  const routeSidebarCompanyId = matchedCompany?.id ?? null;
+  const routeSidebarCompanyPrefix = matchedCompany?.issuePrefix ?? null;
+  const { slots: routeSidebarSlots } = usePluginSlots({
+    slotTypes: ["page", "routeSidebar"],
+    companyId: routeSidebarCompanyId,
+    enabled: Boolean(routeSidebarCompanyId && pluginRoutePath),
+  });
+  const routeSidebarSlot = useMemo(
+    () => resolveRouteSidebarSlot(routeSidebarSlots, pluginRoutePath),
+    [pluginRoutePath, routeSidebarSlots],
+  );
+  const sidebarContext = useMemo(
+    () => ({
+      companyId: routeSidebarCompanyId,
+      companyPrefix: routeSidebarCompanyPrefix,
+    }),
+    [routeSidebarCompanyId, routeSidebarCompanyPrefix],
+  );
+  const companySidebar = routeSidebarSlot ? (
+    <PluginSlotMount
+      slot={routeSidebarSlot}
+      context={sidebarContext}
+      className="h-full w-full"
+      missingBehavior="placeholder"
+    />
+  ) : (
+    <Sidebar />
+  );
   const { data: health } = useQuery({
     queryKey: queryKeys.health,
     queryFn: () => healthApi.get(),
@@ -333,8 +370,69 @@ export function Layout() {
             />
           )}
 
+<<<<<<< HEAD
           {isMobile ? (
             <div
+=======
+        {isMobile ? (
+          <div
+            className={cn(
+              "fixed inset-y-0 left-0 z-50 flex flex-col overflow-hidden pt-[env(safe-area-inset-top)] transition-transform duration-100 ease-out",
+              sidebarOpen ? "translate-x-0" : "-translate-x-full"
+            )}
+          >
+            <div className="flex flex-1 min-h-0 overflow-hidden">
+              <div className="w-60 shrink-0 overflow-hidden">
+                {isInstanceSettingsRoute ? (
+                  <InstanceSidebar />
+                ) : isCompanySettingsRoute ? (
+                  <CompanySettingsSidebar />
+                ) : (
+                  companySidebar
+                )}
+              </div>
+            </div>
+            <SidebarAccountMenu
+              deploymentMode={health?.deploymentMode}
+              instanceSettingsTarget={instanceSettingsTarget}
+              version={health?.version}
+            />
+          </div>
+        ) : (
+          <div className="flex h-full flex-col shrink-0">
+            <div className="flex flex-1 min-h-0">
+              <ResizableSidebarPane open={sidebarOpen} resizable className="h-full shrink-0">
+                {isInstanceSettingsRoute ? (
+                  <InstanceSidebar />
+                ) : isCompanySettingsRoute ? (
+                  <CompanySettingsSidebar />
+                ) : (
+                  companySidebar
+                )}
+              </ResizableSidebarPane>
+            </div>
+            <SidebarAccountMenu
+              deploymentMode={health?.deploymentMode}
+              instanceSettingsTarget={instanceSettingsTarget}
+              version={health?.version}
+            />
+          </div>
+        )}
+
+        <div className={cn("flex min-w-0 flex-col", isMobile ? "w-full" : "h-full flex-1")}>
+          <div
+            className={cn(
+              isMobile && "sticky top-0 z-20 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/85",
+            )}
+          >
+            <BreadcrumbBar />
+          </div>
+          <div className={cn(isMobile ? "block" : "flex flex-1 min-h-0")}>
+            <main
+              id="main-content"
+              ref={mainContentRef}
+              tabIndex={-1}
+>>>>>>> upstream/master
               className={cn(
                 "fixed inset-y-0 left-0 z-50 flex flex-col overflow-hidden pt-[env(safe-area-inset-top)] transition-transform duration-100 ease-out",
                 sidebarOpen ? "translate-x-0" : "-translate-x-full",

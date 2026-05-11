@@ -1,20 +1,27 @@
-import type { AgentAdapterType, PauseReason, AgentRole, AgentStatus } from "../constants.js";
-import type { CompanyMembership, PrincipalPermissionGrant } from "./access.js";
-
-export interface AgentWorkspacePreference {
-  priority: number;
-}
-
-export interface AgentWorkspaceConfig {
-  defaultProjectWorkspaceId?: string | null;
-  allowedProjectWorkspaceIds?: string[] | null;
-  workspacePreferences?: Record<string, AgentWorkspacePreference> | null;
-  crossWorkspaceRefs?: boolean | null;
-}
+import type {
+  AgentAdapterType,
+  ModelProfileKey,
+  PauseReason,
+  AgentRole,
+  AgentStatus,
+} from "../constants.js";
+import type {
+  CompanyMembership,
+  PrincipalPermissionGrant,
+} from "./access.js";
 
 export interface AgentPermissions {
   canCreateAgents: boolean;
-  canReadSecrets?: boolean;
+}
+
+export interface AgentModelProfileConfig {
+  enabled?: boolean;
+  label?: string;
+  adapterConfig: Record<string, unknown>;
+}
+
+export interface AgentRuntimeConfig extends Record<string, unknown> {
+  modelProfiles?: Partial<Record<ModelProfileKey, AgentModelProfileConfig>>;
 }
 
 export type AgentInstructionsBundleMode = "managed" | "external";
@@ -76,14 +83,14 @@ export interface Agent {
   capabilities: string | null;
   adapterType: AgentAdapterType;
   adapterConfig: Record<string, unknown>;
-  runtimeConfig: Record<string, unknown>;
+  runtimeConfig: AgentRuntimeConfig;
+  defaultEnvironmentId?: string | null;
   budgetMonthlyCents: number;
   spentMonthlyCents: number;
   pauseReason: PauseReason | null;
   pausedAt: Date | null;
   permissions: AgentPermissions;
   lastHeartbeatAt: Date | null;
-  workspaceConfig: AgentWorkspaceConfig;
   metadata: Record<string, unknown> | null;
   createdAt: Date;
   updatedAt: Date;

@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { ArrowLeft, Bot } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { listUIAdapters } from "../adapters";
+import { isVisualAdapterChoice } from "../adapters/metadata";
 import { getAdapterDisplay } from "../adapters/adapter-display-registry";
 import { useDisabledAdaptersSync } from "../adapters/use-disabled-adapters";
 
@@ -50,7 +51,16 @@ export function NewAgentDialog() {
   // Build the adapter grid from the UI registry merged with display metadata.
   // This automatically includes external/plugin adapters.
   const adapterGrid = useMemo(() => {
+<<<<<<< HEAD
     const registered = listUIAdapters().filter((a) => isAgentAdapterType(a.type) && !disabledTypes.has(a.type));
+=======
+    const registered = listUIAdapters()
+      .filter((a) =>
+        isAgentAdapterType(a.type) &&
+        !disabledTypes.has(a.type) &&
+        isVisualAdapterChoice(a.type)
+      );
+>>>>>>> upstream/master
 
     // Sort: recommended first, then alphabetical
     return registered

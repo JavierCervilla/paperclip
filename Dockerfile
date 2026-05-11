@@ -1,15 +1,15 @@
+# syntax=docker/dockerfile:1.20
 FROM node:lts-trixie-slim AS base
 ARG USER_UID=1000
 ARG USER_GID=1000
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
-    ca-certificates curl git gosu unzip zip jq wget ripgrep python3 \
+    ca-certificates curl git gosu gh unzip zip jq wget ripgrep python3 \
     libglib2.0-0 libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 \
     libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 \
     libxfixes3 libxrandr2 libgbm1 libasound2 \
-  && rm -rf /var/lib/apt/lists/*
-
-RUN corepack enable
+  && rm -rf /var/lib/apt/lists/* \
+  && corepack enable
 
 # Modify the existing node user/group to have the specified UID/GID to match host user
 RUN usermod -u $USER_UID --non-unique node \
@@ -26,8 +26,10 @@ COPY packages/shared/package.json packages/shared/
 COPY packages/db/package.json packages/db/
 COPY packages/adapter-utils/package.json packages/adapter-utils/
 COPY packages/mcp-server/package.json packages/mcp-server/
+COPY packages/adapters/acpx-local/package.json packages/adapters/acpx-local/
 COPY packages/adapters/claude-local/package.json packages/adapters/claude-local/
 COPY packages/adapters/codex-local/package.json packages/adapters/codex-local/
+COPY packages/adapters/cursor-cloud/package.json packages/adapters/cursor-cloud/
 COPY packages/adapters/cursor-local/package.json packages/adapters/cursor-local/
 COPY packages/adapters/gemini-local/package.json packages/adapters/gemini-local/
 COPY packages/adapters/openclaw-gateway/package.json packages/adapters/openclaw-gateway/
@@ -38,6 +40,9 @@ COPY packages/plugins/plugin-sentry/package.json packages/plugins/plugin-sentry/
 COPY packages/plugins/plugin-knowledge-base/package.json packages/plugins/plugin-knowledge-base/
 COPY packages/plugins/plugin-obsidian/package.json packages/plugins/plugin-obsidian/
 COPY packages/plugins/plugin-telegram/package.json packages/plugins/plugin-telegram/
+COPY packages/plugins/plugin-llm-wiki/package.json packages/plugins/plugin-llm-wiki/
+COPY --parents packages/plugins/sandbox-providers/./*/package.json packages/plugins/sandbox-providers/
+COPY packages/plugins/paperclip-plugin-fake-sandbox/package.json packages/plugins/paperclip-plugin-fake-sandbox/
 COPY patches/ patches/
 
 RUN pnpm install --frozen-lockfile
@@ -65,10 +70,9 @@ COPY --chown=node:node --from=build /app /app
 RUN npm install --global --omit=dev @anthropic-ai/claude-code@latest @openai/codex@latest opencode-ai @google/gemini-cli \
   && curl -fsSL https://deno.land/install.sh | sh -s -- --no-modify-path \
   && mv /root/.deno/bin/deno /usr/local/bin/deno \
-  && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
-  && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
-  && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
-  && apt-get update && apt-get install -y gh && rm -rf /var/lib/apt/lists/* \
+  && apt-get update \
+  && apt-get install -y --no-install-recommends openssh-client \
+  && rm -rf /var/lib/apt/lists/* \
   && curl -fsSL -o /tmp/rtk.deb https://github.com/rtk-ai/rtk/releases/download/v0.31.0/rtk_0.31.0-1_amd64.deb \
   && dpkg -i /tmp/rtk.deb && rm /tmp/rtk.deb \
   && mkdir -p /paperclip \

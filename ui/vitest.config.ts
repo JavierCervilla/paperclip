@@ -49,6 +49,6 @@ export default defineConfig({
       },
     },
     globalSetup: "./vitest-global-setup.ts",
-    setupFiles: ["./vitest-setup.ts"],
+    setupFiles: ["./vitest.setup.ts", "./vitest-setup.ts"],
   },
 });

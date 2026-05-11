@@ -5,8 +5,10 @@ export {
   type PatchInstanceGeneralSettings,
   instanceExperimentalSettingsSchema,
   patchInstanceExperimentalSettingsSchema,
+  issueGraphLivenessAutoRecoveryRequestSchema,
   type InstanceExperimentalSettings,
   type PatchInstanceExperimentalSettings,
+  type IssueGraphLivenessAutoRecoveryRequest,
 } from "./instance.js";
 
 export {
@@ -24,6 +26,18 @@ export {
   type UpdateCompany,
   type UpdateCompanyBranding,
 } from "./company.js";
+export {
+  environmentDriverSchema,
+  environmentStatusSchema,
+  environmentLeaseStatusSchema,
+  environmentLeaseCleanupStatusSchema,
+  createEnvironmentSchema,
+  updateEnvironmentSchema,
+  probeEnvironmentConfigSchema,
+  type CreateEnvironment,
+  type UpdateEnvironment,
+  type ProbeEnvironmentConfig,
+} from "./environment.js";
 export {
   feedbackDataSharingPreferenceSchema,
   feedbackTargetTypeSchema,
@@ -93,6 +107,7 @@ export {
   createAgentSchema,
   createAgentHireSchema,
   updateAgentSchema,
+  agentRuntimeConfigSchema,
   agentInstructionsBundleModeSchema,
   updateAgentInstructionsBundleSchema,
   upsertAgentInstructionsFileSchema,
@@ -116,10 +131,6 @@ export {
   type ResetAgentSession,
   type TestAdapterEnvironment,
   type UpdateAgentPermissions,
-  agentWorkspaceConfigSchema,
-  updateAgentWorkspaceConfigSchema,
-  type AgentWorkspaceConfigInput,
-  type UpdateAgentWorkspaceConfig,
 } from "./agent.js";
 
 export {
@@ -138,15 +149,44 @@ export {
 
 export {
   createIssueSchema,
+  createIssueInputSchema,
+  createChildIssueSchema,
+  resolveCreateIssueStatusDefault,
   createIssueLabelSchema,
   updateIssueSchema,
   issueExecutionPolicySchema,
   issueExecutionStateSchema,
+  issueReviewRequestSchema,
   issueExecutionWorkspaceSettingsSchema,
   checkoutIssueSchema,
+  issueCommentAuthorTypeSchema,
+  issueCommentPresentationSchema,
+  issueCommentMetadataRowSchema,
+  issueCommentMetadataSectionSchema,
+  issueCommentMetadataSchema,
   addIssueCommentSchema,
-  questionDataSchema,
-  questionOptionSchema,
+  issueThreadInteractionStatusSchema,
+  issueThreadInteractionKindSchema,
+  issueThreadInteractionContinuationPolicySchema,
+  suggestedTaskDraftSchema,
+  suggestTasksPayloadSchema,
+  suggestTasksResultCreatedTaskSchema,
+  suggestTasksResultSchema,
+  askUserQuestionsQuestionOptionSchema,
+  askUserQuestionsQuestionSchema,
+  askUserQuestionsPayloadSchema,
+  askUserQuestionsAnswerSchema,
+  askUserQuestionsResultSchema,
+  requestConfirmationIssueDocumentTargetSchema,
+  requestConfirmationCustomTargetSchema,
+  requestConfirmationTargetSchema,
+  requestConfirmationPayloadSchema,
+  requestConfirmationResultSchema,
+  createIssueThreadInteractionSchema,
+  acceptIssueThreadInteractionSchema,
+  rejectIssueThreadInteractionSchema,
+  cancelIssueThreadInteractionSchema,
+  respondIssueThreadInteractionSchema,
   linkIssueApprovalSchema,
   createIssueAttachmentMetadataSchema,
   issueDocumentFormatSchema,
@@ -154,18 +194,44 @@ export {
   upsertIssueDocumentSchema,
   restoreIssueDocumentRevisionSchema,
   type CreateIssue,
+  type CreateChildIssue,
   type CreateIssueLabel,
   type UpdateIssue,
   type IssueExecutionWorkspaceSettings,
   type CheckoutIssue,
   type AddIssueComment,
-  type QuestionData,
+  type CreateIssueThreadInteraction,
+  type AcceptIssueThreadInteraction,
+  type RejectIssueThreadInteraction,
+  type CancelIssueThreadInteraction,
+  type RespondIssueThreadInteraction,
   type LinkIssueApproval,
   type CreateIssueAttachmentMetadata,
   type IssueDocumentFormat,
   type UpsertIssueDocument,
   type RestoreIssueDocumentRevision,
 } from "./issue.js";
+
+export {
+  COMPANY_SEARCH_DEFAULT_LIMIT,
+  COMPANY_SEARCH_MAX_LIMIT,
+  COMPANY_SEARCH_MAX_OFFSET,
+  COMPANY_SEARCH_MAX_QUERY_LENGTH,
+  COMPANY_SEARCH_MAX_TOKENS,
+  companySearchQuerySchema,
+  type CompanySearchQuery,
+} from "./search.js";
+
+export {
+  createIssueTreeHoldSchema,
+  issueTreeControlModeSchema,
+  issueTreeHoldReleasePolicySchema,
+  previewIssueTreeControlSchema,
+  releaseIssueTreeHoldSchema,
+  type CreateIssueTreeHold,
+  type PreviewIssueTreeControl,
+  type ReleaseIssueTreeHold,
+} from "./issue-tree-control.js";
 
 export {
   createIssueWorkProductSchema,
@@ -190,7 +256,12 @@ export {
   type UpdateExecutionWorkspace,
 } from "./execution-workspace.js";
 
-export { createGoalSchema, updateGoalSchema, type CreateGoal, type UpdateGoal } from "./goal.js";
+export {
+  createGoalSchema,
+  updateGoalSchema,
+  type CreateGoal,
+  type UpdateGoal,
+} from "./goal.js";
 
 export {
   createApprovalSchema,
@@ -211,9 +282,27 @@ export {
   envBindingSchema,
   envConfigSchema,
   createSecretSchema,
+  createSecretProviderConfigSchema,
+  updateSecretProviderConfigSchema,
+  remoteSecretImportPreviewSchema,
+  remoteSecretImportSchema,
+  remoteSecretImportSelectionSchema,
+  localEncryptedProviderConfigSchema,
+  awsSecretsManagerProviderConfigSchema,
+  gcpSecretManagerProviderConfigSchema,
+  vaultProviderConfigSchema,
+  secretProviderConfigPayloadSchema,
+  createSecretBindingSchema,
   rotateSecretSchema,
+  secretBindingTargetSchema,
   updateSecretSchema,
+  type CreateSecretBinding,
   type CreateSecret,
+  type CreateSecretProviderConfig,
+  type UpdateSecretProviderConfig,
+  type RemoteSecretImportPreview,
+  type RemoteSecretImport,
+  type RemoteSecretImportSelection,
   type RotateSecret,
   type UpdateSecret,
 } from "./secret.js";
@@ -224,6 +313,10 @@ export {
   createRoutineTriggerSchema,
   updateRoutineTriggerSchema,
   routineVariableSchema,
+  routineRevisionSnapshotRoutineV1Schema,
+  routineRevisionSnapshotTriggerV1Schema,
+  routineRevisionSnapshotV1Schema,
+  routineRevisionSnapshotSchema,
   runRoutineSchema,
   rotateRoutineTriggerSecretSchema,
   type CreateRoutine,
@@ -234,32 +327,59 @@ export {
   type RotateRoutineTriggerSecret,
 } from "./routine.js";
 
-export { createCostEventSchema, updateBudgetSchema, type CreateCostEvent, type UpdateBudget } from "./cost.js";
+export {
+  createCostEventSchema,
+  updateBudgetSchema,
+  type CreateCostEvent,
+  type UpdateBudget,
+} from "./cost.js";
 
-export { createFinanceEventSchema, type CreateFinanceEvent } from "./finance.js";
+export {
+  createFinanceEventSchema,
+  type CreateFinanceEvent,
+} from "./finance.js";
 
-export { createAssetImageMetadataSchema, type CreateAssetImageMetadata } from "./asset.js";
+export {
+  createAssetImageMetadataSchema,
+  type CreateAssetImageMetadata,
+} from "./asset.js";
 
 export {
   createCompanyInviteSchema,
   createOpenClawInvitePromptSchema,
   acceptInviteSchema,
+  listCompanyInvitesQuerySchema,
   listJoinRequestsQuerySchema,
   claimJoinRequestApiKeySchema,
   boardCliAuthAccessLevelSchema,
   createCliAuthChallengeSchema,
   resolveCliAuthChallengeSchema,
+  currentUserProfileSchema,
+  authSessionSchema,
+  updateCurrentUserProfileSchema,
+  updateCompanyMemberSchema,
+  updateCompanyMemberWithPermissionsSchema,
+  archiveCompanyMemberSchema,
   updateMemberPermissionsSchema,
+  searchAdminUsersQuerySchema,
   updateUserCompanyAccessSchema,
   type CreateCompanyInvite,
   type CreateOpenClawInvitePrompt,
   type AcceptInvite,
+  type ListCompanyInvitesQuery,
   type ListJoinRequestsQuery,
   type ClaimJoinRequestApiKey,
   type BoardCliAuthAccessLevel,
   type CreateCliAuthChallenge,
   type ResolveCliAuthChallenge,
+  type CurrentUserProfile,
+  type AuthSession,
+  type UpdateCurrentUserProfile,
+  type UpdateCompanyMember,
+  type UpdateCompanyMemberWithPermissions,
+  type ArchiveCompanyMember,
   type UpdateMemberPermissions,
+  type SearchAdminUsersQuery,
   type UpdateUserCompanyAccess,
 } from "./access.js";
 
@@ -268,10 +388,15 @@ export {
   pluginJobDeclarationSchema,
   pluginWebhookDeclarationSchema,
   pluginToolDeclarationSchema,
+  pluginEnvironmentDriverDeclarationSchema,
   pluginUiSlotDeclarationSchema,
   pluginLauncherActionDeclarationSchema,
   pluginLauncherRenderDeclarationSchema,
   pluginLauncherDeclarationSchema,
+  pluginDatabaseDeclarationSchema,
+  pluginManagedSkillFileDeclarationSchema,
+  pluginManagedSkillDeclarationSchema,
+  pluginApiRouteDeclarationSchema,
   pluginManifestV1Schema,
   installPluginSchema,
   upsertPluginConfigSchema,
@@ -284,10 +409,15 @@ export {
   type PluginJobDeclarationInput,
   type PluginWebhookDeclarationInput,
   type PluginToolDeclarationInput,
+  type PluginEnvironmentDriverDeclarationInput,
   type PluginUiSlotDeclarationInput,
   type PluginLauncherActionDeclarationInput,
   type PluginLauncherRenderDeclarationInput,
   type PluginLauncherDeclarationInput,
+  type PluginDatabaseDeclarationInput,
+  type PluginManagedSkillFileDeclarationInput,
+  type PluginManagedSkillDeclarationInput,
+  type PluginApiRouteDeclarationInput,
   type PluginManifestV1Input,
   type InstallPlugin,
   type UpsertPluginConfig,
@@ -298,5 +428,3 @@ export {
   type SetPluginState,
   type ListPluginState,
 } from "./plugin.js";
-
-export { createWebhookSchema, updateWebhookSchema, type CreateWebhook, type UpdateWebhook } from "./webhook.js";

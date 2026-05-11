@@ -150,7 +150,14 @@ export function SwipeToArchive({
       </div>
       <div
         data-inbox-row-surface
+<<<<<<< HEAD
         className={cn("relative will-change-transform", selected ? "bg-zinc-100 dark:bg-zinc-800" : "bg-card")}
+=======
+        className={cn(
+          "relative will-change-transform",
+          selected ? "bg-zinc-100 dark:bg-zinc-800" : "bg-background",
+        )}
+>>>>>>> upstream/master
         style={{
           transform: `translate3d(${offsetX}px, 0, 0)`,
           transition: isDragging ? "none" : "transform 180ms ease-out",

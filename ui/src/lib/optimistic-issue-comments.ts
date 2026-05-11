@@ -12,6 +12,11 @@ export interface OptimisticIssueComment extends IssueComment {
 }
 
 export type IssueTimelineComment = IssueComment | OptimisticIssueComment;
+export type LocallyQueuedIssueComment<T extends IssueComment> = T & {
+  clientStatus: "queued";
+  queueState: "queued";
+  queueTargetRunId: string;
+};
 
 function toTimestamp(value: Date | string) {
   return new Date(value).getTime();
@@ -52,9 +57,12 @@ export function createOptimisticIssueComment(params: {
     clientId,
     companyId: params.companyId,
     issueId: params.issueId,
+    authorType: "user",
     authorAgentId: null,
     authorUserId: params.authorUserId,
     body: params.body,
+    presentation: null,
+    metadata: null,
     clientStatus: params.clientStatus ?? "pending",
     queueTargetRunId: params.queueTargetRunId ?? null,
     createdAt: now,
@@ -65,25 +73,50 @@ export function createOptimisticIssueComment(params: {
 export function isQueuedIssueComment(params: {
   comment: Pick<IssueTimelineComment, "createdAt"> &
     Partial<Pick<OptimisticIssueComment, "clientStatus">> & {
+      id?: string;
       authorAgentId?: string | null;
     };
   activeRunStartedAt?: Date | string | null;
   activeRunAgentId?: string | null;
+  activeRunCommentId?: string | null;
+  activeRunWakeCommentId?: string | null;
   runId?: string | null;
   interruptedRunId?: string | null;
 }) {
   if (params.runId) return false;
   if (params.interruptedRunId) return false;
   if (
-    params.comment.authorAgentId &&
-    params.activeRunAgentId &&
-    params.comment.authorAgentId === params.activeRunAgentId
+    params.comment.id &&
+    (params.comment.id === params.activeRunWakeCommentId || params.comment.id === params.activeRunCommentId)
   ) {
+    return false;
+  }
+  if (params.comment.authorAgentId && params.activeRunAgentId && params.comment.authorAgentId === params.activeRunAgentId) {
     return false;
   }
   if (params.comment.clientStatus === "queued") return true;
   if (!params.activeRunStartedAt) return false;
   return toTimestamp(params.comment.createdAt) >= toTimestamp(params.activeRunStartedAt);
+}
+
+export function applyLocalQueuedIssueCommentState<T extends IssueComment>(
+  comment: T,
+  params: {
+    queuedTargetRunId?: string | null;
+    targetRunIsLive: boolean;
+    runningRunId?: string | null;
+  },
+): T | LocallyQueuedIssueComment<T> {
+  const queuedTargetRunId = params.queuedTargetRunId ?? null;
+  if (!queuedTargetRunId || !params.targetRunIsLive) return comment;
+  if (params.runningRunId && params.runningRunId !== queuedTargetRunId) return comment;
+
+  return {
+    ...comment,
+    clientStatus: "queued",
+    queueState: "queued",
+    queueTargetRunId: queuedTargetRunId,
+  };
 }
 
 export function mergeIssueComments(
@@ -129,7 +162,66 @@ export function getNextIssueCommentPageParam(
   return lastPage[lastPage.length - 1]?.id;
 }
 
-export function upsertIssueComment(comments: IssueComment[] | undefined, nextComment: IssueComment): IssueComment[] {
+function getNextPageCursor<T extends { id: string }>(
+  lastPage: ReadonlyArray<T> | undefined,
+  pageSize: number,
+): string | undefined {
+  if (!lastPage || lastPage.length < pageSize) return undefined;
+  return lastPage[lastPage.length - 1]?.id;
+}
+
+export async function loadRemainingIssueCommentPages<T extends { id: string }>(params: {
+  pages: ReadonlyArray<ReadonlyArray<T>> | undefined;
+  pageParams: ReadonlyArray<string | null> | undefined;
+  pageSize: number;
+  maxPages?: number;
+  fetchPage: (afterCommentId: string) => Promise<ReadonlyArray<T>>;
+}): Promise<{ pages: T[][]; pageParams: Array<string | null> }> {
+  const pages = (params.pages ?? []).map((page) => [...page]);
+  const pageParams = params.pageParams
+    ? [...params.pageParams].slice(0, pages.length)
+    : pages.map(() => null);
+
+  while (pageParams.length < pages.length) {
+    pageParams.push(null);
+  }
+
+  if (params.pageSize <= 0) return { pages, pageParams };
+
+  let cursor = getNextPageCursor(pages[pages.length - 1], params.pageSize);
+  const maxPages = Math.max(0, params.maxPages ?? Number.POSITIVE_INFINITY);
+  const seenCursors = new Set<string>();
+  while (cursor && !seenCursors.has(cursor) && seenCursors.size < maxPages) {
+    seenCursors.add(cursor);
+    const nextPage = [...await params.fetchPage(cursor)];
+    pages.push(nextPage);
+    pageParams.push(cursor);
+
+    cursor = getNextPageCursor(nextPage, params.pageSize);
+  }
+
+  return { pages, pageParams };
+}
+
+export function shouldAutoloadOlderIssueComments(params: {
+  activeDetailTab: string;
+  hasOlderComments: boolean;
+  loadedCommentCount: number;
+  initialPageLoading: boolean;
+  olderPageLoading: boolean;
+  autoLoadLimit: number;
+}) {
+  if (params.activeDetailTab !== "chat") return false;
+  if (!params.hasOlderComments) return false;
+  if (params.initialPageLoading || params.olderPageLoading) return false;
+  if (params.loadedCommentCount === 0) return false;
+  return params.loadedCommentCount < params.autoLoadLimit;
+}
+
+export function upsertIssueComment(
+  comments: IssueComment[] | undefined,
+  nextComment: IssueComment,
+): IssueComment[] {
   const current = comments ?? [];
   const existingIndex = current.findIndex((comment) => comment.id === nextComment.id);
   if (existingIndex === -1) {
@@ -151,7 +243,7 @@ export function applyOptimisticIssueCommentUpdate(
   if (!issue) return issue;
   const nextIssue: Issue = { ...issue };
 
-  if (params.reopen === true && (issue.status === "done" || issue.status === "cancelled")) {
+  if (params.reopen === true && (issue.status === "done" || issue.status === "cancelled" || issue.status === "blocked")) {
     nextIssue.status = "todo";
   }
 
@@ -163,7 +255,10 @@ export function applyOptimisticIssueCommentUpdate(
   return nextIssue;
 }
 
-export function applyOptimisticIssueFieldUpdate(issue: Issue | undefined, data: Record<string, unknown>) {
+export function applyOptimisticIssueFieldUpdate(
+  issue: Issue | undefined,
+  data: Record<string, unknown>,
+) {
   if (!issue) return issue;
 
   const nextIssue: Issue = {
@@ -214,13 +309,18 @@ export function applyOptimisticIssueFieldUpdate(issue: Issue | undefined, data: 
 
   if (hasOwn("executionWorkspaceId")) {
     nextIssue.currentExecutionWorkspace =
-      issue.currentExecutionWorkspace?.id === nextIssue.executionWorkspaceId ? issue.currentExecutionWorkspace : null;
+      issue.currentExecutionWorkspace?.id === nextIssue.executionWorkspaceId
+        ? issue.currentExecutionWorkspace
+        : null;
   }
 
   return nextIssue;
 }
 
-export function matchesIssueRef(issue: Pick<Issue, "id" | "identifier">, refs: Iterable<string>) {
+export function matchesIssueRef(
+  issue: Pick<Issue, "id" | "identifier">,
+  refs: Iterable<string>,
+) {
   const refSet = refs instanceof Set ? refs : new Set(refs);
   return refSet.has(issue.id) || (!!issue.identifier && refSet.has(issue.identifier));
 }
@@ -271,5 +371,7 @@ export function removeIssueCommentFromPages(
     return [];
   }
 
-  return pages.map((page) => page.filter((comment) => comment.id !== commentId)).filter((page) => page.length > 0);
+  return pages
+    .map((page) => page.filter((comment) => comment.id !== commentId))
+    .filter((page) => page.length > 0);
 }

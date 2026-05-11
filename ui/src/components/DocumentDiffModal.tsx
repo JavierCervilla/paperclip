@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { DocumentRevision } from "@paperclipai/shared";
 import { issuesApi } from "../api/issues";
 import { queryKeys } from "../lib/queryKeys";
+import { buildLineDiff, type DiffRow } from "../lib/line-diff";
 import { relativeTime } from "../lib/utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -12,6 +13,7 @@ function getRevisionLabel(revision: DocumentRevision) {
   return `rev ${revision.revisionNumber} — ${relativeTime(revision.createdAt)} • ${actor}`;
 }
 
+<<<<<<< HEAD
 type DiffRow = {
   kind: "context" | "removed" | "added";
   oldLineNumber: number | null;
@@ -100,6 +102,8 @@ function buildLineDiff(oldText: string, newText: string): DiffRow[] {
   return rows;
 }
 
+=======
+>>>>>>> upstream/master
 export function DocumentDiffModal({
   issueId,
   documentKey,

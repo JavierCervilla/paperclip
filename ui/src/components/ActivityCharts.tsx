@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import type { HeartbeatRun } from "@paperclipai/shared";
 import {
   issueStatusHex,
@@ -7,6 +8,9 @@ import {
   priorityHexDefault,
   successRateHex,
 } from "../lib/status-colors";
+=======
+import type { DashboardRunActivityDay, HeartbeatRun } from "@paperclipai/shared";
+>>>>>>> upstream/master
 
 /* ---- Utilities ---- */
 
@@ -74,11 +78,14 @@ export function ChartCard({
 
 /* ---- Chart Components ---- */
 
-export function RunActivityChart({ runs }: { runs: HeartbeatRun[] }) {
-  const days = getLast14Days();
+type RunChartProps =
+  | { activity?: DashboardRunActivityDay[] | null; runs?: never }
+  | { runs?: HeartbeatRun[] | null; activity?: never };
 
-  const grouped = new Map<string, { succeeded: number; failed: number; other: number }>();
-  for (const day of days) grouped.set(day, { succeeded: 0, failed: 0, other: 0 });
+function aggregateRuns(runs: readonly HeartbeatRun[] = []): DashboardRunActivityDay[] {
+  const days = getLast14Days();
+  const grouped = new Map<string, DashboardRunActivityDay>();
+  for (const day of days) grouped.set(day, { date: day, succeeded: 0, failed: 0, other: 0, total: 0 });
   for (const run of runs) {
     const day = new Date(run.createdAt).toISOString().slice(0, 10);
     const entry = grouped.get(day);
@@ -86,19 +93,44 @@ export function RunActivityChart({ runs }: { runs: HeartbeatRun[] }) {
     if (run.status === "succeeded") entry.succeeded++;
     else if (run.status === "failed" || run.status === "timed_out") entry.failed++;
     else entry.other++;
+    entry.total++;
   }
+  return Array.from(grouped.values());
+}
 
+<<<<<<< HEAD
   const maxValue = Math.max(...Array.from(grouped.values()).map((v) => v.succeeded + v.failed + v.other), 1);
   const hasData = Array.from(grouped.values()).some((v) => v.succeeded + v.failed + v.other > 0);
+=======
+function resolveRunActivity(props: RunChartProps): DashboardRunActivityDay[] {
+  if (Array.isArray(props.activity)) return props.activity;
+  if (Array.isArray(props.runs)) return aggregateRuns(props.runs);
+  return [];
+}
+
+export function RunActivityChart(props: RunChartProps) {
+  const activity = resolveRunActivity(props);
+  const days = activity.length > 0 ? activity.map((day) => day.date) : getLast14Days();
+  const grouped = new Map(activity.map((day) => [day.date, day]));
+
+  const maxValue = Math.max(...activity.map(v => v.total), 1);
+  const hasData = activity.some(v => v.total > 0);
+>>>>>>> upstream/master
 
   if (!hasData) return <p className="text-xs text-muted-foreground">No runs yet</p>;
 
   return (
     <div>
       <div className="flex items-end gap-[3px] h-20">
+<<<<<<< HEAD
         {days.map((day) => {
           const entry = grouped.get(day)!;
           const total = entry.succeeded + entry.failed + entry.other;
+=======
+        {days.map(day => {
+          const entry = grouped.get(day) ?? { date: day, succeeded: 0, failed: 0, other: 0, total: 0 };
+          const total = entry.total;
+>>>>>>> upstream/master
           const heightPct = (total / maxValue) * 100;
           return (
             <div key={day} className="flex-1 h-full flex flex-col justify-end" title={`${day}: ${total} runs`}>
@@ -243,26 +275,28 @@ export function IssueStatusChart({ issues }: { issues: { status: string; created
   );
 }
 
-export function SuccessRateChart({ runs }: { runs: HeartbeatRun[] }) {
-  const days = getLast14Days();
-  const grouped = new Map<string, { succeeded: number; total: number }>();
-  for (const day of days) grouped.set(day, { succeeded: 0, total: 0 });
-  for (const run of runs) {
-    const day = new Date(run.createdAt).toISOString().slice(0, 10);
-    const entry = grouped.get(day);
-    if (!entry) continue;
-    entry.total++;
-    if (run.status === "succeeded") entry.succeeded++;
-  }
+export function SuccessRateChart(props: RunChartProps) {
+  const activity = resolveRunActivity(props);
+  const days = activity.length > 0 ? activity.map((day) => day.date) : getLast14Days();
+  const grouped = new Map(activity.map((day) => [day.date, day]));
 
+<<<<<<< HEAD
   const hasData = Array.from(grouped.values()).some((v) => v.total > 0);
+=======
+  const hasData = activity.some(v => v.total > 0);
+>>>>>>> upstream/master
   if (!hasData) return <p className="text-xs text-muted-foreground">No runs yet</p>;
 
   return (
     <div>
       <div className="flex items-end gap-[3px] h-20">
+<<<<<<< HEAD
         {days.map((day) => {
           const entry = grouped.get(day)!;
+=======
+        {days.map(day => {
+          const entry = grouped.get(day) ?? { date: day, succeeded: 0, failed: 0, other: 0, total: 0 };
+>>>>>>> upstream/master
           const rate = entry.total > 0 ? entry.succeeded / entry.total : 0;
           const color =
             entry.total === 0
