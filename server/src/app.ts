@@ -35,6 +35,7 @@ import { adapterRoutes } from "./routes/adapters.js";
 import { pluginUiStaticRoutes } from "./routes/plugin-ui-static.js";
 import { applyUiBranding } from "./ui-branding.js";
 import { logger } from "./middleware/logger.js";
+import { createNoopMailer, type Mailer } from "./services/email/mailer.js";
 import { DEFAULT_LOCAL_PLUGIN_DIR, pluginLoader } from "./services/plugin-loader.js";
 import { createPluginWorkerManager } from "./services/plugin-worker-manager.js";
 import { createPluginJobScheduler } from "./services/plugin-job-scheduler.js";
@@ -114,9 +115,11 @@ export async function createApp(
     localPluginDir?: string;
     betterAuthHandler?: express.RequestHandler;
     resolveSession?: (req: ExpressRequest) => Promise<BetterAuthSessionResult | null>;
+    mailer?: Mailer;
   },
 ) {
   const app = express();
+  const mailer: Mailer = opts.mailer ?? createNoopMailer();
 
   app.use(
     express.json({
@@ -267,6 +270,7 @@ export async function createApp(
       deploymentExposure: opts.deploymentExposure,
       bindHost: opts.bindHost,
       allowedHostnames: opts.allowedHostnames,
+      mailer,
     }),
   );
   app.use("/api", api);

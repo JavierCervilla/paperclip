@@ -1,6 +1,7 @@
 import express from "express";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createNoopMailer, createResendMailer, type Mailer, type SendMailResult } from "../services/email/mailer.js";
 
 const mockAccessService = vi.hoisted(() => ({
   hasPermission: vi.fn(),
@@ -76,6 +77,10 @@ function createDbStub(inviteOverrides: Record<string, unknown> = {}) {
   const values = vi.fn().mockReturnValue({ returning });
   const insert = vi.fn().mockReturnValue({ values });
 
+  const updateWhere = vi.fn().mockResolvedValue(undefined);
+  const updateSet = vi.fn().mockReturnValue({ where: updateWhere });
+  const update = vi.fn().mockReturnValue({ set: updateSet });
+
   const isCompaniesTable = (table: unknown) =>
     !!table && typeof table === "object" && "issuePrefix" in table && "requireBoardApprovalForNewAgents" in table;
 
@@ -100,12 +105,14 @@ function createDbStub(inviteOverrides: Record<string, unknown> = {}) {
   return {
     insert,
     select: selectMock,
+    update,
     __insertValues: values,
+    __updateSet: updateSet,
     __createdInvite: createdInvite,
   };
 }
 
-async function createApp(actor: Record<string, unknown>, db: Record<string, unknown>) {
+async function createApp(actor: Record<string, unknown>, db: Record<string, unknown>, mailer?: Mailer) {
   const [{ accessRoutes }, { errorHandler }] = await Promise.all([
     vi.importActual<typeof import("../routes/access.js")>("../routes/access.js"),
     vi.importActual<typeof import("../middleware/index.js")>("../middleware/index.js"),
@@ -123,6 +130,7 @@ async function createApp(actor: Record<string, unknown>, db: Record<string, unkn
       deploymentExposure: "private",
       bindHost: "127.0.0.1",
       allowedHostnames: [],
+      mailer,
     }),
   );
   app.use(errorHandler);
@@ -209,6 +217,101 @@ describe("POST /companies/:companyId/invites", () => {
     expect([200, 201]).toContain(res.status);
     expect(res.body.inviteUrl).toMatch(/^\/invite\//);
     expect(res.body.token).toBeTruthy();
+  });
+
+  it("does not call the mailer when no mailer is provided (Noop fallback)", async () => {
+    const db = createDbStub({ recipientEmail: "alice@example.com" });
+    const app = await createApp(boardActor, db);
+    const res = await request(app)
+      .post("/api/companies/company-1/invites")
+      .send({ allowedJoinTypes: "human", recipientEmail: "alice@example.com" });
+    expect([200, 201]).toContain(res.status);
+    expect(res.body.emailSent).toBeUndefined();
+    expect(res.body.emailError).toBeUndefined();
+    expect(db.update).not.toHaveBeenCalled();
+  });
+
+  it("sends an email and persists sentAt when mailer is enabled and recipientEmail is present", async () => {
+    const db = createDbStub({ recipientEmail: "alice@example.com" });
+    const send = vi.fn().mockResolvedValue({ data: { id: "email_1" }, error: null });
+    const mailer = createResendMailer({
+      apiKey: "re_test",
+      from: "Sender <invites@example.com>",
+      client: { emails: { send } as any },
+    });
+    const app = await createApp(boardActor, db, mailer);
+
+    const res = await request(app)
+      .post("/api/companies/company-1/invites")
+      .send({ allowedJoinTypes: "human", recipientEmail: "alice@example.com" });
+
+    expect([200, 201]).toContain(res.status);
+    expect(send).toHaveBeenCalledTimes(1);
+    const sendPayload = send.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(sendPayload.to).toBe("alice@example.com");
+    expect(sendPayload.subject).toContain("Test Co");
+    expect(res.body.emailSent).toBe(true);
+    expect(res.body.emailError).toBeUndefined();
+    expect(db.update).toHaveBeenCalledTimes(1);
+    const setCallArg = db.__updateSet.mock.calls[0]?.[0] as { sentAt: unknown; sendError: unknown };
+    expect(setCallArg.sentAt).toBeInstanceOf(Date);
+    expect(setCallArg.sendError).toBeNull();
+  });
+
+  it("records emailError and sendError when the mailer fails", async () => {
+    const db = createDbStub({ recipientEmail: "alice@example.com" });
+    const send = vi.fn().mockResolvedValue({
+      data: null,
+      error: { name: "invalid_from_address", message: "Domain not verified" },
+    });
+    const mailer = createResendMailer({
+      apiKey: "re_test",
+      from: "invites@example.com",
+      client: { emails: { send } as any },
+    });
+    const app = await createApp(boardActor, db, mailer);
+
+    const res = await request(app)
+      .post("/api/companies/company-1/invites")
+      .send({ allowedJoinTypes: "human", recipientEmail: "alice@example.com" });
+
+    expect([200, 201]).toContain(res.status);
+    expect(res.body.emailSent).toBe(false);
+    expect(res.body.emailError).toBe("Domain not verified");
+    const setCallArg = db.__updateSet.mock.calls[0]?.[0] as { sentAt: unknown; sendError: unknown };
+    expect(setCallArg.sentAt).toBeNull();
+    expect(setCallArg.sendError).toBe("Domain not verified");
+  });
+
+  it("skips the mailer when recipientEmail is null even if mailer is enabled", async () => {
+    const db = createDbStub();
+    const send = vi.fn();
+    const mailer = createResendMailer({
+      apiKey: "re_test",
+      from: "invites@example.com",
+      client: { emails: { send } as any },
+    });
+    const app = await createApp(boardActor, db, mailer);
+
+    const res = await request(app).post("/api/companies/company-1/invites").send({ allowedJoinTypes: "human" });
+
+    expect([200, 201]).toContain(res.status);
+    expect(send).not.toHaveBeenCalled();
+    expect(res.body.emailSent).toBeUndefined();
+    expect(db.update).not.toHaveBeenCalled();
+  });
+
+  it("skips the mailer when a Noop mailer is passed explicitly", async () => {
+    const db = createDbStub({ recipientEmail: "alice@example.com" });
+    const app = await createApp(boardActor, db, createNoopMailer());
+
+    const res = await request(app)
+      .post("/api/companies/company-1/invites")
+      .send({ allowedJoinTypes: "human", recipientEmail: "alice@example.com" });
+
+    expect([200, 201]).toContain(res.status);
+    expect(res.body.emailSent).toBeUndefined();
+    expect(db.update).not.toHaveBeenCalled();
   });
 });
 

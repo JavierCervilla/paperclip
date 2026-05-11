@@ -36,6 +36,7 @@ import {
   routineService,
 } from "./services/index.js";
 import { createFeedbackTraceShareClientFromConfig } from "./services/feedback-share-client.js";
+import { createMailer } from "./services/email/mailer.js";
 import { createStorageServiceFromConfig } from "./storage/index.js";
 import { printStartupBanner } from "./startup-banner.js";
 import { getBoardClaimWarningUrl, initializeBoardClaimChallenge } from "./board-claim.js";
@@ -520,6 +521,14 @@ export async function startServer(): Promise<StartedServer> {
   const feedback = feedbackService(db as any, {
     shareClient: createFeedbackTraceShareClientFromConfig(config),
   });
+  const mailer = createMailer({
+    resendApiKey: config.resendApiKey,
+    resendFromEmail: config.resendFromEmail,
+    resendReplyTo: config.resendReplyTo,
+  });
+  if (mailer.enabled) {
+    logger.info({ from: config.resendFromEmail }, "Resend mailer is enabled for outbound invite emails");
+  }
   const app = await createApp(db as any, {
     uiMode,
     serverPort: listenPort,
@@ -533,6 +542,7 @@ export async function startServer(): Promise<StartedServer> {
     companyDeletionEnabled: config.companyDeletionEnabled,
     betterAuthHandler,
     resolveSession,
+    mailer,
   });
   const server = createServer(app as unknown as Parameters<typeof createServer>[0]);
 
