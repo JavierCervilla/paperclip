@@ -87,6 +87,9 @@ export interface Config {
   heartbeatSchedulerIntervalMs: number;
   companyDeletionEnabled: boolean;
   telemetryEnabled: boolean;
+  resendApiKey: string | undefined;
+  resendFromEmail: string | undefined;
+  resendReplyTo: string | undefined;
 }
 
 function detectTailnetBindHost(): string | undefined {
@@ -304,5 +307,8 @@ export function loadConfig(): Config {
     heartbeatSchedulerIntervalMs: Math.max(10000, Number(process.env.HEARTBEAT_SCHEDULER_INTERVAL_MS) || 30000),
     companyDeletionEnabled,
     telemetryEnabled: fileConfig?.telemetry?.enabled ?? true,
+    resendApiKey: process.env.RESEND_API_KEY?.trim() || undefined,
+    resendFromEmail: process.env.RESEND_FROM_EMAIL?.trim() || undefined,
+    resendReplyTo: process.env.RESEND_REPLY_TO?.trim() || undefined,
   };
 }
