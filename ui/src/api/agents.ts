@@ -189,7 +189,8 @@ export const agentsApi = {
     }),
   chatMessages: (id: string, after?: string, companyId?: string) =>
     api.get<unknown>(agentPath(id, companyId, `/chat-messages${after ? `?after=${encodeURIComponent(after)}` : ""}`)),
-  chatSession: (id: string, companyId?: string) => api.get<unknown>(agentPath(id, companyId, "/chat-session")),
+  chatSession: (id: string, companyId?: string) =>
+    api.get<ChatSessionData | null>(agentPath(id, companyId, "/chat-session")),
   endChatSession: (id: string, companyId?: string) =>
     api.delete<{ ok: true }>(agentPath(id, companyId, "/chat-session")),
   chatProcess: (id: string, companyId?: string) =>

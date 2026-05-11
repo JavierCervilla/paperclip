@@ -11,6 +11,7 @@ export const invites = pgTable(
     allowedJoinTypes: text("allowed_join_types").notNull().default("both"),
     defaultsPayload: jsonb("defaults_payload").$type<Record<string, unknown> | null>(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    recipientEmail: text("recipient_email"),
     invitedByUserId: text("invited_by_user_id"),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
     acceptedAt: timestamp("accepted_at", { withTimezone: true }),

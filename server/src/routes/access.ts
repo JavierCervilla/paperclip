@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Router } from "express";
 import type { Request } from "express";
-import { and, eq, isNull, desc } from "drizzle-orm";
+import { and, eq, isNull, gt, desc } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { agentApiKeys, authUsers, companies, invites, joinRequests } from "@paperclipai/db";
 import {
@@ -43,6 +43,7 @@ const INVITE_TOKEN_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789";
 const INVITE_TOKEN_SUFFIX_LENGTH = 8;
 const INVITE_TOKEN_MAX_RETRIES = 5;
 const COMPANY_INVITE_TTL_MS = 10 * 60 * 1000;
+const COMPANY_HUMAN_INVITE_TTL_MS = Number(process.env.COMPANY_HUMAN_INVITE_TTL_MS) || 7 * 24 * 60 * 60 * 1000;
 
 function createInviteToken() {
   const bytes = randomBytes(INVITE_TOKEN_SUFFIX_LENGTH);
@@ -57,8 +58,12 @@ function createClaimSecret() {
   return `pcp_claim_${randomBytes(24).toString("hex")}`;
 }
 
-export function companyInviteExpiresAt(nowMs: number = Date.now()) {
-  return new Date(nowMs + COMPANY_INVITE_TTL_MS);
+export function companyInviteExpiresAt({
+  allowedJoinTypes = "both",
+  nowMs = Date.now(),
+}: { allowedJoinTypes?: "human" | "agent" | "both"; nowMs?: number } = {}) {
+  const ttl = allowedJoinTypes === "human" ? COMPANY_HUMAN_INVITE_TTL_MS : COMPANY_INVITE_TTL_MS;
+  return new Date(nowMs + ttl);
 }
 
 function tokenHashesMatch(left: string, right: string) {
@@ -543,6 +548,7 @@ export function normalizeAgentDefaultsForJoin(input: {
   const defaults = input.defaultsPayload as Record<string, unknown>;
   const normalized: Record<string, unknown> = {};
 
+  // eslint-disable-next-line no-useless-assignment
   let gatewayUrl: URL | null = null;
   const rawGatewayUrl = nonEmptyTrimmedString(defaults.url);
   if (!rawGatewayUrl) {
@@ -1020,7 +1026,7 @@ export function buildInviteOnboardingTextDocument(
     ~/.openclaw/openclaw.json -> gateway.auth.token
     Extract:
 
-    TOKEN="$(node -p 'require(process.env.HOME+\"/.openclaw/openclaw.json\").gateway.auth.token')"
+    TOKEN="$(node -p 'require(process.env.HOME+"/.openclaw/openclaw.json").gateway.auth.token')"
     test -n "$TOKEN" || (echo "Missing TOKEN" && exit 1)
     test "\${#TOKEN}" -ge 16 || (echo "Gateway token unexpectedly short (\${#TOKEN})" && exit 1)
 
@@ -1606,6 +1612,7 @@ export function accessRoutes(
     req: Request;
     companyId: string;
     allowedJoinTypes: "human" | "agent" | "both";
+    recipientEmail?: string | null;
     defaultsPayload?: Record<string, unknown> | null;
     agentMessage?: string | null;
   }) {
@@ -1614,8 +1621,9 @@ export function accessRoutes(
       companyId: input.companyId,
       inviteType: "company_join" as const,
       allowedJoinTypes: input.allowedJoinTypes,
+      recipientEmail: input.recipientEmail ?? null,
       defaultsPayload: mergeInviteDefaults(input.defaultsPayload ?? null, normalizedAgentMessage),
-      expiresAt: companyInviteExpiresAt(),
+      expiresAt: companyInviteExpiresAt({ allowedJoinTypes: input.allowedJoinTypes }),
       invitedByUserId: input.req.actor.userId ?? null,
     };
 
@@ -1695,6 +1703,7 @@ export function accessRoutes(
       req,
       companyId,
       allowedJoinTypes: req.body.allowedJoinTypes,
+      recipientEmail: req.body.recipientEmail ?? null,
       defaultsPayload: req.body.defaultsPayload ?? null,
       agentMessage: req.body.agentMessage ?? null,
     });
@@ -1711,6 +1720,7 @@ export function accessRoutes(
         allowedJoinTypes: created.allowedJoinTypes,
         expiresAt: created.expiresAt.toISOString(),
         hasAgentMessage: Boolean(normalizedAgentMessage),
+        hasRecipientEmail: Boolean(created.recipientEmail),
       },
     });
 
@@ -1725,6 +1735,25 @@ export function accessRoutes(
       onboardingTextUrl: inviteSummary.onboardingTextUrl,
       inviteMessage: inviteSummary.inviteMessage,
     });
+  });
+
+  router.get("/companies/:companyId/invites", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    await assertCompanyPermission(req, companyId, "users:invite");
+    const now = new Date();
+    const rows = await db
+      .select()
+      .from(invites)
+      .where(
+        and(
+          eq(invites.companyId, companyId),
+          eq(invites.inviteType, "company_join"),
+          isNull(invites.revokedAt),
+          gt(invites.expiresAt, now),
+        ),
+      )
+      .orderBy(desc(invites.createdAt));
+    res.json(rows.map((r) => ({ ...r, tokenHash: undefined })));
   });
 
   router.post(
@@ -1907,6 +1936,8 @@ export function accessRoutes(
     });
   });
 
+  // recipientEmail is informational only — we do NOT enforce that the signing-up user's
+  // email matches the invite. The token is the auth boundary.
   router.post("/invites/:token/accept", validate(acceptInviteSchema), async (req, res) => {
     const token = (req.params.token as string).trim();
     if (!token) throw notFound("Invite not found");

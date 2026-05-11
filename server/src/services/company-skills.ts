@@ -711,6 +711,12 @@ function resolveBundledSkillsRoots(): BundledSkillsRootSpec[] {
       excludeSubpaths: [],
       metadataExtras: { owner: "addyosmani", repo: "agent-skills" },
     },
+    {
+      sourceKind: "paperclip_bundled_optional",
+      candidates: repoRoots.map((root) => path.resolve(root, "skills/vendor/mattpocock-skills/skills")),
+      excludeSubpaths: [],
+      metadataExtras: { owner: "mattpocock", repo: "skills" },
+    },
   ];
 }
 
