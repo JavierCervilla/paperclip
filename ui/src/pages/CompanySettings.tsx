@@ -171,6 +171,20 @@ export function CompanySettings() {
       void navigator.clipboard.writeText(url).catch(() => {});
       setCopiedInviteId(invite.id);
       setTimeout(() => setCopiedInviteId(null), 2000);
+
+      if (invite.emailSent === true && invite.recipientEmail) {
+        pushToast({
+          title: "Invitation sent",
+          body: `Email delivered to ${invite.recipientEmail}. Link also copied to your clipboard.`,
+          tone: "success",
+        });
+      } else if (invite.emailSent === false && invite.recipientEmail) {
+        pushToast({
+          title: "Invite created — email delivery failed",
+          body: `${invite.emailError ?? "Unknown error"}. Share the link manually — it has been copied to your clipboard.`,
+          tone: "error",
+        });
+      }
     },
     onError: (err) => {
       setMemberInviteError(err instanceof Error ? err.message : "Failed to generate invite link");
@@ -560,9 +574,10 @@ export function CompanySettings() {
         <div className="space-y-3 rounded-md border border-border px-4 py-4">
           <div className="flex items-center gap-1.5">
             <span className="text-xs text-muted-foreground">
-              Generate a shareable invite link (valid 7 days). Share it manually — no email sent.
+              Generate a shareable invite link (valid 7 days). If you provide a recipient email and outbound email is
+              configured on this server, we&apos;ll send it automatically; otherwise share the copied link manually.
             </span>
-            <HintIcon text="Creates a human-join invite with a 7-day TTL. Copy and send the URL via WhatsApp, DM, or any channel." />
+            <HintIcon text="Creates a human-join invite with a 7-day TTL. The recipient's email is optional; if Resend is configured the invite is sent automatically, otherwise paste the copied URL into WhatsApp / Slack / email." />
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <input

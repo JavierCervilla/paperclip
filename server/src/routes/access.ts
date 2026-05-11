@@ -33,6 +33,8 @@ import {
 } from "../services/index.js";
 import { assertAuthenticated, assertCompanyAccess } from "./authz.js";
 import { claimBoardOwnership, inspectBoardClaimChallenge } from "../board-claim.js";
+import { createNoopMailer, type Mailer } from "../services/email/mailer.js";
+import { renderInviteEmail } from "../services/email/templates/invite.js";
 
 function hashToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
@@ -1389,9 +1391,11 @@ export function accessRoutes(
     deploymentExposure: DeploymentExposure;
     bindHost: string;
     allowedHostnames: string[];
+    mailer?: Mailer;
   },
 ) {
   const router = Router();
+  const mailer: Mailer = opts.mailer ?? createNoopMailer();
   const access = accessService(db);
   const boardAuth = boardAuthService(db);
   const agents = agentService(db);
@@ -1726,14 +1730,73 @@ export function accessRoutes(
 
     const companyName = await getInviteCompanyName(created.companyId);
     const inviteSummary = toInviteSummaryResponse(req, token, created, companyName);
+
+    let emailSent: boolean | undefined;
+    let emailError: string | undefined;
+    let sentAt: Date | null = created.sentAt ?? null;
+    let sendError: string | null = created.sendError ?? null;
+
+    if (created.recipientEmail && mailer.enabled) {
+      const baseUrl = requestBaseUrl(req);
+      const inviteUrl = baseUrl ? `${baseUrl}/invite/${token}` : `/invite/${token}`;
+      const rendered = renderInviteEmail({
+        companyName,
+        inviteUrl,
+        recipientEmail: created.recipientEmail,
+        expiresAt: created.expiresAt,
+      });
+      const sendResult = await mailer.send({
+        to: created.recipientEmail,
+        subject: rendered.subject,
+        html: rendered.html,
+        text: rendered.text,
+        tags: [
+          { name: "kind", value: "company_invite" },
+          { name: "company_id", value: companyId },
+        ],
+      });
+
+      if (sendResult.ok) {
+        emailSent = true;
+        sentAt = new Date();
+        sendError = null;
+      } else {
+        emailSent = false;
+        emailError = sendResult.error;
+        sendError = sendResult.error.slice(0, 500);
+        try {
+          logger.warn(
+            { inviteId: created.id, companyId, code: sendResult.code, error: sendResult.error },
+            "Failed to send invite email",
+          );
+        } catch {
+          // ignore: logger failures must never break invite creation
+        }
+      }
+
+      try {
+        await db.update(invites).set({ sentAt, sendError, updatedAt: new Date() }).where(eq(invites.id, created.id));
+      } catch (error) {
+        try {
+          logger.warn({ err: error, inviteId: created.id }, "Failed to persist invite email telemetry");
+        } catch {
+          // ignore: logger failures must never break invite creation
+        }
+      }
+    }
+
     res.status(201).json({
       ...created,
+      sentAt,
+      sendError,
       token,
       inviteUrl: `/invite/${token}`,
       companyName,
       onboardingTextPath: inviteSummary.onboardingTextPath,
       onboardingTextUrl: inviteSummary.onboardingTextUrl,
       inviteMessage: inviteSummary.inviteMessage,
+      emailSent,
+      emailError,
     });
   });
 
