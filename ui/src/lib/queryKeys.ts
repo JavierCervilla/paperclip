@@ -66,6 +66,7 @@ export const queryKeys = {
     approvals: (issueId: string) => ["issues", "approvals", issueId] as const,
     liveRuns: (issueId: string) => ["issues", "live-runs", issueId] as const,
     activeRun: (issueId: string) => ["issues", "active-run", issueId] as const,
+    runTodos: (issueId: string) => ["issues", "run-todos", issueId] as const,
     workProducts: (issueId: string) => ["issues", "work-products", issueId] as const,
   },
   routines: {
@@ -91,6 +92,10 @@ export const queryKeys = {
   projects: {
     list: (companyId: string) => ["projects", companyId] as const,
     detail: (id: string) => ["projects", "detail", id] as const,
+  },
+  githubFiles: {
+    file: (projectId: string, filePath: string) => ["github-files", "file", projectId, filePath] as const,
+    tree: (projectId: string, dirPath: string) => ["github-files", "tree", projectId, dirPath] as const,
   },
   goals: {
     list: (companyId: string) => ["goals", companyId] as const,
@@ -169,6 +174,8 @@ export const queryKeys = {
     ["usage-quota-windows", companyId] as const,
   heartbeats: (companyId: string, agentId?: string) =>
     ["heartbeats", companyId, agentId] as const,
+  heartbeatStats: (companyId: string, periodDays?: number) =>
+    ["heartbeat-stats", companyId, periodDays] as const,
   runDetail: (runId: string) => ["heartbeat-run", runId] as const,
   runWorkspaceOperations: (runId: string) => ["heartbeat-run", runId, "workspace-operations"] as const,
   liveRuns: (companyId: string) => ["live-runs", companyId] as const,

@@ -224,10 +224,85 @@ export const agentsApi = {
     api.post<ClaudeLoginResult>(agentPath(id, companyId, "/claude-login"), {}),
   availableSkills: () =>
     api.get<{ skills: AvailableSkill[] }>("/skills/available"),
+  sendChatMessage: (id: string, content: string, companyId?: string, attachmentIds?: string[]) =>
+    api.post<unknown>(agentPath(id, companyId, "/chat-messages"), {
+      content,
+      ...(attachmentIds?.length ? { attachmentIds } : {}),
+    }),
+  chatMessages: (id: string, after?: string, companyId?: string) =>
+    api.get<unknown>(agentPath(id, companyId, `/chat-messages${after ? `?after=${encodeURIComponent(after)}` : ""}`)),
+  chatSession: (id: string, companyId?: string) =>
+    api.get<ChatSessionData | null>(agentPath(id, companyId, "/chat-session")),
+  endChatSession: (id: string, companyId?: string) =>
+    api.delete<{ ok: true }>(agentPath(id, companyId, "/chat-session")),
+  chatProcess: (id: string, companyId?: string) =>
+    api.get<ChatProcessInfo | null>(agentPath(id, companyId, "/chat-process")),
+  chatTyping: (id: string, isTyping: boolean, companyId?: string) =>
+    api.post<{ ok: true }>(agentPath(id, companyId, "/chat-typing"), { isTyping }),
+  chatMarkRead: (id: string, messageIds: string[], companyId?: string) =>
+    api.post<{ ok: true; markedCount: number }>(agentPath(id, companyId, "/chat-read"), { messageIds }),
+  chatHistory: (id: string, companyId?: string, opts?: { limit?: number; before?: string }) => {
+    const params = new URLSearchParams();
+    if (opts?.limit) params.set("limit", String(opts.limit));
+    if (opts?.before) params.set("before", opts.before);
+    const qs = params.toString();
+    return api.get<{ sessions: ChatHistoryEntry[] }>(
+      agentPath(id, companyId, `/chat-history${qs ? `?${qs}` : ""}`),
+    );
+  },
+  chatHistoryMessages: (id: string, sessionId: string, companyId?: string) =>
+    api.get<{ messages: ChatHistoryMessage[] }>(
+      agentPath(id, companyId, `/chat-history/${encodeURIComponent(sessionId)}`),
+    ),
+  resumeChat: (id: string, priorSessionId: string, companyId?: string) =>
+    api.post<ChatSessionData>(agentPath(id, companyId, "/chat-resume"), { priorSessionId }),
 };
 
 export interface AvailableSkill {
   name: string;
   description: string;
   isPaperclipManaged: boolean;
+}
+
+export interface ChatSessionData {
+  id: string;
+  agentId: string;
+  companyId: string;
+  startedByUserId: string;
+  startedAt: string;
+  lastActivityAt: string;
+  messages: ChatHistoryMessage[];
+  resumedFromSessionId?: string | null;
+}
+
+export interface ChatProcessInfo {
+  id: string;
+  agentId: string;
+  companyId: string;
+  sessionId: string;
+  pid: number | null;
+  startedAt: string;
+  status: "running" | "exited";
+  exitCode: number | null;
+}
+
+export interface ChatHistoryEntry {
+  id: string;
+  agentId: string;
+  startedAt: string;
+  lastActivityAt: string;
+  messageCount: number;
+  firstMessagePreview?: string;
+  resumedFromSessionId?: string | null;
+}
+
+export interface ChatHistoryMessage {
+  id: string;
+  sessionId: string;
+  agentId: string;
+  sender: "user" | "agent";
+  content: string;
+  attachments?: { assetId: string; contentPath: string; contentType: string; originalFilename: string | null }[];
+  readAt?: string | null;
+  createdAt: string;
 }

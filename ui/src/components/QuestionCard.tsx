@@ -1,7 +1,15 @@
 import { useState } from "react";
-import type { QuestionData } from "@paperclipai/shared";
 import { Button } from "@/components/ui/button";
 import { Clock, HelpCircle } from "lucide-react";
+
+/** Fork-local mirror of the QuestionData validator type from @paperclipai/shared (not re-exported). */
+export interface QuestionData {
+  prompt: string;
+  context?: string | null;
+  options?: { key: string; label: string; description?: string }[] | null;
+  timeoutHours?: number | null;
+  fallbackOption?: string | null;
+}
 
 interface QuestionCardProps {
   questionData: QuestionData;

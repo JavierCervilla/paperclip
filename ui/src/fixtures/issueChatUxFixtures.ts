@@ -30,7 +30,6 @@ function createAgent(id: string, name: string, icon: string, urlKey: string): Ag
     pauseReason: null,
     pausedAt: null,
     permissions: { canCreateAgents: false },
-    workspaceConfig: {},
   };
 }
 

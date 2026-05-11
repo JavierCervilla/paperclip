@@ -44,7 +44,6 @@ function makeAgent(): Agent {
       canCreateAgents: false,
     },
     metadata: null,
-    workspaceConfig: {},
   };
 }
 

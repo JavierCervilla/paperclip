@@ -260,17 +260,30 @@ function buildInviteListQuery(options: {
   return query ? `?${query}` : "";
 }
 
+type CompanyInviteListed = {
+  id: string;
+  allowedJoinTypes: "human" | "agent" | "both";
+  recipientEmail: string | null;
+  expiresAt: string;
+  createdAt: string;
+  inviteType: string;
+};
+
 export const accessApi = {
   createCompanyInvite: (
     companyId: string,
     input: {
       allowedJoinTypes?: "human" | "agent" | "both";
+      recipientEmail?: string | null;
       humanRole?: HumanCompanyRole | null;
       defaultsPayload?: Record<string, unknown> | null;
       agentMessage?: string | null;
     } = {},
   ) =>
     api.post<CompanyInviteCreated>(`/companies/${companyId}/invites`, input),
+
+  listCompanyInvites: (companyId: string) =>
+    api.get<CompanyInviteListed[]>(`/companies/${companyId}/invites`),
 
   createOpenClawInvitePrompt: (
     companyId: string,
