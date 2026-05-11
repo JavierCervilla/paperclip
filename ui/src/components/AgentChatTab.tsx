@@ -27,6 +27,7 @@ import { type LiveRunForIssue } from "../api/heartbeats";
 
 import { useLiveRunTranscripts } from "./transcript/useLiveRunTranscripts";
 import { AgentAssistantMessage } from "./agent-message/AgentAssistantMessage";
+import { useToastActions } from "../context/ToastContext";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -325,6 +326,46 @@ export function AgentChatTab({ agent, companyId }: { agent: Agent; companyId: st
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isTypingSignaledRef = useRef(false);
 
+  const { pushToast } = useToastActions();
+
+  // Hydrate from any active session on mount / agent switch so a page refresh
+  // or tab navigation doesn't drop a running conversation. The WebSocket and
+  // REST polling effects below are gated on `sessionId`, so without this they
+  // never start until the user sends a fresh message.
+  useEffect(() => {
+    let cancelled = false;
+    agentsApi
+      .chatSession(agent.id, companyId)
+      .then((session) => {
+        if (cancelled || !session) return;
+        setSessionId((prev) => prev ?? session.id);
+        setResumedFromSessionId((prev) => prev ?? session.resumedFromSessionId ?? null);
+        setMessages((prev) => {
+          if (prev.length > 0) return prev;
+          return session.messages.map((m) => ({
+            id: m.id,
+            sessionId: m.sessionId,
+            agentId: m.agentId,
+            sender: m.sender,
+            content: m.content,
+            attachments: m.attachments,
+            readAt: m.readAt,
+            createdAt: m.createdAt,
+          }));
+        });
+        const last = session.messages[session.messages.length - 1];
+        if (last && !lastMessageIdRef.current) {
+          lastMessageIdRef.current = last.id;
+        }
+      })
+      .catch(() => {
+        // No active session, or transient error — user can still start a new one.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [agent.id, companyId]);
+
   // Track the agent's active chat process while typing
   useEffect(() => {
     if (!isTyping) {
@@ -471,12 +512,34 @@ export function AgentChatTab({ agent, companyId }: { agent: Agent; companyId: st
           }
 
           if (parsed.type === "chat.session.ended") {
+            const endReason = (payload.endReason as string | null) ?? null;
             setSessionId(null);
             setResumedFromSessionId(null);
             setMessages([]);
             setIsTyping(false);
             setRemoteTyping(false);
             lastMessageIdRef.current = null;
+            // Don't surface "user_closed" — the user just clicked End and
+            // already sees the empty state. Other reasons are surprising
+            // (timeout, agent process exited) and need explanation.
+            if (endReason && endReason !== "user_closed") {
+              const title =
+                endReason === "idle_timeout"
+                  ? "Sesión finalizada por inactividad"
+                  : endReason === "agent_closed"
+                    ? "El agente cerró la sesión"
+                    : "Sesión finalizada";
+              const body =
+                endReason === "idle_timeout"
+                  ? "Puedes retomar la conversación desde el historial."
+                  : "Puedes iniciar una nueva conversación o retomar la anterior desde el historial.";
+              pushToast({
+                tone: "warn",
+                title,
+                body,
+                dedupeKey: `chat-session-ended:${agent.id}:${endReason}`,
+              });
+            }
           }
         } catch {
           // Ignore parse errors
@@ -503,7 +566,7 @@ export function AgentChatTab({ agent, companyId }: { agent: Agent; companyId: st
         socket.close(1000, "chat_tab_unmount");
       }
     };
-  }, [sessionId, companyId, agent.id, addMessageIfNew]);
+  }, [sessionId, companyId, agent.id, addMessageIfNew, pushToast]);
 
   // Fallback: slow REST polling to catch any missed messages
   useEffect(() => {
