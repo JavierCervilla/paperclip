@@ -27,6 +27,13 @@ services:
       PAPERCLIP_DEPLOYMENT_EXPOSURE: "private"
       PAPERCLIP_PUBLIC_URL: "${PAPERCLIP_PUBLIC_URL:-http://localhost:3100}"
       BETTER_AUTH_SECRET: "${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET must be set}"
+      # Optional: Resend integration for outbound invite emails. When unset
+      # the server falls back to the manual-link flow and never tries to
+      # send mail. RESEND_FROM_EMAIL must use a domain you have verified
+      # in Resend or sends will fail with `invalid_from_address`.
+      RESEND_API_KEY: "${RESEND_API_KEY:-}"
+      RESEND_FROM_EMAIL: "${RESEND_FROM_EMAIL:-}"
+      RESEND_REPLY_TO: "${RESEND_REPLY_TO:-}"
     volumes:
       - paperclip-data:/paperclip
     depends_on:

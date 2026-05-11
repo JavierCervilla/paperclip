@@ -93,6 +93,8 @@ type CompanyInviteCreated = {
   onboardingTextPath?: string;
   onboardingTextUrl?: string;
   inviteMessage?: string | null;
+  emailSent?: boolean;
+  emailError?: string;
 };
 
 type CompanyInviteListed = {
