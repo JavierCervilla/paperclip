@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "@/lib/router";
 import { accessApi } from "../api/access";
@@ -73,14 +73,12 @@ export function InviteLandingPage() {
     return [allowedJoinTypes] as JoinType[];
   }, [invite?.inviteType, allowedJoinTypes]);
 
-  useEffect(() => {
-    if (!availableJoinTypes.includes(joinType)) {
-      setJoinType(availableJoinTypes[0] ?? "human");
-    }
-  }, [availableJoinTypes, joinType]);
+  const effectiveJoinType: JoinType = availableJoinTypes.includes(joinType)
+    ? joinType
+    : (availableJoinTypes[0] ?? "human");
 
   const requiresAuthForHuman =
-    joinType === "human" && healthQuery.data?.deploymentMode === "authenticated" && !sessionQuery.data;
+    effectiveJoinType === "human" && healthQuery.data?.deploymentMode === "authenticated" && !sessionQuery.data;
 
   const acceptMutation = useMutation({
     mutationFn: async () => {
@@ -88,7 +86,7 @@ export function InviteLandingPage() {
       if (invite.inviteType === "bootstrap_ceo") {
         return accessApi.acceptInvite(token, { requestType: "human" });
       }
-      if (joinType === "human") {
+      if (effectiveJoinType === "human") {
         return accessApi.acceptInvite(token, { requestType: "human" });
       }
       return accessApi.acceptInvite(token, {
@@ -235,7 +233,7 @@ export function InviteLandingPage() {
           Invite expires {dateTime(invite.expiresAt)}.
         </p>
 
-        {invite.inviteType !== "bootstrap_ceo" && (
+        {invite.inviteType !== "bootstrap_ceo" && availableJoinTypes.length > 1 && (
           <div className="mt-5 flex gap-2">
             {availableJoinTypes.map((type) => (
               <button
@@ -243,7 +241,7 @@ export function InviteLandingPage() {
                 type="button"
                 onClick={() => setJoinType(type)}
                 className={`rounded-md border px-3 py-1.5 text-sm ${
-                  joinType === type
+                  effectiveJoinType === type
                     ? "border-foreground bg-foreground text-background"
                     : "border-border bg-background text-foreground"
                 }`}
@@ -254,7 +252,7 @@ export function InviteLandingPage() {
           </div>
         )}
 
-        {joinType === "agent" && invite.inviteType !== "bootstrap_ceo" && (
+        {effectiveJoinType === "agent" && invite.inviteType !== "bootstrap_ceo" && (
           <div className="mt-4 space-y-3">
             <label className="block text-sm">
               <span className="mb-1 block text-muted-foreground">Agent name</span>
@@ -308,7 +306,7 @@ export function InviteLandingPage() {
           className="mt-5"
           disabled={
             acceptMutation.isPending ||
-            (joinType === "agent" && invite.inviteType !== "bootstrap_ceo" && agentName.trim().length === 0) ||
+            (effectiveJoinType === "agent" && invite.inviteType !== "bootstrap_ceo" && agentName.trim().length === 0) ||
             requiresAuthForHuman
           }
           onClick={() => acceptMutation.mutate()}
@@ -317,7 +315,9 @@ export function InviteLandingPage() {
             ? "Submitting…"
             : invite.inviteType === "bootstrap_ceo"
               ? "Accept bootstrap invite"
-              : "Submit join request"}
+              : availableJoinTypes.length === 1
+                ? `Join as ${availableJoinTypes[0]}`
+                : "Submit join request"}
         </Button>
       </div>
     </div>
