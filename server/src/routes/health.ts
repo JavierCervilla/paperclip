@@ -22,11 +22,13 @@ export function healthRoutes(
     deploymentExposure: DeploymentExposure;
     authReady: boolean;
     companyDeletionEnabled: boolean;
+    emailEnabled?: boolean;
   } = {
     deploymentMode: "local_trusted",
     deploymentExposure: "private",
     authReady: true,
     companyDeletionEnabled: true,
+    emailEnabled: false,
   },
 ) {
   const router = Router();
@@ -120,6 +122,7 @@ export function healthRoutes(
       bootstrapInviteActive,
       features: {
         companyDeletionEnabled: opts.companyDeletionEnabled,
+        emailEnabled: opts.emailEnabled ?? false,
       },
       ...(devServer ? { devServer } : {}),
     });
