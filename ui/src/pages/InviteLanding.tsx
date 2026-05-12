@@ -233,7 +233,7 @@ export function InviteLandingPage() {
           Invite expires {dateTime(invite.expiresAt)}.
         </p>
 
-        {invite.inviteType !== "bootstrap_ceo" && (
+        {invite.inviteType !== "bootstrap_ceo" && availableJoinTypes.length > 1 && (
           <div className="mt-5 flex gap-2">
             {availableJoinTypes.map((type) => (
               <button
@@ -315,7 +315,9 @@ export function InviteLandingPage() {
             ? "Submitting…"
             : invite.inviteType === "bootstrap_ceo"
               ? "Accept bootstrap invite"
-              : "Submit join request"}
+              : availableJoinTypes.length === 1
+                ? `Join as ${availableJoinTypes[0]}`
+                : "Submit join request"}
         </Button>
       </div>
     </div>
