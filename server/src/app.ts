@@ -184,6 +184,7 @@ export async function createApp(
       deploymentExposure: opts.deploymentExposure,
       authReady: opts.authReady,
       companyDeletionEnabled: opts.companyDeletionEnabled,
+      emailEnabled: mailer.enabled,
     }),
   );
   api.use("/companies", companyRoutes(db, opts.storageService));
