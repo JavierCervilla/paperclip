@@ -37,8 +37,8 @@ import {
   collectAllPaths,
   parseFrontmatter,
   FRONTMATTER_FIELD_LABELS,
-  PackageFileTree,
-} from "../components/PackageFileTree";
+  FileTree,
+} from "../components/FileTree";
 
 /**
  * Extract the set of agent/project/task slugs that are "checked" based on
@@ -712,7 +712,7 @@ export function CompanyExport() {
 
   const downloadMutation = useMutation({
     mutationFn: () =>
-      companiesApi.exportPackage(selectedCompanyId!, {
+      companiesApi.exportBundle(selectedCompanyId!, {
         include: { company: true, agents: true, projects: true, issues: true },
         selectedFiles: Array.from(checkedFiles).sort(),
         sidebarOrder,
@@ -965,7 +965,7 @@ export function CompanyExport() {
             </div>
           </div>
           <div className="flex-1 overflow-y-auto">
-            <PackageFileTree
+            <FileTree
               nodes={displayTree}
               selectedFile={selectedFile}
               expandedDirs={expandedDirs}
@@ -973,6 +973,7 @@ export function CompanyExport() {
               onToggleDir={handleToggleDir}
               onSelectFile={selectFile}
               onToggleCheck={handleToggleCheck}
+              wrapLabels={false}
             />
             {totalTaskChildren > visibleTaskChildren && !treeSearch && (
               <div className="px-4 py-2">

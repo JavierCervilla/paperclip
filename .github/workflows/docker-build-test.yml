@@ -12,7 +12,9 @@ concurrency:
 jobs:
   docker-build:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # Dockerfile-changing PRs invalidate the GHA build cache and rebuild
+    # server + UI from a near-cold cache, which exceeds a 5-minute budget.
+    timeout-minutes: 25
 
     steps:
       - name: Checkout repository

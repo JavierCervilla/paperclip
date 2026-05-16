@@ -42,22 +42,38 @@ function collectExecutionWorkspaceConfigCommandPaths(raw: unknown, prefix: strin
 
 export function assertNoAgentHostWorkspaceCommandMutation(req: Request, paths: string[]) {
   if (req.actor.type !== "agent" || paths.length === 0) return;
-  throw forbidden(`Agent keys cannot modify host-executed workspace commands (${paths.join(", ")}).`);
+  throw forbidden(
+    `Agent keys cannot modify host-executed workspace commands (${paths.join(", ")}).`,
+  );
 }
 
-export function collectAgentAdapterWorkspaceCommandPaths(adapterConfig: unknown): string[] {
+export function collectAgentAdapterWorkspaceCommandPaths(
+  adapterConfig: unknown,
+  prefix = "adapterConfig",
+): string[] {
   if (!isRecord(adapterConfig)) return [];
-  return collectWorkspaceStrategyCommandPaths(adapterConfig.workspaceStrategy, "adapterConfig.workspaceStrategy");
+  return collectWorkspaceStrategyCommandPaths(
+    adapterConfig.workspaceStrategy,
+    `${prefix}.workspaceStrategy`,
+  );
 }
 
 export function collectProjectExecutionWorkspaceCommandPaths(policy: unknown): string[] {
   if (!isRecord(policy)) return [];
-  return collectWorkspaceStrategyCommandPaths(policy.workspaceStrategy, "executionWorkspacePolicy.workspaceStrategy");
+  return collectWorkspaceStrategyCommandPaths(
+    policy.workspaceStrategy,
+    "executionWorkspacePolicy.workspaceStrategy",
+  );
 }
 
-export function collectProjectWorkspaceCommandPaths(workspacePatch: unknown, prefix = ""): string[] {
+export function collectProjectWorkspaceCommandPaths(
+  workspacePatch: unknown,
+  prefix = "",
+): string[] {
   if (!isRecord(workspacePatch)) return [];
-  return hasOwn(workspacePatch, "cleanupCommand") ? [prefixPath(prefix, "cleanupCommand")] : [];
+  return hasOwn(workspacePatch, "cleanupCommand")
+    ? [prefixPath(prefix, "cleanupCommand")]
+    : [];
 }
 
 export function collectIssueWorkspaceCommandPaths(input: {
@@ -87,7 +103,10 @@ export function collectIssueWorkspaceCommandPaths(input: {
   return paths;
 }
 
-export function collectExecutionWorkspaceCommandPaths(input: { config?: unknown; metadata?: unknown }): string[] {
+export function collectExecutionWorkspaceCommandPaths(input: {
+  config?: unknown;
+  metadata?: unknown;
+}): string[] {
   const paths: string[] = [];
   if (input.config !== undefined) {
     paths.push(...collectExecutionWorkspaceConfigCommandPaths(input.config, "config"));

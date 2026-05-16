@@ -1,3 +1,4 @@
+import type { IssueCommentAuthorType, IssueCommentMetadata, IssueCommentPresentation } from "@paperclipai/shared";
 import { pgTable, uuid, text, timestamp, index, jsonb } from "drizzle-orm/pg-core";
 import { companies } from "./companies.js";
 import { issues } from "./issues.js";
@@ -16,9 +17,12 @@ export const issueComments = pgTable(
       .references(() => issues.id),
     authorAgentId: uuid("author_agent_id").references(() => agents.id),
     authorUserId: text("author_user_id"),
+    authorType: text("author_type").$type<IssueCommentAuthorType>(),
     createdByRunId: uuid("created_by_run_id").references(() => heartbeatRuns.id, { onDelete: "set null" }),
     body: text("body").notNull(),
     questionData: jsonb("question_data"),
+    presentation: jsonb("presentation").$type<IssueCommentPresentation | null>(),
+    metadata: jsonb("metadata").$type<IssueCommentMetadata | null>(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

@@ -6,6 +6,7 @@ import { toNodeHandler } from "better-auth/node";
 import type { Db } from "@paperclipai/db";
 import { authAccounts, authSessions, authUsers, authVerifications } from "@paperclipai/db";
 import type { Config } from "../config.js";
+import { resolvePaperclipInstanceId } from "../home-paths.js";
 import type { Mailer } from "../services/email/mailer.js";
 import { createSendResetPassword } from "./reset-password.js";
 
@@ -29,6 +30,25 @@ export type BetterAuthSessionResult = {
 
 type BetterAuthInstance = ReturnType<typeof betterAuth>;
 
+const AUTH_COOKIE_PREFIX_FALLBACK = "default";
+const AUTH_COOKIE_PREFIX_INVALID_SEGMENTS_RE = /[^a-zA-Z0-9_-]+/g;
+
+export function deriveAuthCookiePrefix(instanceId = resolvePaperclipInstanceId()): string {
+  const scopedInstanceId =
+    instanceId
+      .trim()
+      .replace(AUTH_COOKIE_PREFIX_INVALID_SEGMENTS_RE, "-")
+      .replace(/^-+|-+$/g, "") || AUTH_COOKIE_PREFIX_FALLBACK;
+  return `paperclip-${scopedInstanceId}`;
+}
+
+export function buildBetterAuthAdvancedOptions(input: { disableSecureCookies: boolean }) {
+  return {
+    cookiePrefix: deriveAuthCookiePrefix(),
+    ...(input.disableSecureCookies ? { useSecureCookies: false } : {}),
+  };
+}
+
 function headersFromNodeHeaders(rawHeaders: IncomingHttpHeaders): Headers {
   const headers = new Headers();
   for (const [key, raw] of Object.entries(rawHeaders)) {
@@ -46,7 +66,7 @@ function headersFromExpressRequest(req: Request): Headers {
   return headersFromNodeHeaders(req.headers);
 }
 
-export function deriveAuthTrustedOrigins(config: Config): string[] {
+export function deriveAuthTrustedOrigins(config: Config, opts?: { listenPort?: number }): string[] {
   const baseUrl = config.authBaseUrlMode === "explicit" ? config.authPublicBaseUrl : undefined;
   const trustedOrigins = new Set<string>();
 
@@ -58,11 +78,17 @@ export function deriveAuthTrustedOrigins(config: Config): string[] {
     }
   }
   if (config.deploymentMode === "authenticated") {
+    const port = opts?.listenPort ?? config.port;
+    const needsPortVariants = port !== 80 && port !== 443;
     for (const hostname of config.allowedHostnames) {
       const trimmed = hostname.trim().toLowerCase();
       if (!trimmed) continue;
       trustedOrigins.add(`https://${trimmed}`);
       trustedOrigins.add(`http://${trimmed}`);
+      if (needsPortVariants) {
+        trustedOrigins.add(`https://${trimmed}:${port}`);
+        trustedOrigins.add(`http://${trimmed}:${port}`);
+      }
     }
   }
 
@@ -110,7 +136,7 @@ export function createBetterAuthInstance(
       // a real mailer in practice.
       ...(options.mailer ? { sendResetPassword: createSendResetPassword(options.mailer) } : {}),
     },
-    ...(isHttpOnly ? { advanced: { useSecureCookies: false } } : {}),
+    advanced: buildBetterAuthAdvancedOptions({ disableSecureCookies: isHttpOnly }),
   };
 
   if (!baseUrl) {

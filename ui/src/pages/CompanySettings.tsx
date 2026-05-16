@@ -1,10 +1,13 @@
 import { type ChangeEvent, useEffect, useMemo, useState } from "react";
 import { Link } from "@/lib/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { DEFAULT_FEEDBACK_DATA_SHARING_TERMS_VERSION } from "@paperclipai/shared";
+import {
+  DEFAULT_COMPANY_ATTACHMENT_MAX_BYTES,
+  DEFAULT_FEEDBACK_DATA_SHARING_TERMS_VERSION,
+  MAX_COMPANY_ATTACHMENT_MAX_BYTES,
+} from "@paperclipai/shared";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
-import { useToastActions } from "../context/ToastContext";
 import { companiesApi } from "../api/companies";
 import { accessApi } from "../api/access";
 import { assetsApi } from "../api/assets";
@@ -13,6 +16,9 @@ import { Button } from "@/components/ui/button";
 import { Settings, Check, Download, Upload, Pause, Play, Copy, Trash2, Link2 } from "lucide-react";
 import { CompanyPatternIcon } from "../components/CompanyPatternIcon";
 import { Field, ToggleField, HintIcon } from "../components/agent-config-primitives";
+import { useToastActions } from "../context/ToastContext";
+
+const FEEDBACK_TERMS_URL = import.meta.env.VITE_FEEDBACK_TERMS_URL?.trim() || "https://paperclip.ing/tos";
 
 type AgentSnippetInput = {
   onboardingTextUrl: string;
@@ -20,17 +26,19 @@ type AgentSnippetInput = {
   testResolutionUrl?: string | null;
 };
 
-const FEEDBACK_TERMS_URL = import.meta.env.VITE_FEEDBACK_TERMS_URL?.trim() || "https://paperclip.ing/tos";
-
+const BYTES_PER_MIB = 1024 * 1024;
+const DEFAULT_COMPANY_ATTACHMENT_MAX_MIB = DEFAULT_COMPANY_ATTACHMENT_MAX_BYTES / BYTES_PER_MIB;
+const MAX_COMPANY_ATTACHMENT_MAX_MIB = MAX_COMPANY_ATTACHMENT_MAX_BYTES / BYTES_PER_MIB;
 export function CompanySettings() {
   const { companies, selectedCompany, selectedCompanyId, setSelectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
-  const { pushToast } = useToastActions();
   const queryClient = useQueryClient();
+  const { pushToast } = useToastActions();
   // General settings local state
   const [companyName, setCompanyName] = useState("");
   const [description, setDescription] = useState("");
   const [brandColor, setBrandColor] = useState("");
+  const [attachmentMaxMiB, setAttachmentMaxMiB] = useState(String(DEFAULT_COMPANY_ATTACHMENT_MAX_MIB));
   const [logoUrl, setLogoUrl] = useState("");
   const [logoUploadError, setLogoUploadError] = useState<string | null>(null);
 
@@ -41,6 +49,9 @@ export function CompanySettings() {
     setCompanyName(selectedCompany.name);
     setDescription(selectedCompany.description ?? "");
     setBrandColor(selectedCompany.brandColor ?? "");
+    setAttachmentMaxMiB(
+      String(Math.round((selectedCompany.attachmentMaxBytes ?? DEFAULT_COMPANY_ATTACHMENT_MAX_BYTES) / BYTES_PER_MIB)),
+    );
     setLogoUrl(selectedCompany.logoUrl ?? "");
   }, [selectedCompany]);
 
@@ -56,15 +67,26 @@ export function CompanySettings() {
   const [sessionInviteTokens, setSessionInviteTokens] = useState<Map<string, string>>(new Map());
   const [copiedInviteId, setCopiedInviteId] = useState<string | null>(null);
 
+  const attachmentMaxBytes = Number.parseInt(attachmentMaxMiB, 10) * BYTES_PER_MIB;
+  const attachmentMaxValid =
+    Number.isInteger(attachmentMaxBytes) &&
+    attachmentMaxBytes >= BYTES_PER_MIB &&
+    attachmentMaxBytes <= MAX_COMPANY_ATTACHMENT_MAX_BYTES;
+
   const generalDirty =
     !!selectedCompany &&
     (companyName !== selectedCompany.name ||
       description !== (selectedCompany.description ?? "") ||
-      brandColor !== (selectedCompany.brandColor ?? ""));
+      brandColor !== (selectedCompany.brandColor ?? "") ||
+      attachmentMaxBytes !== (selectedCompany.attachmentMaxBytes ?? DEFAULT_COMPANY_ATTACHMENT_MAX_BYTES));
 
   const generalMutation = useMutation({
-    mutationFn: (data: { name: string; description: string | null; brandColor: string | null }) =>
-      companiesApi.update(selectedCompanyId!, data),
+    mutationFn: (data: {
+      name: string;
+      description: string | null;
+      brandColor: string | null;
+      attachmentMaxBytes: number;
+    }) => companiesApi.update(selectedCompanyId!, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
     },
@@ -85,19 +107,8 @@ export function CompanySettings() {
       companiesApi.update(selectedCompanyId!, {
         feedbackDataSharingEnabled: enabled,
       }),
-    onSuccess: (_company, enabled) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
-      pushToast({
-        title: enabled ? "Feedback sharing enabled" : "Feedback sharing disabled",
-        tone: "success",
-      });
-    },
-    onError: (err) => {
-      pushToast({
-        title: "Failed to update feedback sharing",
-        body: err instanceof Error ? err.message : "Unknown error",
-        tone: "error",
-      });
     },
   });
 
@@ -305,6 +316,7 @@ export function CompanySettings() {
       name: companyName.trim(),
       description: description.trim() || null,
       brandColor: brandColor || null,
+      attachmentMaxBytes,
     });
   }
 
@@ -424,6 +436,27 @@ export function CompanySettings() {
                   )}
                 </div>
               </Field>
+              <Field label="Attachment size limit" hint={`Accepted range: 1-${MAX_COMPANY_ATTACHMENT_MAX_MIB} MiB.`}>
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={1}
+                      max={MAX_COMPANY_ATTACHMENT_MAX_MIB}
+                      step={1}
+                      value={attachmentMaxMiB}
+                      onChange={(e) => setAttachmentMaxMiB(e.target.value)}
+                      className="w-28 rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none"
+                    />
+                    <span className="text-xs text-muted-foreground">MiB</span>
+                  </div>
+                  {!attachmentMaxValid && (
+                    <span className="text-xs text-destructive">
+                      Enter a whole number from 1 to {MAX_COMPANY_ATTACHMENT_MAX_MIB}.
+                    </span>
+                  )}
+                </div>
+              </Field>
             </div>
           </div>
         </div>
@@ -432,7 +465,11 @@ export function CompanySettings() {
       {/* Save button for General + Appearance */}
       {generalDirty && (
         <div className="flex items-center gap-2">
-          <Button size="sm" onClick={handleSaveGeneral} disabled={generalMutation.isPending || !companyName.trim()}>
+          <Button
+            size="sm"
+            onClick={handleSaveGeneral}
+            disabled={generalMutation.isPending || !companyName.trim() || !attachmentMaxValid}
+          >
             {generalMutation.isPending ? "Saving..." : "Save changes"}
           </Button>
           {generalMutation.isSuccess && <span className="text-xs text-muted-foreground">Saved</span>}
@@ -690,16 +727,16 @@ export function CompanySettings() {
           </p>
           <div className="mt-3 flex items-center gap-2">
             <Button size="sm" variant="outline" asChild>
-              <Link to="/company/export">
+              <a href="/company/export">
                 <Download className="mr-1.5 h-3.5 w-3.5" />
                 Export
-              </Link>
+              </a>
             </Button>
             <Button size="sm" variant="outline" asChild>
-              <Link to="/company/import">
+              <a href="/company/import">
                 <Upload className="mr-1.5 h-3.5 w-3.5" />
                 Import
-              </Link>
+              </a>
             </Button>
           </div>
         </div>
