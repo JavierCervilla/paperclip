@@ -36,9 +36,10 @@ if (existsSync(PAPERCLIP_ENV_FILE_PATH)) {
 }
 
 const CWD_ENV_PATH = resolve(process.cwd(), ".env");
-const isSameFile = existsSync(CWD_ENV_PATH) && existsSync(PAPERCLIP_ENV_FILE_PATH)
-  ? realpathSync(CWD_ENV_PATH) === realpathSync(PAPERCLIP_ENV_FILE_PATH)
-  : CWD_ENV_PATH === PAPERCLIP_ENV_FILE_PATH;
+const isSameFile =
+  existsSync(CWD_ENV_PATH) && existsSync(PAPERCLIP_ENV_FILE_PATH)
+    ? realpathSync(CWD_ENV_PATH) === realpathSync(PAPERCLIP_ENV_FILE_PATH)
+    : CWD_ENV_PATH === PAPERCLIP_ENV_FILE_PATH;
 if (!isSameFile && existsSync(CWD_ENV_PATH)) {
   loadDotenv({ path: CWD_ENV_PATH, override: false, quiet: true });
 }
@@ -87,6 +88,9 @@ export interface Config {
   heartbeatSchedulerIntervalMs: number;
   companyDeletionEnabled: boolean;
   telemetryEnabled: boolean;
+  resendApiKey: string | undefined;
+  resendFromEmail: string | undefined;
+  resendReplyTo: string | undefined;
 }
 
 function detectTailnetBindHost(): string | undefined {
@@ -110,13 +114,11 @@ function detectTailnetBindHost(): string | undefined {
 
 export function loadConfig(): Config {
   const fileConfig = readConfigFile();
-  const fileDatabaseMode =
-    (fileConfig?.database.mode === "postgres" ? "postgres" : "embedded-postgres") as DatabaseMode;
+  const fileDatabaseMode = (
+    fileConfig?.database.mode === "postgres" ? "postgres" : "embedded-postgres"
+  ) as DatabaseMode;
 
-  const fileDbUrl =
-    fileDatabaseMode === "postgres"
-      ? fileConfig?.database.connectionString
-      : undefined;
+  const fileDbUrl = fileDatabaseMode === "postgres" ? fileConfig?.database.connectionString : undefined;
   const fileDatabaseBackup = fileConfig?.database.backup;
   const fileSecrets = fileConfig?.secrets;
   const fileStorage = fileConfig?.storage;
@@ -136,9 +138,7 @@ export function loadConfig(): Config {
       : null;
   const storageProvider: StorageProvider = storageProviderFromEnv ?? fileStorage?.provider ?? "local_disk";
   const storageLocalDiskBaseDir = resolveHomeAwarePath(
-    process.env.PAPERCLIP_STORAGE_LOCAL_DIR ??
-      fileStorage?.localDisk?.baseDir ??
-      resolveDefaultStorageDir(),
+    process.env.PAPERCLIP_STORAGE_LOCAL_DIR ?? fileStorage?.localDisk?.baseDir ?? resolveDefaultStorageDir(),
   );
   const storageS3Bucket = process.env.PAPERCLIP_STORAGE_S3_BUCKET ?? fileStorage?.s3?.bucket ?? "paperclip";
   const storageS3Region = process.env.PAPERCLIP_STORAGE_S3_REGION ?? fileStorage?.s3?.region ?? "us-east-1";
@@ -170,8 +170,7 @@ export function loadConfig(): Config {
       : (fileSecrets?.strictMode ?? deploymentMode === "authenticated");
   const deploymentExposureFromEnvRaw = process.env.PAPERCLIP_DEPLOYMENT_EXPOSURE;
   const deploymentExposureFromEnv =
-    deploymentExposureFromEnvRaw &&
-    DEPLOYMENT_EXPOSURES.includes(deploymentExposureFromEnvRaw as DeploymentExposure)
+    deploymentExposureFromEnvRaw && DEPLOYMENT_EXPOSURES.includes(deploymentExposureFromEnvRaw as DeploymentExposure)
       ? (deploymentExposureFromEnvRaw as DeploymentExposure)
       : null;
   const deploymentExposure: DeploymentExposure =
@@ -180,20 +179,14 @@ export function loadConfig(): Config {
       : (deploymentExposureFromEnv ?? fileConfig?.server.exposure ?? "private");
   const bindFromEnvRaw = process.env.PAPERCLIP_BIND;
   const bindFromEnv =
-    bindFromEnvRaw && BIND_MODES.includes(bindFromEnvRaw as BindMode)
-      ? (bindFromEnvRaw as BindMode)
-      : null;
+    bindFromEnvRaw && BIND_MODES.includes(bindFromEnvRaw as BindMode) ? (bindFromEnvRaw as BindMode) : null;
   const configuredHost = process.env.HOST ?? fileConfig?.server.host ?? "127.0.0.1";
   const tailnetBindHost = detectTailnetBindHost();
-  const bind =
-    bindFromEnv ??
-    fileConfig?.server.bind ??
-    inferBindModeFromHost(configuredHost, { tailnetBindHost });
+  const bind = bindFromEnv ?? fileConfig?.server.bind ?? inferBindModeFromHost(configuredHost, { tailnetBindHost });
   const customBindHost = process.env.PAPERCLIP_BIND_HOST ?? fileConfig?.server.customBindHost;
   const authBaseUrlModeFromEnvRaw = process.env.PAPERCLIP_AUTH_BASE_URL_MODE;
   const authBaseUrlModeFromEnv =
-    authBaseUrlModeFromEnvRaw &&
-    AUTH_BASE_URL_MODES.includes(authBaseUrlModeFromEnvRaw as AuthBaseUrlMode)
+    authBaseUrlModeFromEnvRaw && AUTH_BASE_URL_MODES.includes(authBaseUrlModeFromEnvRaw as AuthBaseUrlMode)
       ? (authBaseUrlModeFromEnvRaw as AuthBaseUrlMode)
       : null;
   const publicUrlFromEnv = process.env.PAPERCLIP_PUBLIC_URL;
@@ -205,29 +198,25 @@ export function loadConfig(): Config {
     fileConfig?.auth?.publicBaseUrl;
   const authPublicBaseUrl = authPublicBaseUrlRaw?.trim() || undefined;
   const authBaseUrlMode: AuthBaseUrlMode =
-    authBaseUrlModeFromEnv ??
-    fileConfig?.auth?.baseUrlMode ??
-    (authPublicBaseUrl ? "explicit" : "auto");
+    authBaseUrlModeFromEnv ?? fileConfig?.auth?.baseUrlMode ?? (authPublicBaseUrl ? "explicit" : "auto");
   const disableSignUpFromEnv = process.env.PAPERCLIP_AUTH_DISABLE_SIGN_UP;
   const authDisableSignUp: boolean =
-    disableSignUpFromEnv !== undefined
-      ? disableSignUpFromEnv === "true"
-      : (fileConfig?.auth?.disableSignUp ?? false);
+    disableSignUpFromEnv !== undefined ? disableSignUpFromEnv === "true" : (fileConfig?.auth?.disableSignUp ?? false);
   const allowedHostnamesFromEnvRaw = process.env.PAPERCLIP_ALLOWED_HOSTNAMES;
   const allowedHostnamesFromEnv = allowedHostnamesFromEnvRaw
     ? allowedHostnamesFromEnvRaw
-      .split(",")
-      .map((value) => value.trim().toLowerCase())
-      .filter((value) => value.length > 0)
+        .split(",")
+        .map((value) => value.trim().toLowerCase())
+        .filter((value) => value.length > 0)
     : null;
   const publicUrlHostname = authPublicBaseUrl
     ? (() => {
-      try {
-        return new URL(authPublicBaseUrl).hostname.trim().toLowerCase();
-      } catch {
-        return null;
-      }
-    })()
+        try {
+          return new URL(authPublicBaseUrl).hostname.trim().toLowerCase();
+        } catch {
+          return null;
+        }
+      })()
     : null;
   const allowedHostnames = Array.from(
     new Set(
@@ -241,29 +230,21 @@ export function loadConfig(): Config {
   );
   const companyDeletionEnvRaw = process.env.PAPERCLIP_ENABLE_COMPANY_DELETION;
   const companyDeletionEnabled =
-    companyDeletionEnvRaw !== undefined
-      ? companyDeletionEnvRaw === "true"
-      : deploymentMode === "local_trusted";
+    companyDeletionEnvRaw !== undefined ? companyDeletionEnvRaw === "true" : deploymentMode === "local_trusted";
   const databaseBackupEnabled =
     process.env.PAPERCLIP_DB_BACKUP_ENABLED !== undefined
       ? process.env.PAPERCLIP_DB_BACKUP_ENABLED === "true"
       : (fileDatabaseBackup?.enabled ?? true);
   const databaseBackupIntervalMinutes = Math.max(
     1,
-    Number(process.env.PAPERCLIP_DB_BACKUP_INTERVAL_MINUTES) ||
-      fileDatabaseBackup?.intervalMinutes ||
-      60,
+    Number(process.env.PAPERCLIP_DB_BACKUP_INTERVAL_MINUTES) || fileDatabaseBackup?.intervalMinutes || 60,
   );
   const databaseBackupRetentionDays = Math.max(
     1,
-    Number(process.env.PAPERCLIP_DB_BACKUP_RETENTION_DAYS) ||
-      fileDatabaseBackup?.retentionDays ||
-      7,
+    Number(process.env.PAPERCLIP_DB_BACKUP_RETENTION_DAYS) || fileDatabaseBackup?.retentionDays || 7,
   );
   const databaseBackupDir = resolveHomeAwarePath(
-    process.env.PAPERCLIP_DB_BACKUP_DIR ??
-      fileDatabaseBackup?.dir ??
-      resolveDefaultBackupDir(),
+    process.env.PAPERCLIP_DB_BACKUP_DIR ?? fileDatabaseBackup?.dir ?? resolveDefaultBackupDir(),
   );
   const bindValidationErrors = validateConfiguredBindMode({
     deploymentMode,
@@ -308,18 +289,15 @@ export function loadConfig(): Config {
     databaseBackupRetentionDays,
     databaseBackupDir,
     serveUi:
-      process.env.SERVE_UI !== undefined
-        ? process.env.SERVE_UI === "true"
-        : fileConfig?.server.serveUi ?? true,
+      process.env.SERVE_UI !== undefined ? process.env.SERVE_UI === "true" : (fileConfig?.server.serveUi ?? true),
     uiDevMiddleware: process.env.PAPERCLIP_UI_DEV_MIDDLEWARE === "true",
     secretsProvider,
     secretsStrictMode,
-    secretsMasterKeyFilePath:
-      resolveHomeAwarePath(
-        process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE ??
-          fileSecrets?.localEncrypted.keyFilePath ??
-          resolveDefaultSecretsKeyFilePath(),
-      ),
+    secretsMasterKeyFilePath: resolveHomeAwarePath(
+      process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE ??
+        fileSecrets?.localEncrypted.keyFilePath ??
+        resolveDefaultSecretsKeyFilePath(),
+    ),
     storageProvider,
     storageLocalDiskBaseDir,
     storageS3Bucket,
@@ -333,5 +311,8 @@ export function loadConfig(): Config {
     heartbeatSchedulerIntervalMs: Math.max(10000, Number(process.env.HEARTBEAT_SCHEDULER_INTERVAL_MS) || 30000),
     companyDeletionEnabled,
     telemetryEnabled: fileConfig?.telemetry?.enabled ?? true,
+    resendApiKey: process.env.RESEND_API_KEY?.trim() || undefined,
+    resendFromEmail: process.env.RESEND_FROM_EMAIL?.trim() || undefined,
+    resendReplyTo: process.env.RESEND_REPLY_TO?.trim() || undefined,
   };
 }

@@ -35,21 +35,20 @@ export function healthRoutes(
     deploymentExposure: DeploymentExposure;
     authReady: boolean;
     companyDeletionEnabled: boolean;
+    emailEnabled?: boolean;
   } = {
     deploymentMode: "local_trusted",
     deploymentExposure: "private",
     authReady: true,
     companyDeletionEnabled: true,
+    emailEnabled: false,
   },
 ) {
   const router = Router();
 
   router.get("/", async (req, res) => {
     const actorType = "actor" in req ? req.actor?.type : null;
-    const exposeFullDetails = shouldExposeFullHealthDetails(
-      actorType,
-      opts.deploymentMode,
-    );
+    const exposeFullDetails = shouldExposeFullHealthDetails(actorType, opts.deploymentMode);
     const exposeDevServerDetails =
       exposeFullDetails || hasDevServerStatusToken(req.get("x-paperclip-dev-server-status-token"));
 
@@ -69,7 +68,7 @@ export function healthRoutes(
       res.status(503).json({
         status: "unhealthy",
         version: serverVersion,
-        error: "database_unreachable"
+        error: "database_unreachable",
       });
       return;
     }
@@ -104,7 +103,11 @@ export function healthRoutes(
 
     const persistedDevServerStatus = readPersistedDevServerStatus();
     let devServer: ReturnType<typeof toDevServerHealthStatus> | undefined;
-    if (exposeDevServerDetails && persistedDevServerStatus && typeof (db as { select?: unknown }).select === "function") {
+    if (
+      exposeDevServerDetails &&
+      persistedDevServerStatus &&
+      typeof (db as { select?: unknown }).select === "function"
+    ) {
       const instanceSettings = instanceSettingsService(db);
       const experimentalSettings = await instanceSettings.getExperimental();
       const activeRunCount = await db
@@ -140,6 +143,7 @@ export function healthRoutes(
       bootstrapInviteActive,
       features: {
         companyDeletionEnabled: opts.companyDeletionEnabled,
+        emailEnabled: opts.emailEnabled ?? false,
       },
       ...(devServer ? { devServer } : {}),
     });

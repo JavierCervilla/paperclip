@@ -645,6 +645,13 @@
       "when": 1778171254014,
       "tag": "0091_hard_calypso",
       "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1778889600000,
+      "tag": "0092_invite_email_telemetry",
+      "breakpoints": true
     }
   ]
 }

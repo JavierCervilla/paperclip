@@ -43,6 +43,8 @@ import { adapterRoutes } from "./routes/adapters.js";
 import { pluginUiStaticRoutes } from "./routes/plugin-ui-static.js";
 import { applyUiBranding } from "./ui-branding.js";
 import { logger } from "./middleware/logger.js";
+import { createNoopMailer, type Mailer } from "./services/email/mailer.js";
+import { createRequestPasswordResetGuard } from "./auth/reset-password.js";
 import { DEFAULT_LOCAL_PLUGIN_DIR, pluginLoader } from "./services/plugin-loader.js";
 import { createPluginWorkerManager, type PluginWorkerManager } from "./services/plugin-worker-manager.js";
 import { createPluginJobScheduler } from "./services/plugin-job-scheduler.js";
@@ -62,15 +64,7 @@ import { createCachedViteHtmlRenderer } from "./vite-html-renderer.js";
 
 type UiMode = "none" | "static" | "vite-dev";
 const FEEDBACK_EXPORT_FLUSH_INTERVAL_MS = 5_000;
-const VITE_DEV_ASSET_PREFIXES = [
-  "/@fs/",
-  "/@id/",
-  "/@react-refresh",
-  "/@vite/",
-  "/assets/",
-  "/node_modules/",
-  "/src/",
-];
+const VITE_DEV_ASSET_PREFIXES = ["/@fs/", "/@id/", "/@react-refresh", "/@vite/", "/assets/", "/node_modules/", "/src/"];
 const VITE_DEV_STATIC_PATHS = new Set([
   "/apple-touch-icon.png",
   "/favicon-16x16.png",
@@ -133,17 +127,21 @@ export async function createApp(
     pluginWorkerManager?: PluginWorkerManager;
     betterAuthHandler?: express.RequestHandler;
     resolveSession?: (req: ExpressRequest) => Promise<BetterAuthSessionResult | null>;
+    mailer?: Mailer;
   },
 ) {
   const app = express();
+  const mailer: Mailer = opts.mailer ?? createNoopMailer();
 
-  app.use(express.json({
-    // Company import/export payloads can inline full portable packages.
-    limit: "10mb",
-    verify: (req, _res, buf) => {
-      (req as unknown as { rawBody: Buffer }).rawBody = buf;
-    },
-  }));
+  app.use(
+    express.json({
+      // Company import/export payloads can inline full portable packages.
+      limit: "10mb",
+      verify: (req, _res, buf) => {
+        (req as unknown as { rawBody: Buffer }).rawBody = buf;
+      },
+    }),
+  );
   app.use(httpLogger);
   const privateHostnameGateEnabled = shouldEnablePrivateHostnameGuard({
     deploymentMode: opts.deploymentMode,
@@ -168,6 +166,9 @@ export async function createApp(
   );
   app.use("/api/auth", authRoutes(db));
   if (opts.betterAuthHandler) {
+    // Reject password-reset requests with a clear error when no email provider
+    // is configured, instead of Better Auth's silent generic 200.
+    app.post("/api/auth/request-password-reset", createRequestPasswordResetGuard(mailer));
     app.all("/api/auth/{*authPath}", opts.betterAuthHandler);
   }
   app.use(llmRoutes(db));
@@ -185,6 +186,7 @@ export async function createApp(
       deploymentExposure: opts.deploymentExposure,
       authReady: opts.authReady,
       companyDeletionEnabled: opts.companyDeletionEnabled,
+      emailEnabled: mailer.enabled,
     }),
   );
   api.use("/companies", companyRoutes(db, opts.storageService));
@@ -192,10 +194,12 @@ export async function createApp(
   api.use(agentRoutes(db, { pluginWorkerManager: workerManager }));
   api.use(assetRoutes(db, opts.storageService));
   api.use(projectRoutes(db));
-  api.use(issueRoutes(db, opts.storageService, {
-    feedbackExportService: opts.feedbackExportService,
-    pluginWorkerManager: workerManager,
-  }));
+  api.use(
+    issueRoutes(db, opts.storageService, {
+      feedbackExportService: opts.feedbackExportService,
+      pluginWorkerManager: workerManager,
+    }),
+  );
   api.use(issueTreeControlRoutes(db));
   api.use(routineRoutes(db, { pluginWorkerManager: workerManager }));
   api.use(environmentRoutes(db, { pluginWorkerManager: workerManager }));
@@ -274,16 +278,7 @@ export async function createApp(
       },
     },
   );
-  api.use(
-    pluginRoutes(
-      db,
-      loader,
-      { scheduler, jobStore },
-      { workerManager },
-      { toolDispatcher },
-      { workerManager },
-    ),
-  );
+  api.use(pluginRoutes(db, loader, { scheduler, jobStore }, { workerManager }, { toolDispatcher }, { workerManager }));
   api.use(adapterRoutes());
   api.use(
     accessRoutes(db, {
@@ -291,23 +286,23 @@ export async function createApp(
       deploymentExposure: opts.deploymentExposure,
       bindHost: opts.bindHost,
       allowedHostnames: opts.allowedHostnames,
+      mailer,
     }),
   );
   app.use("/api", api);
   app.use("/api", (_req, res) => {
     res.status(404).json({ error: "API route not found" });
   });
-  app.use(pluginUiStaticRoutes(db, {
-    localPluginDir: opts.localPluginDir ?? DEFAULT_LOCAL_PLUGIN_DIR,
-  }));
+  app.use(
+    pluginUiStaticRoutes(db, {
+      localPluginDir: opts.localPluginDir ?? DEFAULT_LOCAL_PLUGIN_DIR,
+    }),
+  );
 
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
   if (opts.uiMode === "static") {
     // Try published location first (server/ui-dist/), then monorepo dev location (../../ui/dist)
-    const candidates = [
-      path.resolve(__dirname, "../ui-dist"),
-      path.resolve(__dirname, "../../ui/dist"),
-    ];
+    const candidates = [path.resolve(__dirname, "../ui-dist"), path.resolve(__dirname, "../../ui/dist")];
     const uiDist = candidates.find((p) => fs.existsSync(path.join(p, "index.html")));
     if (uiDist) {
       const indexHtml = applyUiBranding(fs.readFileSync(path.join(uiDist, "index.html"), "utf-8"));
@@ -346,11 +341,7 @@ export async function createApp(
           res.status(404).end();
           return;
         }
-        res
-          .status(200)
-          .set("Content-Type", "text/html")
-          .set("Cache-Control", "no-cache")
-          .end(indexHtml);
+        res.status(200).set("Content-Type", "text/html").set("Cache-Control", "no-cache").end(indexHtml);
       });
     } else {
       console.warn("[paperclip] UI dist not found; running in API-only mode");
@@ -406,10 +397,10 @@ export async function createApp(
   scheduler.start();
   const feedbackExportTimer = opts.feedbackExportService
     ? setInterval(() => {
-      void opts.feedbackExportService?.flushPendingFeedbackTraces().catch((err) => {
-        logger.error({ err }, "Failed to flush pending feedback exports");
-      });
-    }, FEEDBACK_EXPORT_FLUSH_INTERVAL_MS)
+        void opts.feedbackExportService?.flushPendingFeedbackTraces().catch((err) => {
+          logger.error({ err }, "Failed to flush pending feedback exports");
+        });
+      }, FEEDBACK_EXPORT_FLUSH_INTERVAL_MS)
     : null;
   feedbackExportTimer?.unref?.();
   if (opts.feedbackExportService) {
@@ -420,22 +411,26 @@ export async function createApp(
   void toolDispatcher.initialize().catch((err) => {
     logger.error({ err }, "Failed to initialize plugin tool dispatcher");
   });
-  const devWatcher = opts.uiMode === "vite-dev"
-    ? createPluginDevWatcher(
-      lifecycle,
-      async (pluginId) => (await pluginRegistry.getById(pluginId))?.packagePath ?? null,
-    )
-    : null;
-  void loader.loadAll().then((result) => {
-    if (!result) return;
-    for (const loaded of result.results) {
-      if (devWatcher && loaded.success && loaded.plugin.packagePath) {
-        devWatcher.watch(loaded.plugin.id, loaded.plugin.packagePath);
+  const devWatcher =
+    opts.uiMode === "vite-dev"
+      ? createPluginDevWatcher(
+          lifecycle,
+          async (pluginId) => (await pluginRegistry.getById(pluginId))?.packagePath ?? null,
+        )
+      : null;
+  void loader
+    .loadAll()
+    .then((result) => {
+      if (!result) return;
+      for (const loaded of result.results) {
+        if (devWatcher && loaded.success && loaded.plugin.packagePath) {
+          devWatcher.watch(loaded.plugin.id, loaded.plugin.packagePath);
+        }
       }
-    }
-  }).catch((err) => {
-    logger.error({ err }, "Failed to load ready plugins on startup");
-  });
+    })
+    .catch((err) => {
+      logger.error({ err }, "Failed to load ready plugins on startup");
+    });
   process.once("exit", () => {
     if (feedbackExportTimer) clearInterval(feedbackExportTimer);
     devWatcher?.close();

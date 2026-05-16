@@ -228,12 +228,14 @@ describe("startServer authenticated auth origin setup", () => {
   });
 
   it("derives trusted origins from the detected listen port before auth initializes", async () => {
-    loadConfigMock.mockReturnValue(buildTestConfig({
-      port: 3210,
-      allowedHostnames: ["board.example.test"],
-      authBaseUrlMode: "explicit",
-      authPublicBaseUrl: "http://127.0.0.1:3210",
-    }));
+    loadConfigMock.mockReturnValue(
+      buildTestConfig({
+        port: 3210,
+        allowedHostnames: ["board.example.test"],
+        authBaseUrlMode: "explicit",
+        authPublicBaseUrl: "http://127.0.0.1:3210",
+      }),
+    );
     detectPortMock.mockResolvedValueOnce(3211);
     deriveAuthTrustedOriginsMock.mockImplementation(
       (_config: { port: number; authPublicBaseUrl?: string }, opts?: { listenPort?: number }) => [
@@ -256,7 +258,9 @@ describe("startServer authenticated auth origin setup", () => {
         port: 3210,
         authPublicBaseUrl: "http://127.0.0.1:3211/",
       }),
-      ["http://board.example.test:3211"],
+      expect.objectContaining({
+        trustedOrigins: ["http://board.example.test:3211"],
+      }),
     );
     expect(createAppMock.mock.calls[0]?.[1]).toMatchObject({
       serverPort: 3211,
@@ -313,11 +317,13 @@ describe("startServer PAPERCLIP_API_URL handling", () => {
   });
 
   it("rewrites explicit-port auth public URLs when detect-port selects a new port", async () => {
-    loadConfigMock.mockReturnValueOnce(buildTestConfig({
-      port: 3100,
-      authBaseUrlMode: "explicit",
-      authPublicBaseUrl: "http://my-host.ts.net:3100",
-    }));
+    loadConfigMock.mockReturnValueOnce(
+      buildTestConfig({
+        port: 3100,
+        authBaseUrlMode: "explicit",
+        authPublicBaseUrl: "http://my-host.ts.net:3100",
+      }),
+    );
     detectPortMock.mockResolvedValueOnce(3110);
 
     const started = await startServer();
@@ -328,11 +334,13 @@ describe("startServer PAPERCLIP_API_URL handling", () => {
   });
 
   it("keeps no-port auth public URLs stable when detect-port selects a new port", async () => {
-    loadConfigMock.mockReturnValueOnce(buildTestConfig({
-      port: 3100,
-      authBaseUrlMode: "explicit",
-      authPublicBaseUrl: "https://paperclip.example",
-    }));
+    loadConfigMock.mockReturnValueOnce(
+      buildTestConfig({
+        port: 3100,
+        authBaseUrlMode: "explicit",
+        authPublicBaseUrl: "https://paperclip.example",
+      }),
+    );
     detectPortMock.mockResolvedValueOnce(3110);
 
     const started = await startServer();

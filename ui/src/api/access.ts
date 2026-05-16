@@ -28,12 +28,12 @@ type InviteSummary = {
 type AcceptInviteInput =
   | { requestType: "human" }
   | {
-    requestType: "agent";
-    agentName: string;
-    adapterType?: AgentAdapterType;
-    capabilities?: string | null;
-    agentDefaultsPayload?: Record<string, unknown> | null;
-  };
+      requestType: "agent";
+      agentName: string;
+      adapterType?: AgentAdapterType;
+      capabilities?: string | null;
+      agentDefaultsPayload?: Record<string, unknown> | null;
+    };
 
 type AgentJoinRequestAccepted = JoinRequest & {
   claimSecret: string;
@@ -101,6 +101,9 @@ type CompanyInviteCreated = {
   onboardingTextPath?: string;
   onboardingTextUrl?: string;
   inviteMessage?: string | null;
+  recipientEmail?: string | null;
+  emailSent?: boolean;
+  emailError?: string;
 };
 
 export type CompanyMemberGrant = {
@@ -279,26 +282,19 @@ export const accessApi = {
       defaultsPayload?: Record<string, unknown> | null;
       agentMessage?: string | null;
     } = {},
-  ) =>
-    api.post<CompanyInviteCreated>(`/companies/${companyId}/invites`, input),
+  ) => api.post<CompanyInviteCreated>(`/companies/${companyId}/invites`, input),
 
-  listCompanyInvites: (companyId: string) =>
-    api.get<CompanyInviteListed[]>(`/companies/${companyId}/invites`),
+  listCompanyInvites: (companyId: string) => api.get<CompanyInviteListed[]>(`/companies/${companyId}/invites`),
 
   createOpenClawInvitePrompt: (
     companyId: string,
     input: {
       agentMessage?: string | null;
     } = {},
-  ) =>
-    api.post<CompanyInviteCreated>(
-      `/companies/${companyId}/openclaw/invite-prompt`,
-      input,
-    ),
+  ) => api.post<CompanyInviteCreated>(`/companies/${companyId}/openclaw/invite-prompt`, input),
 
   getInvite: (token: string) => api.get<InviteSummary>(`/invites/${token}`),
-  getInviteOnboarding: (token: string) =>
-    api.get<InviteOnboardingManifest>(`/invites/${token}/onboarding`),
+  getInviteOnboarding: (token: string) => api.get<InviteOnboardingManifest>(`/invites/${token}/onboarding`),
 
   acceptInvite: (token: string, input: AcceptInviteInput) =>
     api.post<AgentJoinRequestAccepted | JoinRequest | { bootstrapAccepted: true; userId: string }>(
@@ -313,10 +309,7 @@ export const accessApi = {
       limit?: number;
       offset?: number;
     } = {},
-  ) =>
-    api.get<CompanyInviteListResponse>(
-      `/companies/${companyId}/invites${buildInviteListQuery(options)}`,
-    ),
+  ) => api.get<CompanyInviteListResponse>(`/companies/${companyId}/invites${buildInviteListQuery(options)}`),
 
   revokeInvite: (inviteId: string) => api.post(`/invites/${inviteId}/revoke`, {}),
 
@@ -329,8 +322,7 @@ export const accessApi = {
       `/companies/${companyId}/join-requests?status=${status}${requestType ? `&requestType=${requestType}` : ""}`,
     ),
 
-  listMembers: (companyId: string) =>
-    api.get<CompanyMembersResponse>(`/companies/${companyId}/members`),
+  listMembers: (companyId: string) => api.get<CompanyMembersResponse>(`/companies/${companyId}/members`),
 
   listUserDirectory: (companyId: string) =>
     api.get<CompanyUserDirectoryResponse>(`/companies/${companyId}/user-directory`),
@@ -412,18 +404,14 @@ export const accessApi = {
   searchAdminUsers: (query: string) =>
     api.get<AdminUserDirectoryEntry[]>(`/admin/users?query=${encodeURIComponent(query)}`),
 
-  promoteInstanceAdmin: (userId: string) =>
-    api.post(`/admin/users/${userId}/promote-instance-admin`, {}),
+  promoteInstanceAdmin: (userId: string) => api.post(`/admin/users/${userId}/promote-instance-admin`, {}),
 
-  demoteInstanceAdmin: (userId: string) =>
-    api.post(`/admin/users/${userId}/demote-instance-admin`, {}),
+  demoteInstanceAdmin: (userId: string) => api.post(`/admin/users/${userId}/demote-instance-admin`, {}),
 
-  getUserCompanyAccess: (userId: string) =>
-    api.get<UserCompanyAccessResponse>(`/admin/users/${userId}/company-access`),
+  getUserCompanyAccess: (userId: string) => api.get<UserCompanyAccessResponse>(`/admin/users/${userId}/company-access`),
 
   setUserCompanyAccess: (userId: string, companyIds: string[]) =>
     api.put<UserCompanyAccessResponse>(`/admin/users/${userId}/company-access`, { companyIds }),
 
-  getCurrentBoardAccess: () =>
-    api.get<CurrentBoardAccess>("/cli-auth/me"),
+  getCurrentBoardAccess: () => api.get<CurrentBoardAccess>("/cli-auth/me"),
 };

@@ -6,13 +6,11 @@ import {
   type UpdateCurrentUserProfile,
 } from "@paperclipai/shared";
 
-type AuthErrorBody =
-  | {
-    code?: string;
-    message?: string;
-    error?: string | { code?: string; message?: string };
-  }
-  | null;
+type AuthErrorBody = {
+  code?: string;
+  message?: string;
+  error?: string | { code?: string; message?: string };
+} | null;
 
 export class AuthApiError extends Error {
   status: number;
@@ -38,16 +36,8 @@ function toSession(value: unknown): AuthSession | null {
 }
 
 function extractAuthError(payload: AuthErrorBody, status: number) {
-  const nested =
-    payload?.error && typeof payload.error === "object"
-      ? payload.error
-      : null;
-  const code =
-    typeof nested?.code === "string"
-      ? nested.code
-      : typeof payload?.code === "string"
-        ? payload.code
-        : null;
+  const nested = payload?.error && typeof payload.error === "object" ? payload.error : null;
+  const code = typeof nested?.code === "string" ? nested.code : typeof payload?.code === "string" ? payload.code : null;
   const message =
     typeof nested?.message === "string" && nested.message.trim().length > 0
       ? nested.message
@@ -130,5 +120,17 @@ export const authApi = {
 
   signOut: async () => {
     await authPost("/sign-out", {});
+  },
+
+  // Sends a password-reset email. The server responds generically regardless of
+  // whether the email exists (email-enumeration protection); it only throws
+  // when no email provider is configured ("Email service not configured").
+  requestPasswordReset: async (input: { email: string; redirectTo: string }) => {
+    await authPost("/request-password-reset", input);
+  },
+
+  // Completes a password reset using the token from the email link.
+  resetPassword: async (input: { token: string; newPassword: string }) => {
+    await authPost("/reset-password", input);
   },
 };

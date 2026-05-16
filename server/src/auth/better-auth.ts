@@ -7,6 +7,15 @@ import type { Db } from "@paperclipai/db";
 import { authAccounts, authSessions, authUsers, authVerifications } from "@paperclipai/db";
 import type { Config } from "../config.js";
 import { resolvePaperclipInstanceId } from "../home-paths.js";
+import type { Mailer } from "../services/email/mailer.js";
+import { createSendResetPassword } from "./reset-password.js";
+
+export interface BetterAuthInstanceOptions {
+  /** Trusted origins; defaults to `deriveAuthTrustedOrigins(config)` when omitted. */
+  trustedOrigins?: string[];
+  /** Mailer used to deliver password-reset emails. When omitted, reset emails are disabled. */
+  mailer?: Mailer;
+}
 
 export type BetterAuthSessionUser = {
   id: string;
@@ -25,10 +34,11 @@ const AUTH_COOKIE_PREFIX_FALLBACK = "default";
 const AUTH_COOKIE_PREFIX_INVALID_SEGMENTS_RE = /[^a-zA-Z0-9_-]+/g;
 
 export function deriveAuthCookiePrefix(instanceId = resolvePaperclipInstanceId()): string {
-  const scopedInstanceId = instanceId
-    .trim()
-    .replace(AUTH_COOKIE_PREFIX_INVALID_SEGMENTS_RE, "-")
-    .replace(/^-+|-+$/g, "") || AUTH_COOKIE_PREFIX_FALLBACK;
+  const scopedInstanceId =
+    instanceId
+      .trim()
+      .replace(AUTH_COOKIE_PREFIX_INVALID_SEGMENTS_RE, "-")
+      .replace(/^-+|-+$/g, "") || AUTH_COOKIE_PREFIX_FALLBACK;
   return `paperclip-${scopedInstanceId}`;
 }
 
@@ -85,7 +95,11 @@ export function deriveAuthTrustedOrigins(config: Config, opts?: { listenPort?: n
   return Array.from(trustedOrigins);
 }
 
-export function createBetterAuthInstance(db: Db, config: Config, trustedOrigins: string[]): BetterAuthInstance {
+export function createBetterAuthInstance(
+  db: Db,
+  config: Config,
+  options: BetterAuthInstanceOptions = {},
+): BetterAuthInstance {
   const baseUrl = config.authBaseUrlMode === "explicit" ? config.authPublicBaseUrl : undefined;
   const secret = process.env.BETTER_AUTH_SECRET ?? process.env.PAPERCLIP_AGENT_JWT_SECRET;
   if (!secret) {
@@ -94,13 +108,15 @@ export function createBetterAuthInstance(db: Db, config: Config, trustedOrigins:
         "For local development, set BETTER_AUTH_SECRET=paperclip-dev-secret in your .env file.",
     );
   }
+  const effectiveTrustedOrigins = options.trustedOrigins ?? deriveAuthTrustedOrigins(config);
+
   const publicUrl = process.env.PAPERCLIP_PUBLIC_URL ?? baseUrl;
   const isHttpOnly = publicUrl ? publicUrl.startsWith("http://") : false;
 
   const authConfig = {
     baseURL: baseUrl,
     secret,
-    trustedOrigins,
+    trustedOrigins: effectiveTrustedOrigins,
     database: drizzleAdapter(db, {
       provider: "pg",
       schema: {
@@ -114,6 +130,11 @@ export function createBetterAuthInstance(db: Db, config: Config, trustedOrigins:
       enabled: true,
       requireEmailVerification: false,
       disableSignUp: config.authDisableSignUp,
+      // Self-service password reset. When no mailer is configured the
+      // request-password-reset route is rejected upstream by an Express guard
+      // (see createRequestPasswordResetGuard), so this callback only runs with
+      // a real mailer in practice.
+      ...(options.mailer ? { sendResetPassword: createSendResetPassword(options.mailer) } : {}),
     },
     advanced: buildBetterAuthAdvancedOptions({ disableSecureCookies: isHttpOnly }),
   };
