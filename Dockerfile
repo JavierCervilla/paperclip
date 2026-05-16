@@ -40,7 +40,6 @@ COPY packages/plugins/plugin-sentry/package.json packages/plugins/plugin-sentry/
 COPY packages/plugins/plugin-knowledge-base/package.json packages/plugins/plugin-knowledge-base/
 COPY packages/plugins/plugin-obsidian/package.json packages/plugins/plugin-obsidian/
 COPY packages/plugins/plugin-telegram/package.json packages/plugins/plugin-telegram/
-COPY packages/plugins/plugin-llm-wiki/package.json packages/plugins/plugin-llm-wiki/
 COPY --parents packages/plugins/sandbox-providers/./*/package.json packages/plugins/sandbox-providers/
 COPY packages/plugins/paperclip-plugin-fake-sandbox/package.json packages/plugins/paperclip-plugin-fake-sandbox/
 COPY patches/ patches/
