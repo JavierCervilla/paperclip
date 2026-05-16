@@ -461,6 +461,17 @@ export async function startServer(): Promise<StartedServer> {
     }
   }
 
+  // The mailer is created before the Better Auth instance so password-reset
+  // emails can be wired into `emailAndPassword.sendResetPassword`.
+  const mailer = createMailer({
+    resendApiKey: config.resendApiKey,
+    resendFromEmail: config.resendFromEmail,
+    resendReplyTo: config.resendReplyTo,
+  });
+  if (mailer.enabled) {
+    logger.info({ from: config.resendFromEmail }, "Resend mailer is enabled for outbound email");
+  }
+
   let authReady = config.deploymentMode === "local_trusted";
   let betterAuthHandler: RequestHandler | undefined;
   let resolveSession: ((req: ExpressRequest) => Promise<BetterAuthSessionResult | null>) | undefined;
@@ -494,7 +505,10 @@ export async function startServer(): Promise<StartedServer> {
       },
       "Authenticated mode auth origin configuration",
     );
-    const auth = createBetterAuthInstance(db as any, config, effectiveTrustedOrigins);
+    const auth = createBetterAuthInstance(db as any, config, {
+      trustedOrigins: effectiveTrustedOrigins,
+      mailer,
+    });
     betterAuthHandler = createBetterAuthHandler(auth);
     resolveSession = (req) => resolveBetterAuthSession(auth, req);
     resolveSessionFromHeaders = (headers) => resolveBetterAuthSessionFromHeaders(auth, headers);
@@ -521,14 +535,6 @@ export async function startServer(): Promise<StartedServer> {
   const feedback = feedbackService(db as any, {
     shareClient: createFeedbackTraceShareClientFromConfig(config),
   });
-  const mailer = createMailer({
-    resendApiKey: config.resendApiKey,
-    resendFromEmail: config.resendFromEmail,
-    resendReplyTo: config.resendReplyTo,
-  });
-  if (mailer.enabled) {
-    logger.info({ from: config.resendFromEmail }, "Resend mailer is enabled for outbound invite emails");
-  }
   const app = await createApp(db as any, {
     uiMode,
     serverPort: listenPort,

@@ -36,6 +36,7 @@ import { pluginUiStaticRoutes } from "./routes/plugin-ui-static.js";
 import { applyUiBranding } from "./ui-branding.js";
 import { logger } from "./middleware/logger.js";
 import { createNoopMailer, type Mailer } from "./services/email/mailer.js";
+import { createRequestPasswordResetGuard } from "./auth/reset-password.js";
 import { DEFAULT_LOCAL_PLUGIN_DIR, pluginLoader } from "./services/plugin-loader.js";
 import { createPluginWorkerManager } from "./services/plugin-worker-manager.js";
 import { createPluginJobScheduler } from "./services/plugin-job-scheduler.js";
@@ -170,6 +171,9 @@ export async function createApp(
     });
   });
   if (opts.betterAuthHandler) {
+    // Reject password-reset requests with a clear error when no email provider
+    // is configured, instead of Better Auth's silent generic 200.
+    app.post("/api/auth/request-password-reset", createRequestPasswordResetGuard(mailer));
     app.all("/api/auth/{*authPath}", opts.betterAuthHandler);
   }
   app.use(llmRoutes(db));
