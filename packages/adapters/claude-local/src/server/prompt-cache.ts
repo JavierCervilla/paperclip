@@ -1,12 +1,13 @@
 import { constants as fsConstants } from "node:fs";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import { createHash, type Hash } from "node:crypto";
 import type { AdapterExecutionContext } from "@paperclipai/adapter-utils";
-import { ensurePaperclipSkillSymlink, type PaperclipSkillEntry } from "@paperclipai/adapter-utils/server-utils";
-
-const DEFAULT_PAPERCLIP_INSTANCE_ID = "default";
+import {
+  ensurePaperclipSkillSymlink,
+  resolvePaperclipInstanceRootForAdapter,
+  type PaperclipSkillEntry,
+} from "@paperclipai/adapter-utils/server-utils";
 
 type SkillEntry = PaperclipSkillEntry;
 
@@ -21,10 +22,21 @@ function nonEmpty(value: string | undefined): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
 
-function resolveManagedClaudePromptCacheRoot(env: NodeJS.ProcessEnv, companyId: string): string {
-  const paperclipHome = nonEmpty(env.PAPERCLIP_HOME) ?? path.resolve(os.homedir(), ".paperclip");
-  const instanceId = nonEmpty(env.PAPERCLIP_INSTANCE_ID) ?? DEFAULT_PAPERCLIP_INSTANCE_ID;
-  return path.resolve(paperclipHome, "instances", instanceId, "companies", companyId, "claude-prompt-cache");
+function resolveManagedClaudePromptCacheRoot(
+  env: NodeJS.ProcessEnv,
+  companyId: string,
+): string {
+  const instanceRoot = resolvePaperclipInstanceRootForAdapter({
+    homeDir: nonEmpty(env.PAPERCLIP_HOME) ?? undefined,
+    instanceId: nonEmpty(env.PAPERCLIP_INSTANCE_ID) ?? undefined,
+    env,
+  });
+  return path.resolve(
+    instanceRoot,
+    "companies",
+    companyId,
+    "claude-prompt-cache",
+  );
 }
 
 async function hashPathContents(
@@ -110,10 +122,7 @@ async function ensureReadableFile(targetPath: string, contents: string): Promise
     await fs.writeFile(tempPath, contents, "utf8");
     await fs.rename(tempPath, targetPath);
   } catch (err) {
-    const targetReadable = await fs
-      .access(targetPath, fsConstants.R_OK)
-      .then(() => true)
-      .catch(() => false);
+    const targetReadable = await fs.access(targetPath, fsConstants.R_OK).then(() => true).catch(() => false);
     if (!targetReadable) {
       throw err;
     }
@@ -149,7 +158,9 @@ export async function prepareClaudePromptBundle(input: {
     }
   }
 
-  const instructionsFilePath = instructionsContents ? path.join(rootDir, "agent-instructions.md") : null;
+  const instructionsFilePath = instructionsContents
+    ? path.join(rootDir, "agent-instructions.md")
+    : null;
   if (instructionsFilePath && instructionsContents) {
     await ensureReadableFile(instructionsFilePath, instructionsContents);
   }

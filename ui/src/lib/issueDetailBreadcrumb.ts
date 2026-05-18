@@ -12,6 +12,7 @@ export type IssueDetailHeaderSeed = {
   identifier: string | null;
   title: string;
   status: Issue["status"];
+  blockerAttention?: Issue["blockerAttention"];
   priority: Issue["priority"];
   projectId: string | null;
   projectName: string | null;
@@ -43,19 +44,24 @@ function isIssueDetailSource(value: unknown): value is IssueDetailSource {
 function isIssueDetailHeaderSeed(value: unknown): value is IssueDetailHeaderSeed {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Partial<IssueDetailHeaderSeed>;
-  const hasOriginKind = candidate.originKind === undefined || typeof candidate.originKind === "string";
+  const hasOriginKind =
+    candidate.originKind === undefined || typeof candidate.originKind === "string";
   const hasOriginId =
     candidate.originId === undefined || candidate.originId === null || typeof candidate.originId === "string";
+  const hasBlockerAttention =
+    candidate.blockerAttention === undefined
+    || (typeof candidate.blockerAttention === "object" && candidate.blockerAttention !== null);
   return (
-    typeof candidate.id === "string" &&
-    (candidate.identifier === null || typeof candidate.identifier === "string") &&
-    typeof candidate.title === "string" &&
-    typeof candidate.status === "string" &&
-    typeof candidate.priority === "string" &&
-    (candidate.projectId === null || typeof candidate.projectId === "string") &&
-    (candidate.projectName === null || typeof candidate.projectName === "string") &&
-    hasOriginKind &&
-    hasOriginId
+    typeof candidate.id === "string"
+    && (candidate.identifier === null || typeof candidate.identifier === "string")
+    && typeof candidate.title === "string"
+    && typeof candidate.status === "string"
+    && hasBlockerAttention
+    && typeof candidate.priority === "string"
+    && (candidate.projectId === null || typeof candidate.projectId === "string")
+    && (candidate.projectName === null || typeof candidate.projectName === "string")
+    && hasOriginKind
+    && hasOriginId
   );
 }
 
@@ -65,6 +71,7 @@ function createIssueDetailHeaderSeed(issue: Issue): IssueDetailHeaderSeed {
     identifier: issue.identifier ?? null,
     title: issue.title,
     status: issue.status,
+    blockerAttention: issue.blockerAttention,
     priority: issue.priority,
     projectId: issue.projectId ?? null,
     projectName: issue.project?.name ?? null,
@@ -157,10 +164,14 @@ function readStoredIssueDetailLocationState(issuePathId: string): IssueDetailLoc
 
   try {
     const parsed = JSON.parse(raw) as Partial<IssueDetailLocationState>;
-    const breadcrumb = isIssueDetailBreadcrumb(parsed.issueDetailBreadcrumb) ? parsed.issueDetailBreadcrumb : null;
+    const breadcrumb = isIssueDetailBreadcrumb(parsed.issueDetailBreadcrumb)
+      ? parsed.issueDetailBreadcrumb
+      : null;
     const source = inferIssueDetailSource(parsed, breadcrumb);
     if (!breadcrumb || !source) return null;
-    const headerSeed = isIssueDetailHeaderSeed(parsed.issueDetailHeaderSeed) ? parsed.issueDetailHeaderSeed : undefined;
+    const headerSeed = isIssueDetailHeaderSeed(parsed.issueDetailHeaderSeed)
+      ? parsed.issueDetailHeaderSeed
+      : undefined;
     return {
       issueDetailBreadcrumb: breadcrumb,
       issueDetailSource: source,
@@ -172,7 +183,10 @@ function readStoredIssueDetailLocationState(issuePathId: string): IssueDetailLoc
   }
 }
 
-function normalizeIssueDetailLocationState(state: unknown, search?: string): IssueDetailLocationState | null {
+function normalizeIssueDetailLocationState(
+  state: unknown,
+  search?: string,
+): IssueDetailLocationState | null {
   if (typeof state === "object" && state !== null) {
     const candidate = (state as IssueDetailLocationState).issueDetailBreadcrumb;
     if (isIssueDetailBreadcrumb(candidate)) {
@@ -206,7 +220,10 @@ export function rememberIssueDetailLocationState(issuePathId: string, state: unk
   const normalized = normalizeIssueDetailLocationState(state, search);
   if (!normalized) return;
 
-  window.sessionStorage.setItem(`${ISSUE_DETAIL_STORAGE_KEY_PREFIX}${issuePathId}`, JSON.stringify(normalized));
+  window.sessionStorage.setItem(
+    `${ISSUE_DETAIL_STORAGE_KEY_PREFIX}${issuePathId}`,
+    JSON.stringify(normalized),
+  );
 }
 
 export function createIssueDetailPath(issuePathId: string): string {

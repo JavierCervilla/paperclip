@@ -30,22 +30,25 @@ function createAgent(id: string, name: string, icon: string, urlKey: string): Ag
     pauseReason: null,
     pausedAt: null,
     permissions: { canCreateAgents: false },
-    workspaceConfig: {},
   };
 }
 
 function createComment(overrides: Partial<IssueChatComment>): IssueChatComment {
-  return {
+  const merged: IssueChatComment = {
     id: "comment-default",
     companyId: "company-ux",
     issueId: "issue-ux",
+    authorType: overrides.authorAgentId ? "agent" : "user",
     authorAgentId: null,
     authorUserId: "user-1",
     body: "",
+    presentation: null,
+    metadata: null,
     createdAt: new Date("2026-04-06T12:00:00.000Z"),
     updatedAt: new Date("2026-04-06T12:00:00.000Z"),
     ...overrides,
   };
+  return merged;
 }
 
 const primaryAgent = createAgent("agent-1", "CodexCoder", "code", "codexcoder");

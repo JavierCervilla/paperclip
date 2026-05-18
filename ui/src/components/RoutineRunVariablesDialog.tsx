@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { Agent, IssueExecutionWorkspaceSettings, Project, RoutineVariable } from "@paperclipai/shared";
+import {
+  WORKSPACE_BRANCH_ROUTINE_VARIABLE,
+  type Agent,
+  type ExecutionWorkspace,
+  type ExecutionWorkspaceMode,
+  type IssueExecutionWorkspaceSettings,
+  type Project,
+  type RoutineVariable,
+} from "@paperclipai/shared";
 import { useQuery } from "@tanstack/react-query";
 import { instanceSettingsApi } from "../api/instanceSettings";
 import { queryKeys } from "../lib/queryKeys";
@@ -7,6 +15,7 @@ import { IssueWorkspaceCard } from "./IssueWorkspaceCard";
 import { AgentIcon } from "./AgentIconPicker";
 import { InlineEntitySelector, type InlineEntityOption } from "./InlineEntitySelector";
 import { getRecentAssigneeIds, sortAgentsByRecency, trackRecentAssignee } from "../lib/recent-assignees";
+import { getRecentProjectIds, trackRecentProject } from "../lib/recent-projects";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -18,14 +27,23 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 
 function buildInitialValues(variables: RoutineVariable[]) {
   return Object.fromEntries(variables.map((variable) => [variable.name, variable.defaultValue ?? ""]));
 }
 
-function buildInitialRunSelection(input: { defaultAssigneeAgentId?: string | null; defaultProjectId?: string | null }) {
+function buildInitialRunSelection(input: {
+  defaultAssigneeAgentId?: string | null;
+  defaultProjectId?: string | null;
+}) {
   return {
     assigneeAgentId: input.defaultAssigneeAgentId ?? "",
     projectId: input.defaultProjectId ?? "",
@@ -34,53 +52,99 @@ function buildInitialRunSelection(input: { defaultAssigneeAgentId?: string | nul
 
 function defaultProjectWorkspaceIdForProject(project: Project | null | undefined) {
   if (!project) return null;
-  return (
-    project.executionWorkspacePolicy?.defaultProjectWorkspaceId ??
-    project.workspaces?.find((workspace) => workspace.isPrimary)?.id ??
-    project.workspaces?.[0]?.id ??
-    null
-  );
+  return project.executionWorkspacePolicy?.defaultProjectWorkspaceId
+    ?? project.workspaces?.find((workspace) => workspace.isPrimary)?.id
+    ?? project.workspaces?.[0]?.id
+    ?? null;
 }
 
-function defaultExecutionWorkspaceModeForProject(project: Project | null | undefined) {
+function defaultExecutionWorkspaceModeForProject(project: Project | null | undefined): ExecutionWorkspaceMode {
   const defaultMode = project?.executionWorkspacePolicy?.enabled ? project.executionWorkspacePolicy.defaultMode : null;
-  if (defaultMode === "isolated_workspace" || defaultMode === "operator_branch" || defaultMode === "adapter_default") {
+  if (
+    defaultMode === "isolated_workspace" ||
+    defaultMode === "operator_branch" ||
+    defaultMode === "adapter_default"
+  ) {
     return defaultMode === "adapter_default" ? "agent_default" : defaultMode;
   }
   return "shared_workspace";
 }
 
-function buildInitialWorkspaceConfig(project: Project | null | undefined) {
+function issueModeForExistingWorkspace(mode: string | null | undefined): ExecutionWorkspaceMode {
+  if (mode === "isolated_workspace" || mode === "operator_branch" || mode === "shared_workspace") return mode;
+  if (mode === "adapter_managed" || mode === "cloud_sandbox") return "agent_default";
+  return "shared_workspace";
+}
+
+function issueWorkspacePreferenceFromDraft(value: unknown, fallback: ExecutionWorkspaceMode): ExecutionWorkspaceMode {
+  if (
+    value === "inherit" ||
+    value === "shared_workspace" ||
+    value === "isolated_workspace" ||
+    value === "operator_branch" ||
+    value === "reuse_existing" ||
+    value === "agent_default"
+  ) {
+    return value;
+  }
+  return fallback;
+}
+
+type RoutineRunWorkspaceConfig = {
+  executionWorkspaceId: string | null;
+  executionWorkspacePreference: ExecutionWorkspaceMode;
+  executionWorkspaceSettings: IssueExecutionWorkspaceSettings;
+  projectWorkspaceId: string | null;
+};
+
+function buildInitialWorkspaceConfig(
+  project: Project | null | undefined,
+  defaultExecutionWorkspace?: ExecutionWorkspace | null,
+): RoutineRunWorkspaceConfig {
+  if (defaultExecutionWorkspace && defaultExecutionWorkspace.projectId === project?.id) {
+    return {
+      executionWorkspaceId: defaultExecutionWorkspace.id,
+      executionWorkspacePreference: "reuse_existing",
+      executionWorkspaceSettings: {
+        mode: issueModeForExistingWorkspace(defaultExecutionWorkspace.mode),
+      },
+      projectWorkspaceId: defaultExecutionWorkspace.projectWorkspaceId ?? defaultProjectWorkspaceIdForProject(project),
+    };
+  }
+
   const defaultMode = defaultExecutionWorkspaceModeForProject(project);
   return {
     executionWorkspaceId: null as string | null,
     executionWorkspacePreference: defaultMode,
-    executionWorkspaceSettings: { mode: defaultMode } as IssueExecutionWorkspaceSettings,
+    executionWorkspaceSettings: { mode: defaultMode },
     projectWorkspaceId: defaultProjectWorkspaceIdForProject(project),
   };
 }
 
 function workspaceConfigEquals(
-  a: ReturnType<typeof buildInitialWorkspaceConfig>,
-  b: ReturnType<typeof buildInitialWorkspaceConfig>,
+  a: RoutineRunWorkspaceConfig,
+  b: RoutineRunWorkspaceConfig,
 ) {
-  return (
-    a.executionWorkspaceId === b.executionWorkspaceId &&
-    a.executionWorkspacePreference === b.executionWorkspacePreference &&
-    a.projectWorkspaceId === b.projectWorkspaceId &&
-    JSON.stringify(a.executionWorkspaceSettings ?? null) === JSON.stringify(b.executionWorkspaceSettings ?? null)
-  );
+  return a.executionWorkspaceId === b.executionWorkspaceId
+    && a.executionWorkspacePreference === b.executionWorkspacePreference
+    && a.projectWorkspaceId === b.projectWorkspaceId
+    && JSON.stringify(a.executionWorkspaceSettings ?? null) === JSON.stringify(b.executionWorkspaceSettings ?? null);
 }
 
-function applyWorkspaceDraft(current: ReturnType<typeof buildInitialWorkspaceConfig>, data: Record<string, unknown>) {
+function applyWorkspaceDraft(
+  current: RoutineRunWorkspaceConfig,
+  data: Record<string, unknown>,
+) {
   const next = {
     ...current,
     executionWorkspaceId: (data.executionWorkspaceId as string | null | undefined) ?? null,
-    executionWorkspacePreference:
-      (data.executionWorkspacePreference as string | null | undefined) ?? current.executionWorkspacePreference,
+    executionWorkspacePreference: issueWorkspacePreferenceFromDraft(
+      data.executionWorkspacePreference,
+      current.executionWorkspacePreference,
+    ),
     executionWorkspaceSettings:
-      (data.executionWorkspaceSettings as IssueExecutionWorkspaceSettings | null | undefined) ??
-      current.executionWorkspaceSettings,
+      (data.executionWorkspaceSettings as IssueExecutionWorkspaceSettings | null | undefined)
+      ?? current.executionWorkspaceSettings,
   };
   return workspaceConfigEquals(current, next) ? current : next;
 }
@@ -89,7 +153,10 @@ function isMissingRequiredValue(value: unknown) {
   return value == null || (typeof value === "string" && value.trim().length === 0);
 }
 
-function supportsRoutineRunWorkspaceSelection(project: Project | null | undefined, isolatedWorkspacesEnabled: boolean) {
+function supportsRoutineRunWorkspaceSelection(
+  project: Project | null | undefined,
+  isolatedWorkspacesEnabled: boolean,
+) {
   return isolatedWorkspacesEnabled && Boolean(project?.executionWorkspacePolicy?.enabled);
 }
 
@@ -98,9 +165,8 @@ export function routineRunNeedsConfiguration(input: {
   project: Project | null | undefined;
   isolatedWorkspacesEnabled: boolean;
 }) {
-  return (
-    input.variables.length > 0 || supportsRoutineRunWorkspaceSelection(input.project, input.isolatedWorkspacesEnabled)
-  );
+  return input.variables.length > 0
+    || supportsRoutineRunWorkspaceSelection(input.project, input.isolatedWorkspacesEnabled);
 }
 
 export interface RoutineRunDialogSubmitData {
@@ -121,6 +187,7 @@ export function RoutineRunVariablesDialog({
   agents,
   defaultProjectId,
   defaultAssigneeAgentId,
+  defaultExecutionWorkspace,
   variables,
   isPending,
   onSubmit,
@@ -133,22 +200,22 @@ export function RoutineRunVariablesDialog({
   agents: Agent[];
   defaultProjectId?: string | null;
   defaultAssigneeAgentId?: string | null;
+  defaultExecutionWorkspace?: ExecutionWorkspace | null;
   variables: RoutineVariable[];
   isPending: boolean;
   onSubmit: (data: RoutineRunDialogSubmitData) => void;
 }) {
   const [values, setValues] = useState<Record<string, unknown>>({});
-  const [selection, setSelection] = useState(() =>
-    buildInitialRunSelection({
-      defaultAssigneeAgentId,
-      defaultProjectId,
-    }),
-  );
+  const [selection, setSelection] = useState(() => buildInitialRunSelection({
+    defaultAssigneeAgentId,
+    defaultProjectId,
+  }));
   const selectedProject = useMemo(
     () => projects.find((project) => project.id === selection.projectId) ?? null,
     [projects, selection.projectId],
   );
   const recentAssigneeIds = useMemo(() => getRecentAssigneeIds(), [open]);
+  const recentProjectIds = useMemo(() => getRecentProjectIds(), [open]);
   const assigneeOptions = useMemo<InlineEntityOption[]>(
     () =>
       sortAgentsByRecency(
@@ -162,19 +229,20 @@ export function RoutineRunVariablesDialog({
     [agents, recentAssigneeIds],
   );
   const projectOptions = useMemo<InlineEntityOption[]>(
-    () =>
-      projects.map((project) => ({
-        id: project.id,
-        label: project.name,
-        searchText: project.description ?? "",
-      })),
+    () => projects.map((project) => ({
+      id: project.id,
+      label: project.name,
+      searchText: project.description ?? "",
+    })),
     [projects],
   );
   const currentAssignee = selection.assigneeAgentId
-    ? (agents.find((agent) => agent.id === selection.assigneeAgentId) ?? null)
+    ? agents.find((agent) => agent.id === selection.assigneeAgentId) ?? null
     : null;
-  const [workspaceConfig, setWorkspaceConfig] = useState(() => buildInitialWorkspaceConfig(selectedProject));
+  const [workspaceConfig, setWorkspaceConfig] = useState(() =>
+    buildInitialWorkspaceConfig(selectedProject, defaultExecutionWorkspace));
   const [workspaceConfigValid, setWorkspaceConfigValid] = useState(true);
+  const [workspaceBranchName, setWorkspaceBranchName] = useState<string | null>(null);
 
   const { data: experimentalSettings } = useQuery({
     queryKey: queryKeys.instance.experimentalSettings,
@@ -192,40 +260,54 @@ export function RoutineRunVariablesDialog({
     setValues(buildInitialValues(variables));
     const nextSelection = buildInitialRunSelection({ defaultAssigneeAgentId, defaultProjectId });
     setSelection(nextSelection);
-    setWorkspaceConfig(
-      buildInitialWorkspaceConfig(projects.find((project) => project.id === nextSelection.projectId) ?? null),
-    );
+    setWorkspaceConfig(buildInitialWorkspaceConfig(
+      projects.find((project) => project.id === nextSelection.projectId) ?? null,
+      defaultExecutionWorkspace,
+    ));
     setWorkspaceConfigValid(true);
-  }, [defaultAssigneeAgentId, defaultProjectId, open, projects, variables]);
+    setWorkspaceBranchName(defaultExecutionWorkspace?.branchName ?? null);
+  }, [defaultAssigneeAgentId, defaultExecutionWorkspace, defaultProjectId, open, projects, variables]);
+
+  const workspaceBranchAutoValue = workspaceSelectionEnabled && workspaceBranchName
+    ? workspaceBranchName
+    : null;
+
+  const isAutoWorkspaceBranchVariable = useCallback(
+    (variable: RoutineVariable) =>
+      variable.name === WORKSPACE_BRANCH_ROUTINE_VARIABLE && Boolean(workspaceBranchAutoValue),
+    [workspaceBranchAutoValue],
+  );
 
   const missingRequired = useMemo(
     () =>
       variables
         .filter((variable) => variable.required)
+        .filter((variable) => !isAutoWorkspaceBranchVariable(variable))
         .filter((variable) => isMissingRequiredValue(values[variable.name]))
         .map((variable) => variable.label || variable.name),
-    [values, variables],
+    [isAutoWorkspaceBranchVariable, values, variables],
   );
 
-  const workspaceIssue = useMemo(
-    () => ({
-      companyId: companyId ?? null,
-      projectId: selectedProject?.id ?? null,
-      projectWorkspaceId: workspaceConfig.projectWorkspaceId,
-      executionWorkspaceId: workspaceConfig.executionWorkspaceId,
-      executionWorkspacePreference: workspaceConfig.executionWorkspacePreference,
-      executionWorkspaceSettings: workspaceConfig.executionWorkspaceSettings,
-      currentExecutionWorkspace: null,
-    }),
-    [
-      companyId,
-      selectedProject?.id,
-      workspaceConfig.executionWorkspaceId,
-      workspaceConfig.executionWorkspacePreference,
-      workspaceConfig.executionWorkspaceSettings,
-      workspaceConfig.projectWorkspaceId,
-    ],
-  );
+  const workspaceIssue = useMemo(() => ({
+    companyId: companyId ?? null,
+    projectId: selectedProject?.id ?? null,
+    projectWorkspaceId: workspaceConfig.projectWorkspaceId,
+    executionWorkspaceId: workspaceConfig.executionWorkspaceId,
+    executionWorkspacePreference: workspaceConfig.executionWorkspacePreference,
+    executionWorkspaceSettings: workspaceConfig.executionWorkspaceSettings,
+    currentExecutionWorkspace:
+      workspaceConfig.executionWorkspaceId && workspaceConfig.executionWorkspaceId === defaultExecutionWorkspace?.id
+        ? defaultExecutionWorkspace
+        : null,
+  }), [
+    companyId,
+    defaultExecutionWorkspace,
+    selectedProject?.id,
+    workspaceConfig.executionWorkspaceId,
+    workspaceConfig.executionWorkspacePreference,
+    workspaceConfig.executionWorkspaceSettings,
+    workspaceConfig.projectWorkspaceId,
+  ]);
 
   const canSubmit =
     selection.assigneeAgentId.trim().length > 0 &&
@@ -236,30 +318,42 @@ export function RoutineRunVariablesDialog({
     setWorkspaceConfig((current) => applyWorkspaceDraft(current, data));
   }, []);
 
-  const handleWorkspaceDraftChange = useCallback((data: Record<string, unknown>, meta: { canSave: boolean }) => {
+  const handleWorkspaceDraftChange = useCallback((
+    data: Record<string, unknown>,
+    meta: { canSave: boolean; workspaceBranchName?: string | null },
+  ) => {
     setWorkspaceConfig((current) => applyWorkspaceDraft(current, data));
     setWorkspaceConfigValid((current) => (current === meta.canSave ? current : meta.canSave));
-  }, []);
+    setWorkspaceBranchName((current) => {
+      const defaultWorkspaceBranchName = defaultExecutionWorkspace?.branchName ?? null;
+      const next = meta.workspaceBranchName
+        ?? (data.executionWorkspaceId === defaultExecutionWorkspace?.id ? defaultWorkspaceBranchName : null)
+        ?? null;
+      return current === next ? current : next;
+    });
+  }, [defaultExecutionWorkspace]);
 
   return (
     <Dialog open={open} onOpenChange={(next) => !isPending && onOpenChange(next)}>
-      <DialogContent className="max-w-xl">
-        <DialogHeader>
-          {routineName && <p className="text-muted-foreground text-sm">{routineName}</p>}
+      <DialogContent className="flex h-[calc(100dvh-2rem)] max-h-[calc(100dvh-2rem)] max-w-xl flex-col gap-0 overflow-hidden p-0 sm:h-auto sm:max-h-[min(calc(100dvh-2rem),42rem)]">
+        <DialogHeader className="shrink-0 border-b border-border/60 px-6 pb-4 pr-12 pt-6">
+          {routineName && (
+            <p className="text-muted-foreground text-sm">{routineName}</p>
+          )}
           <DialogTitle>Run routine</DialogTitle>
           <DialogDescription>
-            Choose the agent and optional project for this one run. Routine defaults are prefilled and won&apos;t be
-            changed.
+            Choose the agent and optional project for this one run. Routine defaults are prefilled and won&apos;t be changed.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-6 py-4">
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-1.5">
               <Label className="text-xs">Agent *</Label>
               <InlineEntitySelector
                 value={selection.assigneeAgentId}
                 options={assigneeOptions}
+                recentOptionIds={recentAssigneeIds}
                 placeholder="Agent"
                 noneLabel="Select an agent"
                 searchPlaceholder="Search agents..."
@@ -289,9 +383,7 @@ export function RoutineRunVariablesDialog({
                   const assignee = agents.find((agent) => agent.id === option.id);
                   return (
                     <>
-                      {assignee ? (
-                        <AgentIcon icon={assignee.icon} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                      ) : null}
+                      {assignee ? <AgentIcon icon={assignee.icon} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /> : null}
                       <span className="truncate">{option.label}</span>
                     </>
                   );
@@ -303,6 +395,7 @@ export function RoutineRunVariablesDialog({
               <InlineEntitySelector
                 value={selection.projectId}
                 options={projectOptions}
+                recentOptionIds={recentProjectIds}
                 placeholder="Project"
                 noneLabel="No project"
                 searchPlaceholder="Search projects..."
@@ -311,9 +404,15 @@ export function RoutineRunVariablesDialog({
                 openOnFocus={false}
                 onChange={(projectId) => {
                   const project = projects.find((entry) => entry.id === projectId) ?? null;
+                  if (projectId) trackRecentProject(projectId);
                   setSelection((current) => ({ ...current, projectId }));
-                  setWorkspaceConfig(buildInitialWorkspaceConfig(project));
+                  setWorkspaceConfig(buildInitialWorkspaceConfig(project, defaultExecutionWorkspace));
                   setWorkspaceConfigValid(true);
+                  setWorkspaceBranchName(
+                    defaultExecutionWorkspace && defaultExecutionWorkspace.projectId === project?.id
+                      ? defaultExecutionWorkspace.branchName
+                      : null,
+                  );
                 }}
                 renderTriggerValue={(option) =>
                   option && selectedProject ? (
@@ -351,23 +450,25 @@ export function RoutineRunVariablesDialog({
                 {variable.label || variable.name}
                 {variable.required ? " *" : ""}
               </Label>
-              {variable.type === "textarea" ? (
+              {isAutoWorkspaceBranchVariable(variable) ? (
+                <Input
+                  readOnly
+                  disabled
+                  value={workspaceBranchAutoValue ?? ""}
+                />
+              ) : variable.type === "textarea" ? (
                 <Textarea
                   rows={4}
-                  value={typeof values[variable.name] === "string" ? (values[variable.name] as string) : ""}
+                  value={typeof values[variable.name] === "string" ? values[variable.name] as string : ""}
                   onChange={(event) => setValues((current) => ({ ...current, [variable.name]: event.target.value }))}
                 />
               ) : variable.type === "boolean" ? (
                 <Select
-                  value={
-                    values[variable.name] === true ? "true" : values[variable.name] === false ? "false" : "__unset__"
-                  }
-                  onValueChange={(next) =>
-                    setValues((current) => ({
-                      ...current,
-                      [variable.name]: next === "__unset__" ? "" : next === "true",
-                    }))
-                  }
+                  value={values[variable.name] === true ? "true" : values[variable.name] === false ? "false" : "__unset__"}
+                  onValueChange={(next) => setValues((current) => ({
+                    ...current,
+                    [variable.name]: next === "__unset__" ? "" : next === "true",
+                  }))}
                 >
                   <SelectTrigger>
                     <SelectValue />
@@ -380,17 +481,11 @@ export function RoutineRunVariablesDialog({
                 </Select>
               ) : variable.type === "select" ? (
                 <Select
-                  value={
-                    typeof values[variable.name] === "string" && values[variable.name]
-                      ? (values[variable.name] as string)
-                      : "__unset__"
-                  }
-                  onValueChange={(next) =>
-                    setValues((current) => ({
-                      ...current,
-                      [variable.name]: next === "__unset__" ? "" : next,
-                    }))
-                  }
+                  value={typeof values[variable.name] === "string" && values[variable.name] ? values[variable.name] as string : "__unset__"}
+                  onValueChange={(next) => setValues((current) => ({
+                    ...current,
+                    [variable.name]: next === "__unset__" ? "" : next,
+                  }))}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Choose a value" />
@@ -398,9 +493,7 @@ export function RoutineRunVariablesDialog({
                   <SelectContent>
                     <SelectItem value="__unset__">No value</SelectItem>
                     {variable.options.map((option) => (
-                      <SelectItem key={option} value={option}>
-                        {option}
-                      </SelectItem>
+                      <SelectItem key={option} value={option}>{option}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -427,13 +520,20 @@ export function RoutineRunVariablesDialog({
           ) : null}
         </div>
 
-        <DialogFooter showCloseButton={false}>
+        <DialogFooter
+          showCloseButton={false}
+          className="shrink-0 border-t border-border/60 bg-background px-6 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-4"
+        >
           {!selection.assigneeAgentId ? (
             <p className="mr-auto text-xs text-amber-600">Default agent required for this run.</p>
           ) : missingRequired.length > 0 ? (
-            <p className="mr-auto text-xs text-amber-600">Missing: {missingRequired.join(", ")}</p>
+            <p className="mr-auto text-xs text-amber-600">
+              Missing: {missingRequired.join(", ")}
+            </p>
           ) : workspaceSelectionEnabled && !workspaceConfigValid ? (
-            <p className="mr-auto text-xs text-amber-600">Choose an existing workspace before running.</p>
+            <p className="mr-auto text-xs text-amber-600">
+              Choose an existing workspace before running.
+            </p>
           ) : (
             <span className="mr-auto" />
           )}
@@ -444,6 +544,10 @@ export function RoutineRunVariablesDialog({
             onClick={() => {
               const nextVariables: Record<string, string | number | boolean> = {};
               for (const variable of variables) {
+                if (isAutoWorkspaceBranchVariable(variable)) {
+                  nextVariables[variable.name] = workspaceBranchAutoValue!;
+                  continue;
+                }
                 const rawValue = values[variable.name];
                 if (isMissingRequiredValue(rawValue)) continue;
                 if (variable.type === "number") {
@@ -460,10 +564,10 @@ export function RoutineRunVariablesDialog({
                 projectId: selection.projectId || null,
                 ...(workspaceSelectionEnabled
                   ? {
-                      executionWorkspaceId: workspaceConfig.executionWorkspaceId,
-                      executionWorkspacePreference: workspaceConfig.executionWorkspacePreference,
-                      executionWorkspaceSettings: workspaceConfig.executionWorkspaceSettings,
-                    }
+                    executionWorkspaceId: workspaceConfig.executionWorkspaceId,
+                    executionWorkspacePreference: workspaceConfig.executionWorkspacePreference,
+                    executionWorkspaceSettings: workspaceConfig.executionWorkspaceSettings,
+                  }
                   : {}),
               });
             }}

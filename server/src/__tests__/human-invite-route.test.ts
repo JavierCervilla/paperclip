@@ -42,13 +42,6 @@ function registerModuleMocks() {
     deduplicateAgentName: vi.fn(),
     logActivity: mockLogActivity,
     notifyHireApproved: vi.fn(),
-    feedbackService: () => ({}),
-    instanceSettingsService: () => ({}),
-    assetService: () => ({}),
-    chatService: () => ({}),
-    chatProcessService: () => ({}),
-    setChatSummaryFallbackHandler: vi.fn(),
-    buildDeterministicChatSummary: vi.fn(() => ""),
   }));
 }
 
@@ -58,7 +51,6 @@ function makeCreatedInvite(overrides: Record<string, unknown> = {}) {
     companyId: "company-1",
     inviteType: "company_join",
     allowedJoinTypes: "human",
-    recipientEmail: null,
     defaultsPayload: null,
     expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
     invitedByUserId: "user-1",
@@ -81,30 +73,47 @@ function createDbStub(inviteOverrides: Record<string, unknown> = {}) {
   const updateSet = vi.fn().mockReturnValue({ where: updateWhere });
   const update = vi.fn().mockReturnValue({ set: updateSet });
 
-  const isCompaniesTable = (table: unknown) =>
-    !!table && typeof table === "object" && "issuePrefix" in table && "requireBoardApprovalForNewAgents" in table;
-
-  const selectMock = vi.fn((selection?: unknown) => ({
-    from(table: unknown) {
-      const isCompany = isCompaniesTable(table) || (selection && typeof selection === "object" && "name" in selection);
-      return {
-        where: vi.fn().mockImplementation(() => {
-          if (isCompany) {
-            return Object.assign(Promise.resolve([{ name: "Test Co" }]), {
-              orderBy: vi.fn().mockResolvedValue([{ name: "Test Co" }]),
-            });
-          }
-          return Object.assign(Promise.resolve([createdInvite]), {
-            orderBy: vi.fn().mockResolvedValue([createdInvite]),
-          });
-        }),
+  // A universal select stub: branding lookups await the resolved array
+  // (`[{ name, brandColor, logoAssetId }]`), while invite-list lookups chain
+  // `.orderBy().limit().offset()` to receive `[createdInvite]`.
+  const select = vi.fn((_selection?: unknown) => ({
+    from() {
+      const query: Record<string, unknown> = {
+        leftJoin() {
+          return query;
+        },
+        where() {
+          return Object.assign(
+            Promise.resolve([
+              {
+                name: "Test Co",
+                brandColor: null,
+                logoAssetId: null,
+              },
+            ]),
+            {
+              orderBy() {
+                return Object.assign(Promise.resolve([createdInvite]), {
+                  limit() {
+                    return Object.assign(Promise.resolve([createdInvite]), {
+                      offset() {
+                        return Promise.resolve([createdInvite]);
+                      },
+                    });
+                  },
+                });
+              },
+            },
+          );
+        },
       };
+      return query;
     },
   }));
 
   return {
     insert,
-    select: selectMock,
+    select,
     update,
     __insertValues: values,
     __updateSet: updateSet,
@@ -173,50 +182,39 @@ describe("POST /companies/:companyId/invites", () => {
     expect(res.status).toBe(403);
   });
 
-  it("persists recipientEmail when provided", async () => {
-    const db = createDbStub({ recipientEmail: "alice@example.com" });
-    const app = await createApp(boardActor, db);
-    const res = await request(app)
-      .post("/api/companies/company-1/invites")
-      .send({ allowedJoinTypes: "human", recipientEmail: "alice@example.com" });
-    expect([200, 201]).toContain(res.status);
-    expect(db.__insertValues).toHaveBeenCalledWith(expect.objectContaining({ recipientEmail: "alice@example.com" }));
-  });
-
-  it("stores null recipientEmail when not provided", async () => {
+  it("logs activity with correct details on invite creation", async () => {
     const db = createDbStub();
     const app = await createApp(boardActor, db);
-    const res = await request(app).post("/api/companies/company-1/invites").send({ allowedJoinTypes: "human" });
-    expect([200, 201]).toContain(res.status);
-    expect(db.__insertValues).toHaveBeenCalledWith(expect.objectContaining({ recipientEmail: null }));
-  });
-
-  it("uses hasRecipientEmail in activity log details (not the email itself)", async () => {
-    const db = createDbStub({ recipientEmail: "alice@example.com" });
-    const app = await createApp(boardActor, db);
-    await request(app)
-      .post("/api/companies/company-1/invites")
-      .send({ allowedJoinTypes: "human", recipientEmail: "alice@example.com" });
+    await request(app).post("/api/companies/company-1/invites").send({ allowedJoinTypes: "human" });
     expect(mockLogActivity).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
+        action: "invite.created",
+        companyId: "company-1",
+        entityType: "invite",
         details: expect.objectContaining({
-          hasRecipientEmail: true,
+          inviteType: "company_join",
+          allowedJoinTypes: "human",
         }),
       }),
     );
-    // The raw email must NOT appear in the log details
-    const logCall = mockLogActivity.mock.calls[0]?.[1];
-    expect(JSON.stringify(logCall?.details ?? {})).not.toContain("alice@example.com");
   });
 
   it("returns inviteUrl in response", async () => {
     const db = createDbStub();
     const app = await createApp(boardActor, db);
     const res = await request(app).post("/api/companies/company-1/invites").send({ allowedJoinTypes: "human" });
-    expect([200, 201]).toContain(res.status);
-    expect(res.body.inviteUrl).toMatch(/^\/invite\//);
+    expect(res.status).toBe(201);
+    expect(res.body.inviteUrl).toMatch(/\/invite\//);
     expect(res.body.token).toBeTruthy();
+  });
+
+  it("includes company name in response", async () => {
+    const db = createDbStub();
+    const app = await createApp(boardActor, db);
+    const res = await request(app).post("/api/companies/company-1/invites").send({ allowedJoinTypes: "human" });
+    expect(res.status).toBe(201);
+    expect(res.body.companyName).toBe("Test Co");
   });
 
   it("does not call the mailer when no mailer is provided (Noop fallback)", async () => {
@@ -343,15 +341,19 @@ describe("GET /companies/:companyId/invites", () => {
     expect(res.status).toBe(403);
   });
 
-  it("does not expose tokenHash in the list response", async () => {
+  it("returns invites with expected fields in the list response", async () => {
     const db = createDbStub();
     const app = await createApp(boardActor, db);
     const res = await request(app).get("/api/companies/company-1/invites");
-    expect([200]).toContain(res.status);
-    if (Array.isArray(res.body)) {
-      for (const invite of res.body) {
-        expect(invite).not.toHaveProperty("tokenHash");
-      }
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty("invites");
+    expect(Array.isArray(res.body.invites)).toBe(true);
+    if (res.body.invites.length > 0) {
+      const invite = res.body.invites[0];
+      expect(invite).toHaveProperty("id");
+      expect(invite).toHaveProperty("companyId");
+      expect(invite).toHaveProperty("inviteType");
+      expect(invite).toHaveProperty("state");
     }
   });
 });

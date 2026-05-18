@@ -20,6 +20,7 @@ function makeAgent(id: string, name: string): Agent {
     adapterType: "process",
     adapterConfig: {},
     runtimeConfig: {},
+    defaultEnvironmentId: null,
     budgetMonthlyCents: 0,
     spentMonthlyCents: 0,
     pauseReason: null,
@@ -30,7 +31,6 @@ function makeAgent(id: string, name: string): Agent {
     createdAt: new Date(),
     updatedAt: new Date(),
     urlKey: name.toLowerCase(),
-    workspaceConfig: {},
   };
 }
 
